@@ -377,12 +377,6 @@ where
       None => (0i64, 0u64),
     };
 
-    if (increment < 0 && cur_num <= 0 && increment < (i64::MIN - cur_num))
-      || (increment > 0 && cur_num >= 0 && increment > (i64::MAX - cur_num))
-    {
-      return Err(Error::invalid_data(ERR_INCREMENT_OVERFLOW));
-    }
-
     let new_num = cur_num
       .checked_add(increment)
       .ok_or_else(|| Error::invalid_data(ERR_INCREMENT_OVERFLOW))?;
@@ -392,15 +386,18 @@ where
 
     let target_expire = if keep_ttl { old_expire } else { expire_ms };
 
-    let enc_val = encode_string_value(formatted_bytes, target_expire);
-    if old_raw.is_none() && !self.meta().is_empty()? {
-      let mut batch = self.batch();
-      batch.insert_data(&raw_k, &enc_val);
-      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-      batch.commit()?;
-    } else {
-      self.data().insert(&raw_k, &enc_val)?;
-    }
+    let mut dyn_buf = Vec::new();
+    with_encoded_string_value(formatted_bytes, target_expire, &mut dyn_buf, |enc_val| -> Result<()> {
+      if old_raw.is_none() && !self.meta().is_empty()? {
+        let mut batch = self.batch();
+        batch.insert_data(&raw_k, enc_val);
+        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+        batch.commit()?;
+      } else {
+        self.data().insert(&raw_k, enc_val)?;
+      }
+      Ok(())
+    })?;
     Ok(new_num)
   }
 
@@ -458,15 +455,18 @@ where
 
     let mut num_buf = zmij::Buffer::new();
     let formatted_bytes = format_float_bytes(new_num, &mut num_buf);
-    let enc_val = encode_string_value(formatted_bytes, target_expire);
-    if old_raw.is_none() && !self.meta().is_empty()? {
-      let mut batch = self.batch();
-      batch.insert_data(&raw_k, &enc_val);
-      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-      batch.commit()?;
-    } else {
-      self.data().insert(&raw_k, &enc_val)?;
-    }
+    let mut dyn_buf = Vec::new();
+    with_encoded_string_value(formatted_bytes, target_expire, &mut dyn_buf, |enc_val| -> Result<()> {
+      if old_raw.is_none() && !self.meta().is_empty()? {
+        let mut batch = self.batch();
+        batch.insert_data(&raw_k, enc_val);
+        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+        batch.commit()?;
+      } else {
+        self.data().insert(&raw_k, enc_val)?;
+      }
+      Ok(())
+    })?;
     Ok(new_num)
   }
 
@@ -901,8 +901,10 @@ where
     match get_string_raw(self, key_bytes)? {
       Some((raw, _, offset)) => {
         if &raw[offset..] == old_bytes {
-          let enc_val = encode_string_value(new_bytes, expire_ms);
-          data_ks.insert(&raw_k, &enc_val)?;
+          let mut dyn_buf = Vec::new();
+          with_encoded_string_value(new_bytes, expire_ms, &mut dyn_buf, |enc_val| {
+            data_ks.insert(&raw_k, enc_val)
+          })?;
           Ok(1)
         } else {
           Ok(0)
