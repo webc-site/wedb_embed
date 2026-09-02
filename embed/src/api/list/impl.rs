@@ -249,18 +249,16 @@ where
     let (s, e) = normalize_range(start, stop, len);
 
     let mut batch = self.batch_with_capacity(32);
-    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
 
     if s > e {
-      for offset in 0..meta.base.size {
-        let idx = meta.head.wrapping_add(offset);
-        let item_k = composer.key_for_idx(idx);
-        batch.rm_weak_data(item_k);
-      }
+      let prefix = compose_list_prefix_stack(&kc, key_bytes);
+      clear_prefix_in_batch(self.data(), &prefix, &mut batch)?;
       batch.rm_meta(&meta_k);
       batch.commit()?;
       return Ok(());
     }
+
+    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
 
     for offset in 0..(s as u64) {
       let idx = meta.head.wrapping_add(offset);
@@ -311,7 +309,6 @@ where
 
     let len = meta.base.size as usize;
     let pivot_bytes = pivot.as_ref();
-    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
@@ -336,6 +333,7 @@ where
         }
       }
     } else {
+      let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
       for offset in 0..len {
         let idx = meta.head.wrapping_add(offset as u64);
         let item_k = composer.key_for_idx(idx);
@@ -359,6 +357,7 @@ where
       pivot_offset + 1
     };
 
+    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
     let mut batch = self.batch();
 
     if insert_offset < len / 2 {
@@ -454,6 +453,9 @@ where
           .rev()
           .enumerate()
         {
+          if i >= len {
+            break;
+          }
           let entry = g?;
           if entry.value().as_ref() == elem_bytes {
             let offset = len - 1 - i;
@@ -726,6 +728,10 @@ where
       .map(|m| if m == 0 { len } else { m.min(len) })
       .unwrap_or(len);
 
+    if target_rank > limit || target_rank > len {
+      return Ok(Vec::new());
+    }
+
     let elem_bytes = elem.as_ref();
     let count_limit = match count {
       Some(0) => usize::MAX,
@@ -735,7 +741,8 @@ where
     let is_multi_count = count.is_some();
     let mut matches = match count {
       Some(c) if c > 0 => Vec::with_capacity(c.min(limit)),
-      _ => Vec::with_capacity(limit.min(16)),
+      Some(_) => Vec::with_capacity(limit.min(16)),
+      None => Vec::with_capacity(1),
     };
 
     let data_ks = self.data();
@@ -779,6 +786,9 @@ where
           .rev()
           .enumerate()
         {
+          if i > start_offset {
+            break;
+          }
           let offset = start_offset - i;
           if offset < end_offset {
             break;

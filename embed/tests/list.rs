@@ -2,7 +2,7 @@ use aok::Void;
 use tempfile::tempdir;
 use wedb_embed::{
   Fjall, Partition, WeDb,
-  api::list::compose_list_meta_key,
+  api::list::{compose_list_item, compose_list_meta_key},
   key_composer::KeyComposer,
   list::{LPos, ListMeta},
 };
@@ -857,6 +857,91 @@ fn test_list_with_lindex_and_lmpop_and_kvrocks_suite() -> Void {
   assert_eq!(over_rpopped.len(), 5);
   assert_eq!(over_rpopped[0], b"f4");
   assert_eq!(db.llen("over_rpop_k")?, 0);
+
+  Ok(())
+}
+
+#[test]
+fn test_list_wrap_around_boundary_handling() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+  let kc = KeyComposer::new(0, 0);
+
+  // 手动构造跨越 u64::MAX 边界的环形 List
+  // head = u64::MAX - 1 (两个元素位于高位: MAX-1, MAX), 两个元素位于低位: 0, 1
+  let head = u64::MAX - 1;
+  let tail = 2u64;
+  let mut meta = ListMeta::new(0, 1);
+  meta.head = head;
+  meta.tail = tail;
+  meta.base.size = 4;
+
+  let key = b"wrap_list";
+  let meta_k = compose_list_meta_key(&kc, key);
+
+  let mut batch = db.batch();
+  batch.insert_meta(&meta_k, &meta.encode());
+
+  let vals = [b"v0", b"v1", b"v2", b"v3"];
+  let indices = [u64::MAX - 1, u64::MAX, 0u64, 1u64];
+  for (i, val) in indices.iter().zip(vals.iter()) {
+    let item_k = compose_list_item(&kc, key, *i);
+    batch.insert_data(item_k.as_slice(), *val);
+  }
+  batch.commit()?;
+
+  // 1. LLEN
+  assert_eq!(db.llen("wrap_list")?, 4);
+
+  // 2. LRANGE 全量回环扫描
+  let all = db.lrange("wrap_list", (0, -1))?;
+  assert_eq!(
+    all,
+    vec![
+      b"v0".to_vec(),
+      b"v1".to_vec(),
+      b"v2".to_vec(),
+      b"v3".to_vec()
+    ]
+  );
+
+  // 3. LINDEX 与 WITH_LINDEX 回环访问
+  assert_eq!(db.lindex("wrap_list", 0)?, Some(b"v0".to_vec()));
+  assert_eq!(db.lindex("wrap_list", 1)?, Some(b"v1".to_vec()));
+  assert_eq!(db.lindex("wrap_list", 2)?, Some(b"v2".to_vec()));
+  assert_eq!(db.lindex("wrap_list", 3)?, Some(b"v3".to_vec()));
+  assert_eq!(db.lindex("wrap_list", -1)?, Some(b"v3".to_vec()));
+  assert_eq!(db.with_lindex("wrap_list", 2, |v| v.len())?, Some(2));
+
+  // 4. LPOS 回环搜索 (正向与反向)
+  assert_eq!(db.lpos("wrap_list", "v2", [])?, vec![2]);
+  assert_eq!(db.lpos("wrap_list", "v0", [LPos::Rank(-1)])?, vec![0]);
+
+  // 5. LINSERT 回环插入
+  assert_eq!(db.linsert("wrap_list", true, "v2", "v_new")?, 5);
+  let range_after = db.lrange("wrap_list", (0, -1))?;
+  assert_eq!(
+    range_after,
+    vec![
+      b"v0".to_vec(),
+      b"v1".to_vec(),
+      b"v_new".to_vec(),
+      b"v2".to_vec(),
+      b"v3".to_vec()
+    ]
+  );
+
+  // 6. LREM 回环删除
+  assert_eq!(db.lrem("wrap_list", 1, "v1")?, 1);
+  assert_eq!(
+    db.lrange("wrap_list", (0, -1))?,
+    vec![
+      b"v0".to_vec(),
+      b"v_new".to_vec(),
+      b"v2".to_vec(),
+      b"v3".to_vec()
+    ]
+  );
 
   Ok(())
 }

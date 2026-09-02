@@ -1,9 +1,11 @@
+use std::ops::Bound;
+
 use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
   api::set::{
-    SetItemKeyComposer, SetScanResult, compose_set_meta_key, compose_set_prefix_stack,
-    meta::SetMeta,
+    SetItemKeyComposer, SetScanByMemberResult, SetScanResult, compose_set_key,
+    compose_set_meta_key, compose_set_prefix_stack, meta::SetMeta,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -63,16 +65,16 @@ where
       prepare_set_meta_for_write(self, k_bytes, &prefix, &meta_k, now_ms, &mut batch)?;
 
     let mut added = 0usize;
-    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
 
     if members.len() == 1 {
       let m_bytes = members[0].as_ref();
-      let item_k = composer.key_for_member(m_bytes);
-      if is_new || !data_ks.contains_key(item_k)? {
-        batch.insert_data(item_k, b"");
+      let item_k = compose_set_key(&kc, k_bytes, m_bytes);
+      if is_new || !data_ks.contains_key(item_k.as_slice())? {
+        batch.insert_data(item_k.as_slice(), b"");
         added = 1;
       }
     } else {
+      let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
       let mut seen = HashSet::with_capacity(members.len());
       for m in members {
         let m_bytes = m.as_ref();
@@ -123,16 +125,16 @@ where
     let mut batch = self.batch_with_capacity(members.len() + 1);
     let data_ks = self.data();
     let _meta_ks = self.meta();
-    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
 
     if members.len() == 1 {
       let m_bytes = members[0].as_ref();
-      let item_k = composer.key_for_member(m_bytes);
-      if data_ks.contains_key(item_k)? {
-        batch.rm_weak_data(item_k);
+      let item_k = compose_set_key(&kc, k_bytes, m_bytes);
+      if data_ks.contains_key(item_k.as_slice())? {
+        batch.rm_weak_data(item_k.as_slice());
         removed = 1;
       }
     } else {
+      let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
       let mut seen = HashSet::with_capacity(members.len());
       for m in members {
         let m_bytes = m.as_ref();
@@ -185,9 +187,8 @@ where
     };
 
     let _ = meta;
-    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
-    let item_k = composer.key_for_member(member.as_ref());
-    Ok(self.data().contains_key(item_k)?)
+    let item_k = compose_set_key(&kc, k_bytes, member.as_ref());
+    Ok(self.data().contains_key(item_k.as_slice())?)
   }
 
   #[inline]
@@ -266,14 +267,25 @@ where
     }
 
     let pop_count = count.min(members.len());
-    fastrand::shuffle(&mut members);
-    let popped: Vec<Vec<u8>> = members.into_iter().take(pop_count).collect();
-
     let mut batch = self.batch_with_capacity(pop_count + 1);
-    let _data_ks = self.data();
-    let _meta_ks = self.meta();
-    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
 
+    if pop_count == members.len() {
+      let prefix = compose_set_prefix_stack(&kc, k_bytes);
+      clear_prefix_in_batch(self.data(), &prefix, &mut batch)?;
+      batch.rm_meta(&meta_k);
+      batch.commit()?;
+      return Ok(members);
+    }
+
+    let popped: Vec<Vec<u8>> = if pop_count == 1 {
+      let idx = fastrand::usize(0..members.len());
+      vec![members.swap_remove(idx)]
+    } else {
+      fastrand::shuffle(&mut members);
+      members.into_iter().take(pop_count).collect()
+    };
+
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
     for m in &popped {
       let item_k = composer.key_for_member(m);
       batch.rm_weak_data(item_k);
@@ -306,14 +318,14 @@ where
     };
     let _ = meta;
 
-    let composer = SetItemKeyComposer::new(&kc, k_bytes);
-    let prefix = composer.prefix();
-    let prefix_len = prefix.len();
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
+    let prefix_bytes = prefix.as_slice();
+    let prefix_len = prefix_bytes.len();
 
-    for guard in self.data().prefix(prefix) {
+    for guard in self.data().prefix(prefix_bytes) {
       let entry = guard?;
       let (k, _) = (entry.key(), entry.value());
-      if !k.starts_with(prefix) {
+      if !k.starts_with(prefix_bytes) {
         break;
       }
       let member = &k[prefix_len..];
@@ -327,8 +339,24 @@ where
 
   #[inline]
   pub fn srandmember_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-    let mut res = self.srandmember(key, 1)?;
-    Ok(res.pop())
+    let card = self.scard(&key)? as usize;
+    if card == 0 {
+      return Ok(None);
+    }
+    let target = fastrand::usize(0..card);
+    let mut current_idx = 0usize;
+    let mut result = None;
+
+    self.siter(key, |m| {
+      if current_idx == target {
+        result = Some(m.to_vec());
+        return false;
+      }
+      current_idx += 1;
+      true
+    })?;
+
+    Ok(result)
   }
 
   #[inline]
@@ -388,12 +416,11 @@ where
       _ => return Ok(false),
     };
 
-    let mut src_composer = SetItemKeyComposer::new(&kc, src_bytes);
-    let src_item_k = src_composer.key_for_member(m_bytes);
+    let src_item_k = compose_set_key(&kc, src_bytes, m_bytes);
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
-    if !data_ks.contains_key(src_item_k)? {
+    if !data_ks.contains_key(src_item_k.as_slice())? {
       return Ok(false);
     }
 
@@ -410,18 +437,17 @@ where
       &mut batch,
     )?;
 
-    batch.rm_data(src_item_k);
-    src_meta.base.size -= 1;
+    batch.rm_data(src_item_k.as_slice());
+    src_meta.base.size = src_meta.base.size.saturating_sub(1);
     if src_meta.base.size == 0 {
       batch.rm_meta(&src_meta_k);
     } else {
       batch.insert_meta(&src_meta_k, &src_meta.encode());
     }
 
-    let mut dst_composer = SetItemKeyComposer::new(&kc, dst_bytes);
-    let dst_item_k = dst_composer.key_for_member(m_bytes);
-    if dst_is_new || !data_ks.contains_key(dst_item_k)? {
-      batch.insert_data(dst_item_k, b"");
+    let dst_item_k = compose_set_key(&kc, dst_bytes, m_bytes);
+    if dst_is_new || !data_ks.contains_key(dst_item_k.as_slice())? {
+      batch.insert_data(dst_item_k.as_slice(), b"");
       dst_meta.base.size += 1;
       batch.insert_meta(&dst_meta_k, &dst_meta.encode());
     }
@@ -719,6 +745,78 @@ where
     } else {
       0
     };
+    Ok((next_cursor, matched))
+  }
+
+  #[inline]
+  pub fn sscan_by_member<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    cursor: Option<&[u8]>,
+    pattern: Option<&[u8]>,
+    count: Option<usize>,
+  ) -> Result<SetScanByMemberResult> {
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<SetMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok((None, Vec::new())),
+    };
+    let _ = meta;
+
+    let limit = count.unwrap_or(10).max(1);
+    let is_match_all = match pattern {
+      Some(p) => p == b"*",
+      None => true,
+    };
+    let pat_bytes = pattern.unwrap_or(b"*");
+
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
+    let prefix_bytes = prefix.as_slice();
+    let prefix_len = prefix_bytes.len();
+
+    let data_ks = self.data();
+    let mut matched = Vec::with_capacity(limit);
+    let mut next_cursor = None;
+
+    if let Some(cursor_bytes) = cursor {
+      let start_k = compose_set_key(&kc, k_bytes, cursor_bytes);
+      for guard in data_ks.range((Bound::Excluded(start_k.as_slice()), Bound::Unbounded)) {
+        let entry = guard?;
+        let (k, _) = (entry.key(), entry.value());
+        if !k.starts_with(prefix_bytes) {
+          break;
+        }
+        let member = &k[prefix_len..];
+        if is_match_all || matches_glob_bytes(pat_bytes, member) {
+          matched.push(member.to_vec());
+          if matched.len() >= limit {
+            next_cursor = Some(member.to_vec());
+            break;
+          }
+        }
+      }
+    } else {
+      for guard in data_ks.prefix(prefix_bytes) {
+        let entry = guard?;
+        let (k, _) = (entry.key(), entry.value());
+        if !k.starts_with(prefix_bytes) {
+          break;
+        }
+        let member = &k[prefix_len..];
+        if is_match_all || matches_glob_bytes(pat_bytes, member) {
+          matched.push(member.to_vec());
+          if matched.len() >= limit {
+            next_cursor = Some(member.to_vec());
+            break;
+          }
+        }
+      }
+    }
+
     Ok((next_cursor, matched))
   }
 }

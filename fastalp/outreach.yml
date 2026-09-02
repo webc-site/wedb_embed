@@ -78,3 +78,35 @@ records:
     title: "RFC: per-field / per-type storage compression"
     status: posted
     date: 2026-09-03
+
+  - type: issue_comment
+    repo: strawgate/o11ykit
+    issue: 80
+    url: https://github.com/strawgate/o11ykit/issues/80#issuecomment-5516854481
+    title: "perf(o11ytsdb): counter delta-before-ALP differential encoding"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: cmcuza/TerseTS
+    issue: 29
+    url: https://github.com/cmcuza/TerseTS/issues/29#issuecomment-5516865251
+    title: "Implement ALP"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: apache/parquet-format
+    issue: 401
+    url: https://github.com/apache/parquet-format/issues/401#issuecomment-5516875195
+    title: "Support gorilla encoding for float numbers"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: timescale/timescaledb
+    issue: 2529
+    url: https://github.com/timescale/timescaledb/issues/2529#issuecomment-5516889507
+    title: "Compression improvements using lossy techniques"
+    status: posted
+    date: 2026-09-03

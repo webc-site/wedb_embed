@@ -11,4 +11,4 @@ pub use key::{
   prefix as compose_set_prefix, prefix_stack as compose_set_prefix_stack,
 };
 pub use meta::SetMeta;
-pub use opt::SetScanResult;
+pub use opt::{SetScanByMemberResult, SetScanResult};

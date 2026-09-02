@@ -84,7 +84,7 @@ pub use search::{
   parse_vector_from_slice, tokenize_tags, tokenize_text, tokenize_text_with_stopwords,
   unescape_tag_string,
 };
-pub use set::{SetMeta, SetScanResult};
+pub use set::{SetMeta, SetScanByMemberResult, SetScanResult};
 pub use sortedint::{IntoSortedintRange, SortedintMeta, SortedintRange, parse_range_spec};
 pub use stream::{
   NextStreamEntryIdStrategy, StreamAdd, StreamAutoClaim, StreamAutoClaimResult, StreamClaim,

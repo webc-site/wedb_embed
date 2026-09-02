@@ -810,3 +810,80 @@ fn test_single_key_fast_paths_and_empty_inputs() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_set_kvrocks_comprehensive_suite_and_scan_by_member() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. SSCAN_BY_MEMBER 游标范围扫描
+  let members = [
+    "user_100", "user_101", "user_102", "user_103", "user_104", "user_105",
+  ];
+  db.sadd("scan_set", &members)?;
+
+  let (next_cursor, batch1) = db.sscan_by_member("scan_set", None, None, Some(3))?;
+  assert_eq!(batch1.len(), 3);
+  assert!(next_cursor.is_some());
+  let c1 = next_cursor.unwrap();
+
+  let (next_cursor2, batch2) = db.sscan_by_member("scan_set", Some(&c1), None, Some(3))?;
+  assert_eq!(batch2.len(), 3);
+  assert!(next_cursor2.is_some());
+
+  let mut combined = batch1;
+  combined.extend(batch2);
+  assert_eq!(combined.len(), 6);
+
+  // 模式过滤扫描
+  let (_, pat_batch) = db.sscan_by_member("scan_set", None, Some(b"*_10[1-3]"), Some(10))?;
+  assert_eq!(pat_batch.len(), 3);
+
+  // 2. SPOP 边界：全量清空、单项弹出与空弹出
+  db.sadd("pop_set", &["p1", "p2", "p3", "p4", "p5"])?;
+  let single = db.spop_one("pop_set")?;
+  assert!(single.is_some());
+  assert_eq!(db.scard("pop_set")?, 4);
+
+  // 弹出超过剩余总数（触发全量 clear_prefix_in_batch 快速路径）
+  let all_popped = db.spop("pop_set", 100)?;
+  assert_eq!(all_popped.len(), 4);
+  assert_eq!(db.scard("pop_set")?, 0);
+  assert!(db.spop("pop_set", 1)?.is_empty());
+  assert_eq!(db.spop_one("pop_set")?, None);
+
+  // 3. SRANDMEMBER 快速路径与负数采样
+  db.sadd("rand_set", &["r1", "r2", "r3", "r4"])?;
+  let r_one = db.srandmember_one("rand_set")?;
+  assert!(r_one.is_some());
+  assert!(["r1", "r2", "r3", "r4"].contains(&std::str::from_utf8(&r_one.unwrap()).unwrap()));
+
+  // 负数允许重复采样
+  let dup_samples = db.srandmember("rand_set", -10)?;
+  assert_eq!(dup_samples.len(), 10);
+
+  // 4. SMOVE 边界
+  assert!(!db.smove("nonexistent_src", "rand_set", "r1")?);
+  assert!(!db.smove("rand_set", "rand_set_dst", "nonexistent_m")?);
+  assert!(db.smove("rand_set", "rand_set", "r1")?); // src == dst
+  assert!(db.smove("rand_set", "rand_set_dst", "r1")?);
+  assert_eq!(db.scard("rand_set_dst")?, 1);
+  assert!(!db.sismember("rand_set", "r1")?);
+
+  // 5. SINTERSTORE / SDIFFSTORE 清空目标键
+  db.sadd("diff_src1", &["a", "b"])?;
+  db.sadd("diff_src2", &["a", "b"])?;
+  db.sadd("diff_target", &["old1", "old2"])?;
+  // diff 为空，必须彻底删除 diff_target
+  let diff_empty_cnt = db.sdiffstore("diff_target", &["diff_src1", "diff_src2"])?;
+  assert_eq!(diff_empty_cnt, 0);
+  assert_eq!(db.scard("diff_target")?, 0);
+  assert!(db.smembers("diff_target")?.is_empty());
+
+  // 6. OVERWRITE_SET 空列表彻底删除
+  db.sadd("over_k", &["v1", "v2"])?;
+  assert_eq!(db.overwrite_set("over_k", &[] as &[&str])?, 0);
+  assert_eq!(db.scard("over_k")?, 0);
+
+  Ok(())
+}
