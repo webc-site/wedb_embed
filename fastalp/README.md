@@ -29,41 +29,21 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-- [Architecture Comparison & Engineering Optimizations](#architecture-comparison--engineering-optimizations)
-  - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection--zero-heap-allocation)
-  - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
-  - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
-  - [Zero-Multiplication LUT Decompression Acceleration](#zero-multiplication-lut-decompression-acceleration)
-  - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
-  - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
-  - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
-
-- [Overview](#overview)
-- [Usage](#usage)
-  - [Installation](#installation)
-  - [Basic Compression and Decompression](#basic-compression-and-decompression)
-  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
-  - [Single-Precision Floating-Point Data](#single-precision-floating-point-data)
-- [Features](#features)
-- [Architecture & Design](#architecture-design)
-  - [Compression Pipeline](#compression-pipeline)
-  - [Decompression Pipeline](#decompression-pipeline)
-- [Tech Stack](#tech-stack)
-- [Directory Structure](#directory-structure)
-- [Benchmarks & C++ Comparison](#benchmarks-c-comparison)
-  - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
-  - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
-  - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
   - [Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)](#real-world-physical-telemetry-benchmark-noaa-usgs-all-64-series)
 - [Architecture Comparison & Engineering Optimizations](#architecture-comparison-engineering-optimizations)
-  - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
-  - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
-  - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
-  - [Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration](#pure-register-simd-vectorized-decompression-hybrid-local-table-acceleration)
-  - [Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling](#two-pass-simd-vectorized-encoding-early-exit-sampling)
-  - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
-  - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
-  - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
+  - [Algorithmic Innovations on Compression Ratio (vs Reference C++)](#algorithmic-innovations-on-compression-ratio-vs-reference-c)
+    - [1. Decimal Division Exact Mode — Eliminating Multiplication Rounding Exceptions](#1-decimal-division-exact-mode-eliminating-multiplication-rounding-exceptions)
+    - [2. Adaptive Delta-ALP Differential Encoding — Breaking Global Dynamic Range Bounds](#2-adaptive-delta-alp-differential-encoding-breaking-global-dynamic-range-bounds)
+    - [3. Outlier Smoothing Isolation — Safeguarding Delta Bit-Width from Noise](#3-outlier-smoothing-isolation-safeguarding-delta-bit-width-from-noise)
+    - [4. Raw Fallback Safeguard Against Negative Compression](#4-raw-fallback-safeguard-against-negative-compression)
+  - [Engineering Micro-Architecture & Throughput Optimizations (vs Reference C++)](#engineering-micro-architecture-throughput-optimizations-vs-reference-c)
+    - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
+    - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
+    - [Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration](#pure-register-simd-vectorized-decompression-hybrid-local-table-acceleration)
+    - [Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling](#two-pass-simd-vectorized-encoding-early-exit-sampling)
+    - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
+    - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
+    - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
 
 ## Overview
 
@@ -379,9 +359,44 @@ Evaluated side-by-side on 64 continuous industrial, marine, and meteorological o
 
 ## Architecture Comparison & Engineering Optimizations
 
-Compared with the reference C++ implementation, `fastalp` achieves superior compression ratio and memory efficiency in safe pure Rust:
+Compared with the reference C++ implementation, `fastalp` not only multiplies throughput performance, but also introduces major algorithmic innovations that break through the compression ratio limitations of the reference implementation.
 
-### Constant Sequence Fast Detection & Zero-Heap Allocation
+### Algorithmic Innovations on Compression Ratio (vs Reference C++)
+
+#### 1. Decimal Division Exact Mode — Eliminating Multiplication Rounding Exceptions
+- **Reference C++ Limitation**:<br>
+  C++ ALP exclusively uses multiplication for inverse reconstruction: `v = (encoded * frac_exp) / fac`. Because binary IEEE 754 cannot represent decimal fractions like `0.1` exactly, multiplication introduces unavoidable roundoff discrepancies (e.g. `123 * 0.1` evaluates to `12.30000000000000071... != 12.3`). This causes the reference implementation to misclassify clean decimal measurements as "Exceptions", requiring an 8-byte original float plus a 2-byte index (an 80-bit penalty per outlier in standard 1024-element blocks). In real-world weather and oceanographic telemetry, this inflated exception count severely degrades compression ratios.
+- **fastalp Algorithmic Innovation**:<br>
+  `fastalp` introduces **Decimal Division Exact Mode (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**. During parameter evaluation and decoding, dividing by powers of ten (e.g. `/ 10.0`) reconstructs the exact original IEEE 754 bit pattern without truncation error.
+  - **Compression Gain**: On real-world time-series (such as NOAA tidal heights and surface temperatures), the exception count drops from hundreds in C++ ALP to **zero**. Eliminating the exception dictionary shrinks compressed size by an additional **20% to 38%** (e.g. ocean tidal series compression improves from 5.32x to 8.51x).
+  - **Zero-Latency Decoding**: To prevent hardware division latency from impacting decompression throughput, `fastalp` couples this with a 256-entry stack-allocated lookup table (LUT), preserving maximum compression ratio while sustaining 55+ GB/s throughput.
+
+#### 2. Adaptive Delta-ALP Differential Encoding — Breaking Global Dynamic Range Bounds
+- **Reference C++ Limitation**:<br>
+  C++ ALP relies solely on Frame-of-Reference (FOR) base subtraction: `stored = encoded - min_encoded`. For continuous physical time-series (such as diurnal temperature cycles, tidal oscillations, river stage ramps, and monotonic metric counters), the dynamic range `(max - min)` across a 1024-element block is wide (often spanning thousands of integer units, requiring 12 to 16 bits per element). FOR cannot exploit the strong local correlation between adjacent points.
+- **fastalp Algorithmic Innovation**:<br>
+  `fastalp` introduces **Adaptive Delta-ALP (`TYPE_F64_DELTA` / `TYPE_F32_DEC_DELTA`)**:
+  1. **Adaptive Benefit Evaluation**: Dynamically evaluates the bit-width required by FOR versus first-order differences (`delta[i] = encoded[i] - encoded[i-1]`), activating Delta-ALP only when differences yield measurable savings;
+  2. **Tightly Packed Adjacent Differences**: Stores the initial element as a baseline, bitpacking `(delta - min_delta)`. Physical sensor delta bit-widths routinely collapse to 1 to 6 bits;
+  3. **Compression Gain**: Yields a **50% to 90%** size reduction on smooth and monotonic time-series. In monotonic ramp benchmarks, bits per value fall from 68.09 b/v in the reference implementation to 0.16 b/v, elevating compression ratio to **390x** (compared to 0.94x in C++ ALP).
+
+#### 3. Outlier Smoothing Isolation — Safeguarding Delta Bit-Width from Noise
+- **Reference C++ Limitation**:<br>
+  In traditional differential encoding pipelines, a single sensor spike or outlier pollutes two adjacent deltas (the jump upward and the drop downward), causing the maximum delta range across the entire block to explode and degrading bit-width for all points.
+- **fastalp Algorithmic Innovation**:<br>
+  `fastalp` designs an **Outlier Smoothing Isolation** mechanism for Delta encoding: when a floating-point exception occurs, the delta stream records an increment of 0 (carrying forward the previous valid integer), while the true outlier float is isolated in the patch dictionary. On decompression, a branchless register prefix-sum pass reconstructs the base integers before patching outliers in-place. This preserves minimal delta bit-widths without compromising 100% bit-exact lossless fidelity.
+
+#### 4. Raw Fallback Safeguard Against Negative Compression
+- **Reference C++ Limitation**:<br>
+  On high-entropy unstructured floats or high-precision geographic coordinates (such as POI latitude/longitude), exception tables expand beyond uncompressed payload size, leading to negative compression (down to 0.51x, doubling storage size).
+- **fastalp Algorithmic Innovation**:<br>
+  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a 3-byte metadata header, the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
+
+---
+
+### Engineering Micro-Architecture & Throughput Optimizations (vs Reference C++)
+
+#### Constant Sequence Fast Detection & Zero-Heap Allocation
 
 - **Reference C++ Implementation**:<br>
   Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
@@ -389,36 +404,28 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
   Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
   Directly emits a 5-byte header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
 
-### Raw Fallback Safeguard Against Negative Compression
-
-- **Reference C++ Implementation**:<br>
-  Lacks safeguard against data expansion; on non-decimal double datasets with high exception rates, the exception table expands beyond original payload size (e.g. `poi_lat` yields 0.51x, `air_sensor` yields 0.52x).<br>
-- **fastalp Optimization**:<br>
-  Monitors estimated payload size during encoding; when compressed size exceeds uncompressed input plus header overhead, automatically falls back to `TYPE_F64_RAW` or `TYPE_F32_RAW` mode;<br>
-  Writes a 3-byte header and stores raw uncompressed bytes, restored via zero-copy `copy_nonoverlapping`, eliminating negative compression and raising dataset average ratio to 2.29x.
-
-### Zero-Heap Direct Streaming Decompression
+#### Zero-Heap Direct Streaming Decompression
 
 - **Reference C++ Implementation**:<br>
   Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
 - **fastalp Optimization**:<br>
   Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
 
-### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
+#### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
 
 - **Reference C++ Implementation**:<br>
   Inner loop relies on two-stage heap buffering and scalar arithmetic, failing to saturate modern SIMD execution pipelines.<br>
 - **fastalp Optimization**:<br>
   Eliminates large stack tables that induce indirect gather memory stalls; bit-widths of 8, 16, 32, and 64 bits execute pure linear register arithmetic with a dedicated `fac1` path (omitting integer multiplication), enabling LLVM to emit optimal SIMD vector instructions; 1, 2, and 4 bit-widths utilize tiny register-resident tables, driving single-core decode throughput up to 57+ GB/s.
 
-### Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling
+#### Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling
 
 - **Reference C++ Implementation**:<br>
   Complex multi-level sampling logic with dense conditional branches inside the encoding loop, fragmenting basic blocks.<br>
 - **fastalp Optimization**:<br>
   Introduces an `EARLY_EXIT_BIT_WIDTH` threshold during sampling to halt immediately once a high-compression model is identified, bypassing wasteful checks across 135 parameter combinations; adopts a Two-Pass decoupled encoding architecture (Pass 1 branchless register-level float-to-int rounding, Pass 2 centralized exception verification), eliminating per-element pipeline stalls and driving batch compression throughput up to 5.4+ GB/s.
 
-### Pure 128-bit Register Bitpacker
+#### Pure 128-bit Register Bitpacker
 
 - **Reference C++ Implementation**:<br>
   Generates extensive template code across multiple compilation units, creating large binaries with architecture-specific intrinsics.<br>
@@ -426,14 +433,14 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
   Maintains a sliding bit window with a single 128-bit register accumulator (`acc: u128`, `bits_in_acc: u32`), executing 64-bit word writes and reads in single instructions;<br>
   Pure safe Rust with zero external C++ toolchain dependencies, cross-compiling seamlessly for x86_64, ARM64, and WebAssembly.
 
-### Sample-Space Cost Lower-Bound Pruning
+#### Sample-Space Cost Lower-Bound Pruning
 
 - **Reference C++ Implementation**:<br>
   Evaluates all samples across 135 `(exp, fac)` parameter combinations unconditionally.<br>
 - **fastalp Optimization**:<br>
   Applies dynamic lower-bound pruning: breaks inner verification immediately once running exception penalty (`exceptions * penalty`) surpasses current global `best_cost`, skipping unnecessary parameter iterations.
 
-### Branchless Arithmetic & Precomputed Constants
+#### Branchless Arithmetic & Precomputed Constants
 
 - Pre-extracts exponent factor tables outside inner loops to eliminate repeated array lookups;<br>
 - Calculates bit-width using hardware CLZ instructions and applies compile-time bitmasks to eliminate conditional branch mispredictions.
@@ -465,41 +472,21 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-- [架构对比与工程优化设计](#架构对比与工程优化设计)
-  - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
-  - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
-  - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-  - [局部查找表解压加速](#局部查找表解压加速)
-  - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
-  - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
-  - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
-
-- [功能特性](#功能特性)
-- [使用示例](#使用示例)
-  - [添加依赖](#添加依赖)
-  - [基础压缩与解压](#基础压缩与解压)
-  - [内存缓冲区复用](#内存缓冲区复用)
-  - [单精度浮点数据处理](#单精度浮点数据处理)
-- [核心特性](#核心特性)
-- [架构设计](#架构设计)
-  - [压缩流程](#压缩流程)
-  - [解压流程](#解压流程)
-- [技术栈](#技术栈)
-- [目录结构](#目录结构)
-- [性能评测与 C++ 原版对比](#性能评测与-c-原版对比)
-  - [测试环境与编译配置](#测试环境与编译配置)
-  - [同机实测吞吐量对比](#同机实测吞吐量对比)
-  - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
   - [真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)](#真实物理观测时序数据集对比-noaa-usgs-全量-64-时序)
 - [架构对比与工程优化设计](#架构对比与工程优化设计)
-  - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
-  - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
-  - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-  - [纯寄存器 SIMD 向量化解压与局部查表混合加速](#纯寄存器-simd-向量化解压与局部查表混合加速)
-  - [Two-Pass 向量化编码转换与采样早期退出](#two-pass-向量化编码转换与采样早期退出)
-  - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
-  - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
-  - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
+  - [核心压缩率算法优化对比 (vs C++ 原版)](#核心压缩率算法优化对比-vs-c-原版)
+    - [1. 十进制精确除法重构模式 (Decimal Division Mode) —— 根治乘法舍入伪异常](#1-十进制精确除法重构模式-decimal-division-mode-根治乘法舍入伪异常)
+    - [2. 自适应一阶差分时序编码 (Delta-ALP) —— 突破全局极值跨度瓶颈](#2-自适应一阶差分时序编码-delta-alp-突破全局极值跨度瓶颈)
+    - [3. 异常点前值平滑隔离补丁 —— 杜绝尖峰噪声污染差分流](#3-异常点前值平滑隔离补丁-杜绝尖峰噪声污染差分流)
+    - [4. 原始保底机制消除负压缩 (Raw Fallback Safeguard)](#4-原始保底机制消除负压缩-raw-fallback-safeguard)
+  - [工程微架构与吞吐性能优化 (vs C++ 原版)](#工程微架构与吞吐性能优化-vs-c-原版)
+    - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
+    - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
+    - [纯寄存器 SIMD 向量化解压与局部查表混合加速](#纯寄存器-simd-向量化解压与局部查表混合加速)
+    - [Two-Pass 向量化编码转换与采样早期退出](#two-pass-向量化编码转换与采样早期退出)
+    - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
+    - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
+    - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
 
 ## 功能特性
 
@@ -815,9 +802,44 @@ fastalp/
 
 ## 架构对比与工程优化设计
 
-相比 C++ 原版实现，`fastalp` 在纯安全 Rust 下通过以下架构革新提升压缩率与内存效率：
+相比 C++ 原版实现，`fastalp` 不仅在吞吐性能上实现成倍飞跃，更在底层算法上做出了重大革新，彻底突破了 C++ 原版在特定场景下的压缩率瓶颈。
 
-### 全等序列常数探测与零堆分配
+### 核心压缩率算法优化对比 (vs C++ 原版)
+
+#### 1. 十进制精确除法重构模式 (Decimal Division Mode) —— 根治乘法舍入伪异常
+- **C++ 原版局限**：<br>
+  C++ ALP 仅采用基于乘法的逆变换 `v = (encoded * frac_exp) / fac`。由于二进制无法完全精确表示 `0.1`，浮点乘法会引入不可逆的微小截断误差（例如 `123 * 0.1` 的实际计算结果为 `12.30000000000000071...`，并不等于十进制输入的 `12.3`）。这导致原版 ALP 将大量原本为严格十进制的真实物理数据误判为“无法无损还原的异常点（Exceptions）”，每个异常点在标准 1024 块中必须单独记录 8 字节原始浮点数 + 2 字节位置索引（单个异常代价高达 80 比特！）。在真实气象与潮位观测时序中，异常点比例居高不下，极大地蚕食了压缩率。
+- **fastalp 算法革新**：<br>
+  `fastalp` 引入**十进制精确除法重构模式 (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**。在采样与重构中，通过直接除以精确的十进制整数幂（如 `/ 10.0`），使截断误差彻底归零。
+  - **压缩收益**：在 NOAA 海洋潮位、地表气温等真实时序中，异常点数量直接由 C++ 原版的数百个骤降至 **0 个**！省去庞大的异常字典开销，压缩体积直接额外缩减 **20% ~ 38%**（如潮位数据压缩比从 C++ 的 5.32x 提升至 8.51x）。
+  - **性能解耦**：为防止硬件浮点除法的高延迟拖累解压速度，`fastalp` 创新性地结合了 256 项栈上微型查表（LUT），在享受 0 异常最高压缩率的同时，维持 55+ GB/s 的极限吞吐。
+
+#### 2. 自适应一阶差分时序编码 (Delta-ALP) —— 突破全局极值跨度瓶颈
+- **C++ 原版局限**：<br>
+  C++ ALP 仅采用全局基准偏移（Frame-of-Reference, FOR）：`stored = encoded - min_encoded`。对于真实世界具有物理连续性的时序数据（如气温昼夜周期、水尺高度起伏、河流流量平缓变化、单调递增计数器），1024 个点内的数据极值跨度 `(max - min)` 往往很大（如温度跨越数十度，对应整型跨度达数千），这强制该数据块内所有 1024 个点必须采用 12~16 位的打包位宽，完全无法利用时序数据相邻点极度接近的强局部相关性。
+- **fastalp 算法革新**：<br>
+  `fastalp` 首创自适应 **Delta-ALP (`TYPE_F64_DELTA` / `TYPE_F32_DEC_DELTA`) 算法**：
+  1. **自适应收益决策**：在采样阶段动态比对 FOR 全局位宽与一阶差分位宽（`delta[i] = encoded[i] - encoded[i-1]`），仅在差分确有收益时才启用，兼顾乱序与有序时序；
+  2. **相邻差分紧凑打包**：以首元素为基准，对相邻差分序列 `(delta - min_delta)` 进行位打包。物理传感序列的差分位宽通常直接骤降至 1~6 位；
+  3. **压缩收益**：在单调与平滑时序上，压缩体积较 C++ 原版缩减 **50% ~ 90%**。在单调递增时序测试中，每点占用由原版的 68.09 bits 暴降至 0.16 bits，压缩比跃升至 **390x**（C++ 原版仅为 0.94x）。
+
+#### 3. 异常点前值平滑隔离补丁 —— 杜绝尖峰噪声污染差分流
+- **C++ 原版局限**：<br>
+  在传统的差分压缩流水线中，若遭遇单点仪器噪声或异常尖峰，该异常点会同时污染相邻的两个差分值（突变上升与突变下跌），导致整块数据的最大差分跨度剧烈膨胀，使得整个数据块的打包位宽急剧恶化。
+- **fastalp 算法革新**：<br>
+  `fastalp` 在 Delta 编码时设计了**前值平滑隔离补丁机制**：当遇到无法缩放的浮点异常点时，差分流中记录增量为 0（平滑沿用前一个有效整数），将真实的异常浮点数独立提取进 Patch 字典。解码时，先以单遍无分支前缀和流水线还原基准整型，再就地修补异常点。既保护了差分位流不受尖峰干扰、维持最低位宽，又确保了 100% 比特精确无损。
+
+#### 4. 原始保底机制消除负压缩 (Raw Fallback Safeguard)
+- **C++ 原版局限**：<br>
+  遇到高熵非结构化浮点或高精度随机坐标（如 POI 经纬度、高频电磁传感）时，原版 C++ ALP 的异常表膨胀导致体积比原始数据还要大（负压缩，压缩比低至 0.51x，产生 2 倍空间膨胀）。
+- **fastalp 算法革新**：<br>
+  在编码流水线末端精确计算压缩产物大小；一旦发现压缩大小超过原始数据加上 3 字节元数据头部，自动瞬间回退至 `TYPE_RAW` 模式，将数据按原样存储。在标准 31 数据集评测中，彻底杜绝了 0.51x 的膨胀，全量数据集平均压缩比从 C++ 的 1.94x 提高到了 2.29x。
+
+---
+
+### 工程微架构与吞吐性能优化 (vs C++ 原版)
+
+#### 全等序列常数探测与零堆分配
 
 - **C++ 原版实现**：<br>
   面对全量常数序列时，依然需要执行完整的样本采集、临时整型数组转换与位宽分析，端到端耗时达 9.25 微秒。<br>
@@ -825,36 +847,28 @@ fastalp/
   在压缩入口通过底层原始比特比对（`v.is_exact_same(first)`，严格区分 `+0.0` 与 `-0.0` 符号位）；<br>
   命中后直接写入 5 字节紧凑头部与基准值（`bit_width = 0`），跳过所有采样与中间数组分配，压缩耗时降至 351 纳秒，相对提速 26 倍。
 
-### 原始保底机制消除负压缩
-
-- **C++ 原版实现**：<br>
-  缺乏数据膨胀防护机制；在遇到非十进制高频双精度浮点时，异常表膨胀导致体积反超原始数据（如 `poi_lat` 压缩率仅 0.51x，`air_sensor` 仅 0.52x）。<br>
-- **fastalp 优化**：<br>
-  压缩时预估编码体积；当总开销超过原始字节数加上头部后，自动切换为 `TYPE_F64_RAW` 或 `TYPE_F32_RAW` 保底模式；<br>
-  以 3 字节头部存储元数据并直存原始字节流，解码时通过 `copy_nonoverlapping` 零拷贝恢复，消除负压缩，全数据集总体积由 130KB 降至 110KB，平均压缩率提升至 2.29x。
-
-### 零堆内存分配与单遍流式解码
+#### 零堆内存分配与单遍流式解码
 
 - **C++ 原版实现**：<br>
   采用两阶段解码架构：阶段一解包位流到中间堆数组，阶段二遍历中间数组计算浮点逆缩放并修补异常，引发 8 字节/元素的堆分配与 L1/L2 缓存挤占。<br>
 - **fastalp 优化**：<br>
   采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；对外提供 `compress_into` 与 `decompress_into` 零分配接口。
 
-### 纯寄存器 SIMD 向量化解压与局部查表混合加速
+#### 纯寄存器 SIMD 向量化解压与局部查表混合加速
 
 - **C++ 原版实现**：<br>
   解包内层循环依赖两阶段堆缓冲传递与标量乘除运算，在非连续加载下难以充分饱和向量单元。<br>
 - **fastalp 优化**：<br>
   摒弃会引发间接 gather 寻址与缓存停顿的大尺寸表；针对 8、16、32、64 位宽直接采用纯寄存器线性算术指令流，配合 `fac1` 路径消除整数乘法，使 LLVM 自动生成 SIMD 矢量流水；针对 1、2、4 超小位宽采用微型寄存器局部表快速解包，单核解压吞吐跃升至 57+ GB/s。
 
-### Two-Pass 向量化编码转换与采样早期退出
+#### Two-Pass 向量化编码转换与采样早期退出
 
 - **C++ 原版实现**：<br>
   多层采样逻辑复杂度高，编码循环混合了密集条件分支，导致基本块碎片化。<br>
 - **fastalp 优化**：<br>
   在压缩采样中引入 `EARLY_EXIT_BIT_WIDTH` 优质参数即停机制，避免对 135 种组合的盲目遍历；在数据编码阶段采用 Two-Pass 分离架构（Pass 1 纯寄存器无分支舍入转换整型，Pass 2 集中校验异常），彻底消除单元素内的多重分支停顿，批量压缩吞吐飙升至 5.4+ GB/s。
 
-### 纯寄存器 128 位累加器与紧凑位打包
+#### 纯寄存器 128 位累加器与紧凑位打包
 
 - **C++ 原版实现**：<br>
   采用多层宏与模板元编程生成大量打包函数，编译生成的目标代码体积庞大，且高度耦合特定硬件平台的指令扩展。<br>
@@ -862,14 +876,14 @@ fastalp/
   采用单一 `u128` 寄存器作为滑动窗口（`acc: u128` 与 `bits_in_acc: u32`），单指令 64 位写入或读取；<br>
   纯安全 Rust 实现，不依赖外部 C++ 编译链，天然跨平台支持 x86_64、ARM64 以及 WebAssembly。
 
-### 采样搜索代价下界剪枝
+#### 采样搜索代价下界剪枝
 
 - **C++ 原版实现**：<br>
   参数搜索时遍历 135 种 `(exp, fac)` 组合的全部样本，遍历开销较高。<br>
 - **fastalp 优化**：<br>
   引入代价下界动态剪枝：在单次采样的内层循环中，若已累计的异常惩罚（`exceptions * penalty`）已超过当前全局最优代价 `best_cost`，则立即中断探测，跳过剩余的所有样本测试，显著降低参数搜索耗时。
 
-### 编译期常量提取与无分支位运算
+#### 编译期常量提取与无分支位运算
 
 - Exponent factor 预先在外层提取，消除采样与编码循环内对全局表的重复数组索引；<br>
 - 采用硬件级前导零指令（CLZ）计算位宽，利用常量位掩码替代分支判断，减少流水线损耗。
