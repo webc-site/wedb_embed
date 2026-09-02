@@ -309,15 +309,30 @@ where
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
+    let actual_start = meta.head;
+    let actual_end = meta.tail.wrapping_sub(1);
     let mut pivot_offset = None;
-    for offset in 0..len {
-      let idx = meta.head.wrapping_add(offset as u64);
-      let item_k = composer.key_for_idx(idx);
-      if let Some(v) = data_ks.get(item_k)?
-        && v.as_ref() == pivot_bytes
-      {
-        pivot_offset = Some(offset);
-        break;
+
+    if actual_start <= actual_end {
+      let start_k = compose_list_item(&kc, key_bytes, actual_start);
+      let end_k = compose_list_item(&kc, key_bytes, actual_end);
+      for (offset, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).enumerate() {
+        let entry = g?;
+        if entry.value() == pivot_bytes {
+          pivot_offset = Some(offset);
+          break;
+        }
+      }
+    } else {
+      for offset in 0..len {
+        let idx = meta.head.wrapping_add(offset as u64);
+        let item_k = composer.key_for_idx(idx);
+        if let Some(v) = data_ks.get(item_k)?
+          && v.as_ref() == pivot_bytes
+        {
+          pivot_offset = Some(offset);
+          break;
+        }
       }
     }
 
@@ -393,37 +408,68 @@ where
 
     let elem_bytes = elem.as_ref();
     let mut to_delete_offsets = Vec::new();
-    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
-    let mut check_match = |offset: usize| -> Result<bool> {
-      let idx = meta.head.wrapping_add(offset as u64);
-      let item_k = composer.key_for_idx(idx);
-      if let Some(v) = data_ks.get(item_k)?
-        && v.as_ref() == elem_bytes
-      {
-        to_delete_offsets.push(offset);
-        if to_delete_offsets.len() >= target_del_limit {
-          return Ok(false);
-        }
-      }
-      Ok(true)
-    };
+    let actual_start = meta.head;
+    let actual_end = meta.tail.wrapping_sub(1);
 
-    if count >= 0 {
-      for offset in 0..len {
-        if !check_match(offset)? {
-          break;
+    if actual_start <= actual_end {
+      let start_k = compose_list_item(&kc, key_bytes, actual_start);
+      let end_k = compose_list_item(&kc, key_bytes, actual_end);
+      if count >= 0 {
+        for (offset, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).enumerate() {
+          let entry = g?;
+          if entry.value() == elem_bytes {
+            to_delete_offsets.push(offset);
+            if to_delete_offsets.len() >= target_del_limit {
+              break;
+            }
+          }
         }
+      } else {
+        for (i, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).rev().enumerate() {
+          let entry = g?;
+          if entry.value() == elem_bytes {
+            let offset = len - 1 - i;
+            to_delete_offsets.push(offset);
+            if to_delete_offsets.len() >= target_del_limit {
+              break;
+            }
+          }
+        }
+        to_delete_offsets.reverse();
       }
     } else {
-      for offset in (0..len).rev() {
-        if !check_match(offset)? {
-          break;
+      let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
+      let mut check_match = |offset: usize| -> Result<bool> {
+        let idx = meta.head.wrapping_add(offset as u64);
+        let item_k = composer.key_for_idx(idx);
+        if let Some(v) = data_ks.get(item_k)?
+          && v.as_ref() == elem_bytes
+        {
+          to_delete_offsets.push(offset);
+          if to_delete_offsets.len() >= target_del_limit {
+            return Ok(false);
+          }
         }
+        Ok(true)
+      };
+
+      if count >= 0 {
+        for offset in 0..len {
+          if !check_match(offset)? {
+            break;
+          }
+        }
+      } else {
+        for offset in (0..len).rev() {
+          if !check_match(offset)? {
+            break;
+          }
+        }
+        to_delete_offsets.reverse();
       }
-      to_delete_offsets.reverse();
     }
 
     if to_delete_offsets.is_empty() {
@@ -434,14 +480,14 @@ where
     let mut batch = self.batch();
 
     if deleted_count == meta.base.size {
-      for offset in 0..len {
-        let idx = meta.head.wrapping_add(offset as u64);
-        batch.rm_data(composer.key_for_idx(idx));
-      }
+      let prefix = compose_list_prefix_stack(&kc, key_bytes);
+      clear_prefix_in_batch(self.data(), &prefix, &mut batch)?;
       batch.rm_meta(&meta_k);
       batch.commit()?;
       return Ok(deleted_count);
     }
+
+    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
 
     let mut write_idx = 0usize;
     let mut del_idx = 0usize;
