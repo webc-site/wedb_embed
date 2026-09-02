@@ -4,7 +4,8 @@ use rapidhash::{HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as
 
 use crate::{
   api::hash::{
-    CachedFieldState, HashFieldPair, HashRandField, HashScanResult, ceil_div_1000,
+    CachedFieldState, HashFieldPair, HashRandField, HashScanByFieldResult, HashScanResult,
+    ceil_div_1000,
     r#const::{
       ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING, ERR_INCREMENT_NAN_OR_INFINITY,
       ERR_INCREMENT_OVERFLOW, HASH_EXPIRE_COND_FAILED, HASH_EXPIRE_DELETED, HASH_EXPIRE_SET_OK,
@@ -230,6 +231,40 @@ where
   }
 
   #[inline]
+  pub fn with_hget<K: AsRef<[u8]>, F: AsRef<[u8]>, R>(
+    &self,
+    key: K,
+    field: F,
+    f: impl FnOnce(&[u8]) -> R,
+  ) -> Result<Option<R>> {
+    let key_bytes = key.as_ref();
+    let field_bytes = field.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(None),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(None);
+    }
+
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(field_bytes);
+
+    if let Some(raw) = self.data().get(item_k)?
+      && let Some((_, payload)) = meta.decode_live_subkey_value(&raw, now_ms)
+    {
+      Ok(Some(f(payload)))
+    } else {
+      Ok(None)
+    }
+  }
+
+  #[inline]
   pub fn hset<K: AsRef<[u8]>, F: AsRef<[u8]>, V: AsRef<[u8]>>(
     &self,
     key: K,
@@ -247,12 +282,6 @@ where
     let (mut meta, metadata_existed) =
       prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
 
-    if metadata_existed && meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
-
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
 
@@ -265,10 +294,18 @@ where
 
       let mut inserted_count = 0usize;
       if metadata_existed {
-        let state_entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
-        match state_entry.kind {
-          HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
+        let state_kind = if let Some(raw) = data_ks.get(item_k)? {
+          decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
+        } else {
+          HashFieldStateKind::Missing
+        };
+        match state_kind {
+          HashFieldStateKind::Missing => {
             meta.apply_missing_to_persistent();
+            inserted_count = 1;
+          }
+          HashFieldStateKind::ExpiredTTLPhysical => {
+            meta.apply_ttl_to_persistent();
             inserted_count = 1;
           }
           HashFieldStateKind::LiveTTL => {
@@ -331,8 +368,12 @@ where
       };
 
       match entry.kind {
-        HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
+        HashFieldStateKind::Missing => {
           meta.apply_missing_to_persistent();
+          inserted_count += 1;
+        }
+        HashFieldStateKind::ExpiredTTLPhysical => {
+          meta.apply_ttl_to_persistent();
           inserted_count += 1;
         }
         HashFieldStateKind::LiveTTL => {
@@ -379,7 +420,47 @@ where
     field: F,
     val: V,
   ) -> Result<bool> {
-    self.hsetex(key, &[(field, val)], [HSet::Fnx])
+    let key_bytes = key.as_ref();
+    let field_bytes = field.as_ref();
+    let val_bytes = val.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut batch = self.batch_with_capacity(2);
+    let (mut meta, metadata_existed) =
+      prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
+
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(field_bytes);
+    let data_ks = self.data();
+
+    if metadata_existed {
+      let state_kind = if let Some(raw) = data_ks.get(item_k)? {
+        decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
+      } else {
+        HashFieldStateKind::Missing
+      };
+
+      match state_kind {
+        HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
+          return Ok(false);
+        }
+        HashFieldStateKind::ExpiredTTLPhysical => {
+          meta.apply_ttl_to_persistent();
+        }
+        HashFieldStateKind::Missing => {
+          meta.apply_missing_to_persistent();
+        }
+      }
+    } else {
+      meta.apply_missing_to_persistent();
+    }
+
+    meta.with_encoded_subkey_value(val_bytes, 0, |enc| batch.insert_data(item_k, enc));
+    batch.insert_meta(&meta_k, &meta.encode());
+    batch.commit()?;
+    Ok(true)
   }
 
   #[inline]
@@ -403,6 +484,7 @@ where
     };
 
     let mut deleted = 0usize;
+    let mut physical_removed = 0usize;
     let mut batch = self.batch_with_capacity(fields.len() + 1);
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
@@ -414,6 +496,7 @@ where
         && let Some((exp, _)) = meta.decode_subkey_value(&raw)
       {
         batch.rm_weak_data(item_k);
+        physical_removed = 1;
         if !is_field_expired(exp, now_ms) {
           deleted = 1;
           if exp == 0 {
@@ -437,6 +520,7 @@ where
           && let Some((exp, _)) = meta.decode_subkey_value(&raw)
         {
           batch.rm_weak_data(item_k);
+          physical_removed += 1;
           if !is_field_expired(exp, now_ms) {
             deleted += 1;
             if exp == 0 {
@@ -451,7 +535,7 @@ where
       }
     }
 
-    if deleted > 0 {
+    if physical_removed > 0 {
       if meta.base.size == 0 {
         batch.rm_meta(&meta_k);
       } else {
@@ -663,36 +747,38 @@ where
     let (mut meta, metadata_existed) =
       prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
 
-    if metadata_existed && meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
-
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let item_k = composer.key_for_field(field_bytes);
 
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
-    let (cur_val, is_new, target_expire) = if metadata_existed {
+    let (cur_val, is_missing, is_expired_ttl, target_expire) = if metadata_existed {
       match data_ks.get(item_k)? {
-        Some(raw) => match meta.decode_live_subkey_value(&raw, now_ms) {
-          Some((exp, payload)) => (parse_hash_integer(payload)?, false, exp),
-          None => (0i64, true, 0u64),
+        Some(raw) => match meta.decode_subkey_value(&raw) {
+          Some((exp, payload)) => {
+            if is_field_expired(exp, now_ms) {
+              (0i64, false, true, 0u64)
+            } else {
+              (parse_hash_integer(payload)?, false, false, exp)
+            }
+          }
+          None => (0i64, true, false, 0u64),
         },
-        None => (0i64, true, 0u64),
+        None => (0i64, true, false, 0u64),
       }
     } else {
-      (0i64, true, 0u64)
+      (0i64, true, false, 0u64)
     };
 
     let new_val = cur_val
       .checked_add(step)
       .ok_or_else(|| Error::invalid_data(ERR_INCREMENT_OVERFLOW))?;
 
-    if is_new {
+    if is_missing {
       meta.apply_missing_to_persistent();
+    } else if is_expired_ttl {
+      meta.apply_ttl_to_persistent();
     }
 
     let mut itoa_buf = itoa::Buffer::new();
@@ -723,28 +809,28 @@ where
     let (mut meta, metadata_existed) =
       prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
 
-    if metadata_existed && meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
-
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let item_k = composer.key_for_field(field_bytes);
 
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
-    let (cur_val, is_new, target_expire) = if metadata_existed {
+    let (cur_val, is_missing, is_expired_ttl, target_expire) = if metadata_existed {
       match data_ks.get(item_k)? {
-        Some(raw) => match meta.decode_live_subkey_value(&raw, now_ms) {
-          Some((exp, payload)) => (parse_hash_float(payload)?, false, exp),
-          None => (0.0f64, true, 0u64),
+        Some(raw) => match meta.decode_subkey_value(&raw) {
+          Some((exp, payload)) => {
+            if is_field_expired(exp, now_ms) {
+              (0.0f64, false, true, 0u64)
+            } else {
+              (parse_hash_float(payload)?, false, false, exp)
+            }
+          }
+          None => (0.0f64, true, false, 0u64),
         },
-        None => (0.0f64, true, 0u64),
+        None => (0.0f64, true, false, 0u64),
       }
     } else {
-      (0.0f64, true, 0u64)
+      (0.0f64, true, false, 0u64)
     };
 
     let new_val = cur_val + step;
@@ -752,8 +838,10 @@ where
       return Err(Error::invalid_data(ERR_INCREMENT_NAN_OR_INFINITY));
     }
 
-    if is_new {
+    if is_missing {
       meta.apply_missing_to_persistent();
+    } else if is_expired_ttl {
+      meta.apply_ttl_to_persistent();
     }
 
     let mut f_buf = zmij::Buffer::new();
@@ -946,6 +1034,84 @@ where
     })?;
 
     let next_cursor = if has_more { cursor + matched.len() } else { 0 };
+    Ok((next_cursor, matched))
+  }
+
+  #[inline]
+  pub fn hscan_by_field<K: AsRef<[u8]>, C: AsRef<[u8]>>(
+    &self,
+    key: K,
+    cursor_field: C,
+    limit: usize,
+    pattern: Option<&[u8]>,
+  ) -> Result<HashScanByFieldResult> {
+    if limit == 0 {
+      return Ok((None, Vec::new()));
+    }
+
+    let key_bytes = key.as_ref();
+    let cursor_bytes = cursor_field.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok((None, Vec::new())),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok((None, Vec::new()));
+    }
+
+    let prefix_buf = compose_hash_prefix_stack(&kc, key_bytes);
+    let prefix = prefix_buf.as_slice();
+    let prefix_len = prefix.len();
+    let end_bound = prefix_upper_bound(prefix);
+    let end_ref = match &end_bound {
+      Bound::Excluded(b) => Bound::Excluded(b.as_slice()),
+      _ => Bound::Unbounded,
+    };
+
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let start_ref = if cursor_bytes.is_empty() {
+      Bound::Included(prefix)
+    } else {
+      Bound::Excluded(composer.key_for_field(cursor_bytes))
+    };
+
+    let is_match_all = match pattern {
+      Some(p) => p == b"*",
+      None => true,
+    };
+    let pat = pattern.unwrap_or(b"*");
+
+    let mut matched = Vec::with_capacity(limit);
+
+    for g in self.data().range((start_ref, end_ref)) {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(prefix) {
+        break;
+      }
+      let field_bytes = &k[prefix_len..];
+
+      if let Some((_, payload)) = meta.decode_live_subkey_value(entry.value(), now_ms)
+        && (is_match_all || matches_glob_bytes(pat, field_bytes))
+      {
+        matched.push((field_bytes.to_vec(), payload.to_vec()));
+        if matched.len() >= limit {
+          break;
+        }
+      }
+    }
+
+    let next_cursor = if matched.len() == limit {
+      matched.last().map(|(f, _)| f.clone())
+    } else {
+      None
+    };
+
     Ok((next_cursor, matched))
   }
 
