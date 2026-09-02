@@ -1,6 +1,6 @@
 use bitcode::{Decode, Encode};
 
-/// Domain operation (aligned with Kvrocks DistanceUnit).
+/// Distance unit enumeration aligned with Kvrocks DistanceUnit (m, km, ft, mi).
 /// 距离单位（对标 Kvrocks DistanceUnit）
 #[derive(
   Debug,
@@ -34,7 +34,7 @@ impl DistanceUnit {
     s.parse().ok()
   }
 
-  /// Returns or computes calculated value.
+  /// Returns multiplication factor for conversion to meters.
   /// 获取转换为米的乘数因子
   #[inline]
   pub const fn conversion_factor(&self) -> f64 {
@@ -46,14 +46,14 @@ impl DistanceUnit {
     }
   }
 
-  /// Operation definition.
+  /// Converts a value in the current distance unit to meters.
   /// 转换为米
   #[inline]
   pub const fn to_meters(&self, dist: f64) -> f64 {
     dist * self.conversion_factor()
   }
 
-  /// Operation definition.
+  /// Converts a distance in meters to the current distance unit.
   /// 从米转换为当前单位数值
   #[inline]
   pub const fn from_meters(&self, meters: f64) -> f64 {
@@ -61,7 +61,7 @@ impl DistanceUnit {
   }
 }
 
-/// Domain operation (aligned with Kvrocks DistanceSort).
+/// Distance sort ordering aligned with Kvrocks DistanceSort (ASC, DESC, None).
 /// 空间结果排序方式（对标 Kvrocks DistanceSort）
 #[derive(
   Debug,
@@ -87,7 +87,7 @@ pub enum DistanceSort {
 }
 
 impl DistanceSort {
-  /// Parses parameter or binary slice.
+  /// Parses distance sort string without heap allocation.
   /// 解析排序方式字符串（零内存分配）
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
@@ -95,7 +95,7 @@ impl DistanceSort {
   }
 }
 
-/// Domain operation (aligned with Kvrocks OriginPointType).
+/// Spatial search origin point type (Coord, Member).
 /// 空间查询原点类型（对标 Kvrocks OriginPointType）
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum OriginPoint {
@@ -115,7 +115,7 @@ impl OriginPoint {
   }
 }
 
-/// Domain operation (aligned with Kvrocks GeoPoint).
+/// Geographical point coordinate and metadata aligned with Kvrocks GeoPoint.
 /// 地理点详细信息（对标 Kvrocks GeoPoint）
 #[derive(Debug, Clone, PartialEq, Default, Encode, Decode)]
 pub struct GeoPoint {
@@ -126,7 +126,7 @@ pub struct GeoPoint {
   pub score: f64,
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashBits).
+/// Geohash bit representation container aligned with Kvrocks GeoHashBits.
 /// Geohash 比特结构（对标 Kvrocks GeoHashBits）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GeoHashBits {
@@ -141,7 +141,7 @@ impl GeoHashBits {
   }
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashRange).
+/// Latitude and longitude range interval aligned with Kvrocks GeoHashRange.
 /// 经纬度范围（对标 Kvrocks GeoHashRange）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeoHashRange {
@@ -156,7 +156,7 @@ impl GeoHashRange {
   }
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashArea).
+/// Geohash bounding area aligned with Kvrocks GeoHashArea.
 /// Geohash 区域范围（对标 Kvrocks GeoHashArea）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeoHashArea {
@@ -165,7 +165,7 @@ pub struct GeoHashArea {
   pub longitude: GeoHashRange,
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashNeighbors).
+/// 8-neighbor adjacent Geohash cells aligned with Kvrocks GeoHashNeighbors.
 /// Geohash 8 邻域结构（对标 Kvrocks GeoHashNeighbors）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeoHashNeighbors {
@@ -179,7 +179,7 @@ pub struct GeoHashNeighbors {
   pub south_west: GeoHashBits,
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashRadius).
+/// Geohash radius search neighbor set aligned with Kvrocks GeoHashRadius.
 /// Geohash 范围查询多步长邻域集合（对标 Kvrocks GeoHashRadius）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GeoHashRadius {
@@ -188,7 +188,7 @@ pub struct GeoHashRadius {
   pub neighbors: GeoHashNeighbors,
 }
 
-/// Operation definition.
+/// Spatial query geometric shape type (Circle, Box).
 /// 空间查询形状类型
 #[derive(
   Debug,
@@ -211,7 +211,7 @@ pub enum GeoShapeType {
   Rectangular,
 }
 
-/// Domain operation (aligned with Kvrocks GeoShape).
+/// Spatial query shape parameters aligned with Kvrocks GeoShape.
 /// 空间查询几何形状（对标 Kvrocks GeoShape）
 #[derive(Debug, Clone, PartialEq, Default, Encode, Decode)]
 pub struct GeoShape {
@@ -225,7 +225,7 @@ pub struct GeoShape {
   pub bounds: [f64; 4],
 }
 
-/// Operation definition.
+/// Spatial geographic range search options.
 /// 空间地理范围检索选项
 #[derive(Debug, Clone, PartialEq, Default, Encode, Decode)]
 pub struct GeoRadius {
@@ -240,7 +240,7 @@ pub struct GeoRadius {
   pub unit: DistanceUnit,
 }
 
-/// Command options enumeration.
+/// GEOSEARCH command options enumeration.
 /// GEOSEARCH 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeoSearch {
@@ -254,7 +254,7 @@ pub enum GeoSearch {
   Unit(DistanceUnit),
 }
 
-/// Command options enumeration.
+/// GEOSEARCHSTORE command options enumeration.
 /// GEOSEARCHSTORE 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeoSearchStore {

@@ -3,7 +3,7 @@ use crate::{
   error::{Error, Result},
 };
 
-/// Domain operation (aligned with Apache Kvrocks SortedintRangeSpec).
+/// 64-bit sorted integer range specification aligned with Apache Kvrocks SortedintRangeSpec.
 /// 64 位有序整型集合范围查询规则（对标 Apache Kvrocks SortedintRangeSpec）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct SortedintRange {
@@ -32,7 +32,7 @@ impl Default for SortedintRange {
 }
 
 impl SortedintRange {
-  /// Operation definition.
+  /// Creates a full range specification covering [0, u64::MAX].
   /// 创建全区间范围规则 [0, u64::MAX]
   #[inline]
   pub const fn all() -> Self {
@@ -47,7 +47,7 @@ impl SortedintRange {
     }
   }
 
-  /// Operation definition.
+  /// Sets pagination offset.
   /// 设置分页偏移量
   #[inline]
   pub const fn with_offset(mut self, offset: usize) -> Self {
@@ -55,7 +55,7 @@ impl SortedintRange {
     self
   }
 
-  /// Operation definition.
+  /// Sets maximum return limit.
   /// 设置最大返回数量
   #[inline]
   pub const fn with_count(mut self, count: usize) -> Self {
@@ -63,7 +63,7 @@ impl SortedintRange {
     self
   }
 
-  /// Operation definition.
+  /// Sets whether to scan in reverse order.
   /// 设置是否逆序
   #[inline]
   pub const fn with_reversed(mut self, reversed: bool) -> Self {
@@ -71,7 +71,7 @@ impl SortedintRange {
     self
   }
 
-  /// Operation definition.
+  /// Sets lower bound with open/closed interval specification.
   /// 设置下界及开闭区间
   #[inline]
   pub const fn with_min(mut self, min: u64, minex: bool) -> Self {
@@ -80,7 +80,7 @@ impl SortedintRange {
     self
   }
 
-  /// Operation definition.
+  /// Sets upper bound with open/closed interval specification.
   /// 设置上界及开闭区间
   #[inline]
   pub const fn with_max(mut self, max: u64, maxex: bool) -> Self {
@@ -89,7 +89,7 @@ impl SortedintRange {
     self
   }
 
-  /// Operation definition.
+  /// Checks whether range interval is empty (e.g. min > max or min == max with open bound).
   /// 检查范围区间是否为空（如 min > max，或 min == max 且存在开区间）
   #[inline]
   pub const fn is_empty_range(&self) -> bool {
@@ -108,7 +108,7 @@ impl SortedintRange {
     false
   }
 
-  /// Operation definition.
+  /// Determines whether a given value falls within the range interval.
   /// 判断指定值是否落在该范围区间内
   #[inline]
   pub const fn contains(&self, val: u64) -> bool {
@@ -132,7 +132,7 @@ impl SortedintRange {
   }
 }
 
-/// Parses parameter or binary slice.
+/// Parses single-side boundary supporting '(' open, '[' closed, '+' prefix, or raw number.
 /// 解析单侧边界值（支持 '(' 开区间、'[' 闭区间、'+' 号前缀及无前缀数字）
 #[inline]
 fn parse_bound(s: &str, is_min: bool) -> Result<(u64, bool)> {
@@ -154,10 +154,8 @@ fn parse_bound(s: &str, is_min: bool) -> Result<(u64, bool)> {
   Ok((val, ex))
 }
 
-/// Parses parameter or binary slice.
+/// Parses 64-bit unsigned integer range specification aligned with Kvrocks Sortedint::ParseRangeSpec.
 /// 解析 64 位无符号整型范围规则（对标 Apache Kvrocks Sortedint::ParseRangeSpec）
-/// Operation definition.
-/// 支持 -inf, +inf, (val, [val, val
 pub fn parse_range_spec(min_str: &str, max_str: &str) -> Result<SortedintRange> {
   let min_str = min_str.trim();
   let max_str = max_str.trim();

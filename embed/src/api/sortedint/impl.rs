@@ -18,7 +18,7 @@ use crate::{
   wedb::{Db, DbBatch},
 };
 
-/// Operation definition.
+/// Sorted integer data structure operations interface (SortedInt).
 /// 有序整型数据结构操作接口 (SortedInt)
 #[inline]
 fn prepare_si_meta_for_write<E: Engine>(

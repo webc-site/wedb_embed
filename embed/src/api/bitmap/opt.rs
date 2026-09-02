@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use crate::error::{Error, Result};
 
-/// Operation definition.
+/// Unit specification for BITCOUNT and BITPOS range indexing (Byte or Bit).
 /// BITCOUNT / BITPOS 位图索引单位
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BitUnit {
@@ -31,7 +31,7 @@ pub enum BitPos {
   Unit(BitUnit),
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitOpFlags).
+/// Bitwise operation type aligned with Apache Kvrocks BitOpFlags (AND, OR, XOR, NOT).
 /// BITOP 运算类型（对标 Apache Kvrocks BitOpFlags）
 #[derive(
   Debug,
@@ -74,7 +74,7 @@ impl BitOp {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitfieldOverflowBehavior).
+/// Overflow handling policy for BITFIELD operations aligned with Apache Kvrocks BitfieldOverflowBehavior.
 /// BITFIELD 溢出处理策略（对标 Apache Kvrocks BitfieldOverflowBehavior）
 #[derive(
   Debug,
@@ -117,9 +117,8 @@ impl BitfieldOverflow {
 }
 
 /// Encodes data into binary format.
+/// Bitfield integer encoding type supporting signed and unsigned bit widths.
 /// BITFIELD 整数类型编码（对标 Apache Kvrocks BitfieldEncoding）
-/// Operation definition.
-/// 支持 i1~i64（有符号）与 u1~u63（无符号）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum BitfieldEncoding {
   Signed(u8),
@@ -166,7 +165,7 @@ impl BitfieldEncoding {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Calculates absolute bit offset from positional index #N aligned with Redis / Kvrocks syntax.
   /// 根据位置索引 #N 计算绝对位偏移（对标 Redis / Kvrocks #N 语法）
   #[inline]
   pub fn positional_offset(&self, index: u64) -> Result<u64> {
@@ -217,7 +216,7 @@ impl fmt::Display for BitfieldEncoding {
   }
 }
 
-/// Parses parameter or binary slice.
+/// Parses a bitfield offset parameter string (supporting raw integer "100" and positional index "#5").
 /// 解析 BITFIELD 偏移量参数字符串（支持普通数字 "100" 以及位置索引 "#5"，对标 Kvrocks）
 #[inline]
 pub fn parse_bitfield_offset(offset_str: &str, encoding: BitfieldEncoding) -> Result<u64> {
@@ -241,7 +240,7 @@ pub fn parse_bitfield_offset(offset_str: &str, encoding: BitfieldEncoding) -> Re
   }
 }
 
-/// Operation definition.
+/// Individual bitfield operation sub-command type (Get, Set, IncrBy).
 /// BITFIELD 单项操作类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum BitfieldOpType {
@@ -250,7 +249,7 @@ pub enum BitfieldOpType {
   IncrBy,
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitfieldOperation).
+/// Bitfield operation instruction aligned with Apache Kvrocks BitfieldOperation.
 /// BITFIELD 操作指令（对标 Apache Kvrocks BitfieldOperation）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct BitfieldOperation {
@@ -334,7 +333,7 @@ impl BitfieldOperation {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitfieldValue).
+/// Result value container for bitfield operations aligned with Apache Kvrocks BitfieldValue.
 /// BITFIELD 操作返回值（对标 Apache Kvrocks BitfieldValue）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum BitfieldValue {
