@@ -57,9 +57,9 @@ pub fn compute_lcs_with(s1: &[u8], s2: &[u8], args: StringLCS) -> Result<StringL
         }))
       }
       StringLCSType::None => {
-        let s = match String::from_utf8(s1.to_vec()) {
-          Ok(s) => s,
-          Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+        let s = match std::str::from_utf8(s1) {
+          Ok(s) => s.to_string(),
+          Err(_) => String::from_utf8_lossy(s1).into_owned(),
         };
         Ok(StringLCSResult::Str(s))
       }

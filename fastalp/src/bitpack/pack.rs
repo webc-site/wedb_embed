@@ -110,12 +110,23 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
     }
     return;
   } else if bit_width == BITS_8 {
-    // SAFETY: dst 已 reserve(total_bytes)，且循环严格写入 values.len() 个字节，写入完成后调用 set_len 确保内存全部初始化完毕。
+    let (chunks, rem) = values.as_chunks::<CHUNK_8>();
+    // SAFETY: dst 已 reserve(total_bytes)，按 8 个整数一组打包写入，余数逐个写入，完全覆盖 total_bytes。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for &v in values {
-        *dst_ptr = v as u8;
-        dst_ptr = dst_ptr.add(1);
+      for chunk in chunks {
+        *dst_ptr.add(0) = chunk[0] as u8;
+        *dst_ptr.add(1) = chunk[1] as u8;
+        *dst_ptr.add(2) = chunk[2] as u8;
+        *dst_ptr.add(3) = chunk[3] as u8;
+        *dst_ptr.add(4) = chunk[4] as u8;
+        *dst_ptr.add(5) = chunk[5] as u8;
+        *dst_ptr.add(6) = chunk[6] as u8;
+        *dst_ptr.add(7) = chunk[7] as u8;
+        dst_ptr = dst_ptr.add(CHUNK_8);
+      }
+      for (i, &v) in rem.iter().enumerate() {
+        *dst_ptr.add(i) = v as u8;
       }
       dst.set_len(old_len + total_bytes);
     }
@@ -272,12 +283,23 @@ pub fn bitpack_encoded<F: AlpFloat>(
     }
     return;
   } else if bit_width == BITS_8 {
-    // SAFETY: dst 已 reserve(encoded_ints.len())，逐元素写入 u8，完全覆盖 total_bytes。
+    let (chunks, rem) = encoded_ints.as_chunks::<CHUNK_8>();
+    // SAFETY: dst 已 reserve(total_bytes)，按 8 个整数一组打包写入，余数逐个写入，完全覆盖 total_bytes。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for &v in encoded_ints {
-        *dst_ptr = F::int_diff_to_u64(v, base) as u8;
-        dst_ptr = dst_ptr.add(1);
+      for chunk in chunks {
+        *dst_ptr.add(0) = F::int_diff_to_u64(chunk[0], base) as u8;
+        *dst_ptr.add(1) = F::int_diff_to_u64(chunk[1], base) as u8;
+        *dst_ptr.add(2) = F::int_diff_to_u64(chunk[2], base) as u8;
+        *dst_ptr.add(3) = F::int_diff_to_u64(chunk[3], base) as u8;
+        *dst_ptr.add(4) = F::int_diff_to_u64(chunk[4], base) as u8;
+        *dst_ptr.add(5) = F::int_diff_to_u64(chunk[5], base) as u8;
+        *dst_ptr.add(6) = F::int_diff_to_u64(chunk[6], base) as u8;
+        *dst_ptr.add(7) = F::int_diff_to_u64(chunk[7], base) as u8;
+        dst_ptr = dst_ptr.add(CHUNK_8);
+      }
+      for (i, &v) in rem.iter().enumerate() {
+        *dst_ptr.add(i) = F::int_diff_to_u64(v, base) as u8;
       }
       dst.set_len(old_len + total_bytes);
     }

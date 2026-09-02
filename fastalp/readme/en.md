@@ -250,14 +250,14 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 
 | Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio (fastalp / C++) |
 |---|---|---|---|---|
-| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **25.60 GB/s** | 7.02 GB/s | **3.65x** |
-| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **4.98 GB/s** | 0.84 GB/s | **5.90x** |
-| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **5.60 GB/s** | 5.85 GB/s | 0.96x |
-| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **2.87 GB/s** | 2.46 GB/s | **1.17x** |
-| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **78.92 GB/s** | 21.85 GB/s | **3.61x** |
+| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.15 GB/s** | 7.02 GB/s | **3.30x** |
+| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **6.10 GB/s** | 0.84 GB/s | **7.26x** |
+| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **6.57 GB/s** | 5.85 GB/s | **1.12x** |
+| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **3.52 GB/s** | 2.46 GB/s | **1.43x** |
+| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **77.01 GB/s** | 21.85 GB/s | **3.52x** |
 | **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
-| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **59.93 GB/s** | 18.42 GB/s | **3.25x** |
-| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **57.97 GB/s** | 32.77 GB/s | **1.77x** |
+| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **55.93 GB/s** | 18.42 GB/s | **3.04x** |
+| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **57.45 GB/s** | 32.77 GB/s | **1.75x** |
 
 ### Real-World Datasets Compression Ratio
 
