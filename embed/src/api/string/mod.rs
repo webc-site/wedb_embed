@@ -39,7 +39,8 @@ use crate::{
 pub const MAX_STRING_SIZE: usize = 512 * 1024 * 1024;
 
 pub use key::{
-  prefix as compose_string_prefix, raw as compose_string_key, raw_bytes as compose_string_key_bytes,
+  prefix as compose_string_prefix, prefix_stack as compose_string_prefix_stack,
+  raw as compose_string_key, raw_bytes as compose_string_key_bytes,
 };
 pub use lcs::{compute_lcs, compute_lcs_with};
 

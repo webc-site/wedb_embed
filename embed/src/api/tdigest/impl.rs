@@ -46,7 +46,10 @@ where
 
   #[inline]
   pub fn tdigest_add_one<K: AsRef<[u8]>>(&self, key: K, value: f64) -> Result<()> {
-    self.tdigest_add(key, &[value])
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    td.add(value, 1.0);
+    save_tdigest(self, key_bytes, &td)
   }
 
   #[inline]
@@ -73,8 +76,18 @@ where
 
   #[inline]
   pub fn tdigest_quantile_one<K: AsRef<[u8]>>(&self, key: K, quantile: f64) -> Result<Option<f64>> {
-    let res = self.tdigest_quantile(key, &[quantile])?;
-    Ok(res.into_iter().next().flatten())
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let val = td.quantile(quantile);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    if val.is_nan() {
+      Ok(None)
+    } else {
+      Ok(Some(val))
+    }
   }
 
   #[inline]
@@ -133,8 +146,14 @@ where
 
   #[inline]
   pub fn tdigest_rank_one<K: AsRef<[u8]>>(&self, key: K, value: f64) -> Result<i64> {
-    let res = self.tdigest_rank(key, &[value])?;
-    Ok(res.into_iter().next().unwrap_or(-2))
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let rank = td.rank(value);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    Ok(rank)
   }
 
   #[inline]
@@ -153,8 +172,14 @@ where
 
   #[inline]
   pub fn tdigest_revrank_one<K: AsRef<[u8]>>(&self, key: K, value: f64) -> Result<i64> {
-    let res = self.tdigest_revrank(key, &[value])?;
-    Ok(res.into_iter().next().unwrap_or(-2))
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let rank = td.revrank(value);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    Ok(rank)
   }
 
   #[inline]
@@ -173,8 +198,18 @@ where
 
   #[inline]
   pub fn tdigest_byrank_one<K: AsRef<[u8]>>(&self, key: K, rank: u64) -> Result<Option<f64>> {
-    let res = self.tdigest_byrank(key, &[rank])?;
-    Ok(res.into_iter().next().flatten())
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let val = td.byrank(rank);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    if val.is_nan() {
+      Ok(None)
+    } else {
+      Ok(Some(val))
+    }
   }
 
   #[inline]
@@ -199,8 +234,18 @@ where
 
   #[inline]
   pub fn tdigest_byrevrank_one<K: AsRef<[u8]>>(&self, key: K, rank: u64) -> Result<Option<f64>> {
-    let res = self.tdigest_byrevrank(key, &[rank])?;
-    Ok(res.into_iter().next().flatten())
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let val = td.byrevrank(rank);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    if val.is_nan() {
+      Ok(None)
+    } else {
+      Ok(Some(val))
+    }
   }
 
   #[inline]

@@ -1,3 +1,5 @@
+use std::{thread::sleep, time::Duration};
+
 use aok::Void;
 use tempfile::tempdir;
 use wedb_embed::{
@@ -260,12 +262,12 @@ fn test_bitmap_bitfield() -> Void {
     magic,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("bfkey", &[set_op])?;
+  let rets = db.bitfield("bfkey", [set_op])?;
   assert_eq!(rets.len(), 1);
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   let get_op = BitfieldOperation::get(BitfieldEncoding::unsigned(32)?, 114514);
-  let rets = db.bitfield("bfkey", &[get_op])?;
+  let rets = db.bitfield("bfkey", [get_op])?;
   assert_eq!(rets.len(), 1);
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0xdeadbeef)));
 
@@ -276,23 +278,23 @@ fn test_bitmap_bitfield() -> Void {
     31,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("bfkey", &[op_cross])?;
+  let rets = db.bitfield("bfkey", [op_cross])?;
   assert_eq!(rets.len(), 1);
 
   let get_cross = BitfieldOperation::get(BitfieldEncoding::unsigned(5)?, 8189);
-  let rets = db.bitfield_read_only("bfkey", &[get_cross])?;
+  let rets = db.bitfield_read_only("bfkey", [get_cross])?;
   assert_eq!(rets.len(), 1);
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(31)));
 
   // 3. Overflow SAT & FAIL
   let op_sat =
     BitfieldOperation::incrby(BitfieldEncoding::signed(6)?, 0, 100, BitfieldOverflow::Sat);
-  let rets = db.bitfield("satkey", &[op_sat])?;
+  let rets = db.bitfield("satkey", [op_sat])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(31))); // 2^(6-1)-1 = 31
 
   let op_fail =
     BitfieldOperation::incrby(BitfieldEncoding::signed(5)?, 0, 100, BitfieldOverflow::Fail);
-  let rets = db.bitfield("failkey", &[op_fail])?;
+  let rets = db.bitfield("failkey", [op_fail])?;
   assert_eq!(rets[0], None);
 
   Ok(())
@@ -326,7 +328,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     130, // 0 + 130 = 130 -> i8 wraps to -126
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("bf_overflow", &[op_wrap_pos])?;
+  let rets = db.bitfield("bf_overflow", [op_wrap_pos])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(-126)));
 
   // 2. Signed SAT (underflow clamped to min, overflow clamped to max)
@@ -336,7 +338,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     -200, // underflow -> clamp to -128
     BitfieldOverflow::Sat,
   );
-  let rets = db.bitfield("bf_overflow", &[op_sat_min])?;
+  let rets = db.bitfield("bf_overflow", [op_sat_min])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(-128)));
 
   let op_sat_max = BitfieldOperation::incrby(
@@ -345,7 +347,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     300, // overflow -> clamp to 127
     BitfieldOverflow::Sat,
   );
-  let rets = db.bitfield("bf_overflow", &[op_sat_max])?;
+  let rets = db.bitfield("bf_overflow", [op_sat_max])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(127)));
 
   // 3. Unsigned SAT (clamped to 0 on underflow, clamped to max on overflow)
@@ -355,7 +357,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     300, // 0 + 300 -> clamp to 255
     BitfieldOverflow::Sat,
   );
-  let rets = db.bitfield("bf_overflow", &[op_usat_max])?;
+  let rets = db.bitfield("bf_overflow", [op_usat_max])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(255)));
 
   let op_usat_min = BitfieldOperation::incrby(
@@ -364,7 +366,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     -500, // 255 - 500 -> clamp to 0
     BitfieldOverflow::Sat,
   );
-  let rets = db.bitfield("bf_overflow", &[op_usat_min])?;
+  let rets = db.bitfield("bf_overflow", [op_usat_min])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   // 4. FAIL overflow
@@ -374,7 +376,7 @@ fn test_bitmap_bitfield_all_overflows() -> Void {
     300, // 0 + 300 > 255 -> overflow fails
     BitfieldOverflow::Fail,
   );
-  let rets = db.bitfield("bf_overflow", &[op_fail])?;
+  let rets = db.bitfield("bf_overflow", [op_fail])?;
   assert_eq!(rets[0], None);
 
   Ok(())
@@ -546,7 +548,7 @@ fn test_bitmap_string_mode_comprehensive() -> Void {
 
   // BITFIELD on String
   let get_u8 = BitfieldOperation::get(BitfieldEncoding::unsigned(8)?, 0);
-  let rets = db.bitfield_read_only("str_bm", &[get_u8])?;
+  let rets = db.bitfield_read_only("str_bm", [get_u8])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0xE6))); // 0x66 with bit 0 set to 1 = 0xE6
 
   // BITOP between Bitmap and String returns wrong type
@@ -641,11 +643,11 @@ fn test_bitmap_bitfield_arbitrary_widths() -> Void {
 
   // 1. i1 (signed 1-bit: values 0 and -1)
   let set_i1 = BitfieldOperation::set(BitfieldEncoding::signed(1)?, 0, -1, BitfieldOverflow::Wrap);
-  let rets = db.bitfield("bf_widths", &[set_i1])?;
+  let rets = db.bitfield("bf_widths", [set_i1])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(0))); // old was 0
 
   let get_i1 = BitfieldOperation::get(BitfieldEncoding::signed(1)?, 0);
-  let rets = db.bitfield_read_only("bf_widths", &[get_i1])?;
+  let rets = db.bitfield_read_only("bf_widths", [get_i1])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(-1)));
 
   // 2. u63 (unsigned 63-bit max)
@@ -656,11 +658,11 @@ fn test_bitmap_bitfield_arbitrary_widths() -> Void {
     max_u63 as i64,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("bf_widths", &[set_u63])?;
+  let rets = db.bitfield("bf_widths", [set_u63])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   let get_u63 = BitfieldOperation::get(BitfieldEncoding::unsigned(63)?, 1);
-  let rets = db.bitfield_read_only("bf_widths", &[get_u63])?;
+  let rets = db.bitfield_read_only("bf_widths", [get_u63])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(max_u63)));
 
   // 3. i64 (signed 64-bit min / max)
@@ -671,11 +673,11 @@ fn test_bitmap_bitfield_arbitrary_widths() -> Void {
     min_i64,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("bf_widths", &[set_i64])?;
+  let rets = db.bitfield("bf_widths", [set_i64])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(0)));
 
   let get_i64 = BitfieldOperation::get(BitfieldEncoding::signed(64)?, 100);
-  let rets = db.bitfield_read_only("bf_widths", &[get_i64])?;
+  let rets = db.bitfield_read_only("bf_widths", [get_i64])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(min_i64)));
 
   Ok(())
@@ -774,7 +776,7 @@ fn test_bitmap_bitfield_multiple_cmds_in_sequence() -> Void {
     BitfieldOperation::get(BitfieldEncoding::signed(16)?, 8),
   ];
 
-  let rets = db.bitfield("seq_bf", &ops)?;
+  let rets = db.bitfield("seq_bf", ops)?;
   assert_eq!(rets.len(), 6);
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0))); // old was 0
   assert_eq!(rets[1], Some(BitfieldValue::Unsigned(150))); // 100 + 50 = 150
@@ -923,9 +925,9 @@ fn test_bitmap_bitfield_string_reverse_and_traversal() -> Void {
   let get_op = BitfieldOperation::get(BitfieldEncoding::signed(8)?, 0);
   let mut i = 0u64;
   for &b in text.as_bytes() {
-    let mut op = get_op.clone();
+    let mut op = get_op;
     op.offset = i;
-    let rets = db.bitfield_read_only("str_poem", &[op])?;
+    let rets = db.bitfield_read_only("str_poem", [op])?;
     assert_eq!(rets[0], Some(BitfieldValue::Signed(b as i8 as i64)));
     i += 8;
   }
@@ -939,7 +941,7 @@ fn test_bitmap_bitfield_string_reverse_and_traversal() -> Void {
     let r_offset = (r * 8) as u64;
 
     let get_r = BitfieldOperation::get(BitfieldEncoding::signed(8)?, r_offset);
-    let r_val = db.bitfield_read_only("str_poem", &[get_r])?[0]
+    let r_val = db.bitfield_read_only("str_poem", [get_r])?[0]
       .unwrap()
       .as_i64();
 
@@ -949,7 +951,7 @@ fn test_bitmap_bitfield_string_reverse_and_traversal() -> Void {
       r_val,
       BitfieldOverflow::Wrap,
     );
-    let old_l = db.bitfield("str_poem", &[set_l])?[0].unwrap().as_i64();
+    let old_l = db.bitfield("str_poem", [set_l])?[0].unwrap().as_i64();
 
     let set_r = BitfieldOperation::set(
       BitfieldEncoding::signed(8)?,
@@ -957,7 +959,7 @@ fn test_bitmap_bitfield_string_reverse_and_traversal() -> Void {
       old_l,
       BitfieldOverflow::Wrap,
     );
-    db.bitfield("str_poem", &[set_r])?;
+    db.bitfield("str_poem", [set_r])?;
 
     l += 1;
     r -= 1;
@@ -1095,11 +1097,11 @@ fn test_bitmap_bitfield_u63_and_i64_limits() -> Void {
     u63_max as i64,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("limit_bf", &[set_u63])?;
+  let rets = db.bitfield("limit_bf", [set_u63])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   let get_u63 = BitfieldOperation::get(BitfieldEncoding::unsigned(63)?, 0);
-  let rets = db.bitfield_read_only("limit_bf", &[get_u63])?;
+  let rets = db.bitfield_read_only("limit_bf", [get_u63])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(u63_max)));
 
   // Increment u63_max by 1 with WRAP -> wraps to 0
@@ -1109,7 +1111,7 @@ fn test_bitmap_bitfield_u63_and_i64_limits() -> Void {
     1,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("limit_bf", &[incr_wrap])?;
+  let rets = db.bitfield("limit_bf", [incr_wrap])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   // Increment 0 by -1 with SAT -> clamped to 0
@@ -1119,7 +1121,7 @@ fn test_bitmap_bitfield_u63_and_i64_limits() -> Void {
     -1,
     BitfieldOverflow::Sat,
   );
-  let rets = db.bitfield("limit_bf", &[decr_sat])?;
+  let rets = db.bitfield("limit_bf", [decr_sat])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
 
   // i64 min/max with WRAP
@@ -1129,7 +1131,7 @@ fn test_bitmap_bitfield_u63_and_i64_limits() -> Void {
     i64::MAX,
     BitfieldOverflow::Wrap,
   );
-  db.bitfield("limit_bf", &[set_i64])?;
+  db.bitfield("limit_bf", [set_i64])?;
 
   let incr_i64_wrap = BitfieldOperation::incrby(
     BitfieldEncoding::signed(64)?,
@@ -1137,7 +1139,7 @@ fn test_bitmap_bitfield_u63_and_i64_limits() -> Void {
     1,
     BitfieldOverflow::Wrap,
   );
-  let rets = db.bitfield("limit_bf", &[incr_i64_wrap])?;
+  let rets = db.bitfield("limit_bf", [incr_i64_wrap])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(i64::MIN)));
 
   Ok(())
@@ -1157,35 +1159,35 @@ fn test_bitmap_bitfield_positional_offset_syntax() -> Void {
 
   let op_set0 = BitfieldOperation::set_positional(enc_u16, 0, 100, BitfieldOverflow::Wrap)?;
   let op_set1 = BitfieldOperation::set_positional(enc_u16, 1, 200, BitfieldOverflow::Wrap)?;
-  let rets = db.bitfield("bf_pos", &[op_set0, op_set1])?;
+  let rets = db.bitfield("bf_pos", [op_set0, op_set1])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(0)));
   assert_eq!(rets[1], Some(BitfieldValue::Unsigned(0)));
 
   let op_get0 = BitfieldOperation::get_positional(enc_u16, 0)?;
   let op_get1 = BitfieldOperation::get_positional(enc_u16, 1)?;
-  let rets = db.bitfield_read_only("bf_pos", &[op_get0, op_get1])?;
+  let rets = db.bitfield_read_only("bf_pos", [op_get0, op_get1])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(100)));
   assert_eq!(rets[1], Some(BitfieldValue::Unsigned(200)));
 
   // INCRBY with #N
   let op_incr = BitfieldOperation::incrby_positional(enc_u16, 0, 1, BitfieldOverflow::Wrap)?;
-  let rets = db.bitfield("bf_pos", &[op_incr])?;
+  let rets = db.bitfield("bf_pos", [op_incr])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(101)));
 
   // OVERFLOW SAT with #N
   let op_sat = BitfieldOperation::incrby_positional(enc_u16, 1, 65535, BitfieldOverflow::Sat)?;
-  let rets = db.bitfield("bf_pos", &[op_sat])?;
+  let rets = db.bitfield("bf_pos", [op_sat])?;
   assert_eq!(rets[0], Some(BitfieldValue::Unsigned(65535)));
 
   // 2. Signed i8: #0 = 0, #1 = 8
   let enc_i8 = BitfieldEncoding::signed(8)?;
   let op_i8_0 = BitfieldOperation::set_positional(enc_i8, 0, -10, BitfieldOverflow::Wrap)?;
   let op_i8_1 = BitfieldOperation::set_positional(enc_i8, 1, 42, BitfieldOverflow::Wrap)?;
-  db.bitfield("bf_i8", &[op_i8_0, op_i8_1])?;
+  db.bitfield("bf_i8", [op_i8_0, op_i8_1])?;
 
   let get_i8_0 = BitfieldOperation::get_positional(enc_i8, 0)?;
   let get_i8_1 = BitfieldOperation::get_positional(enc_i8, 1)?;
-  let rets = db.bitfield_read_only("bf_i8", &[get_i8_0, get_i8_1])?;
+  let rets = db.bitfield_read_only("bf_i8", [get_i8_0, get_i8_1])?;
   assert_eq!(rets[0], Some(BitfieldValue::Signed(-10)));
   assert_eq!(rets[1], Some(BitfieldValue::Signed(42)));
 
@@ -1370,12 +1372,12 @@ fn test_bitmap_bitfield_read_only_rejects_write() -> Void {
     100,
     BitfieldOverflow::Wrap,
   );
-  let err = db.bitfield_read_only("ro_key", &[set_op]);
+  let err = db.bitfield_read_only("ro_key", [set_op]);
   assert!(err.is_err());
 
   let incr_op =
     BitfieldOperation::incrby(BitfieldEncoding::unsigned(8)?, 0, 1, BitfieldOverflow::Wrap);
-  let err2 = db.bitfield_read_only("ro_key", &[incr_op]);
+  let err2 = db.bitfield_read_only("ro_key", [incr_op]);
   assert!(err2.is_err());
 
   Ok(())
@@ -1420,7 +1422,7 @@ fn test_bitmap_cross_type_wrongtype_checks() -> Void {
   assert!(db.get_bitmap_bytes("hash_k").is_err());
 
   let bf_get = BitfieldOperation::get(BitfieldEncoding::unsigned(8)?, 0);
-  assert!(db.bitfield("hash_k", &[bf_get]).is_err());
+  assert!(db.bitfield("hash_k", [bf_get]).is_err());
 
   // 3. 创建 Set 类型键
   db.sadd("set_k", &["m1"])?;
@@ -1430,6 +1432,39 @@ fn test_bitmap_cross_type_wrongtype_checks() -> Void {
   assert!(db.bitpos("set_k", 0, []).is_err());
   assert!(db.bitpos("set_k", 1, []).is_err());
   assert!(db.get_bitmap_bytes("set_k").is_err());
+
+  Ok(())
+}
+
+#[test]
+fn test_bitmap_kvrocks_get_string_and_ghost_cleanup() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 测试 get_bitmap_string 对标 Kvrocks Bitmap::GetString
+  db.setbit("b_str", 0, 1)?;
+  db.setbit("b_str", 7, 1)?;
+  let s_bytes = db.get_bitmap_string("b_str")?;
+  assert!(s_bytes.is_some());
+  let b = s_bytes.unwrap();
+  assert_eq!(b.len(), 1);
+  assert_eq!(b[0], 0b10000001);
+
+  // 2. 测试过期 Bitmap 覆盖重写时的幽灵分段清除 (防止旧分段复活)
+  db.setbit("b_ghost", 1024 * 8 + 10, 1)?; // 写入 segment 1
+  assert_eq!(db.getbit("b_ghost", 1024 * 8 + 10)?, 1);
+  assert_eq!(db.bitcount("b_ghost", [])?, 1);
+
+  // 设置过期并等待
+  db.pexpire("b_ghost", 1)?;
+  sleep(Duration::from_millis(5));
+
+  // 重新创建仅写入 offset 0 (segment 0)
+  assert_eq!(db.setbit("b_ghost", 0, 1)?, 0);
+  assert_eq!(db.getbit("b_ghost", 0)?, 1);
+  // segment 1 的旧位必须彻底被清空，bitcount 只能是 1
+  assert_eq!(db.getbit("b_ghost", 1024 * 8 + 10)?, 0);
+  assert_eq!(db.bitcount("b_ghost", [])?, 1);
 
   Ok(())
 }

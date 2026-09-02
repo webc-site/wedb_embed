@@ -5,7 +5,7 @@ use crate::{
 
 /// 64-bit sorted integer range specification aligned with Apache Kvrocks SortedintRangeSpec.
 /// 64 位有序整型集合范围查询规则（对标 Apache Kvrocks SortedintRangeSpec）
-#[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct SortedintRange {
   pub min: u64,
   pub max: u64,
@@ -90,22 +90,31 @@ impl SortedintRange {
   }
 
   /// Checks whether range interval is empty (e.g. min > max or min == max with open bound).
-  /// 检查范围区间是否为空（如 min > max，或 min == max 且存在开区间）
+  /// 检查范围区间是否为空（ACM 离散整数有效区间规范化与快速空集判断）
   #[inline]
   pub const fn is_empty_range(&self) -> bool {
     if self.min > self.max {
       return true;
     }
-    if self.min == self.max && (self.minex || self.maxex) {
-      return true;
-    }
-    if self.minex && self.min == u64::MAX {
-      return true;
-    }
-    if self.maxex && self.max == 0 {
-      return true;
-    }
-    false
+    let eff_min = if self.minex {
+      match self.min.checked_add(1) {
+        Some(v) => v,
+        None => return true,
+      }
+    } else {
+      self.min
+    };
+
+    let eff_max = if self.maxex {
+      match self.max.checked_sub(1) {
+        Some(v) => v,
+        None => return true,
+      }
+    } else {
+      self.max
+    };
+
+    eff_min > eff_max
   }
 
   /// Determines whether a given value falls within the range interval.
@@ -198,13 +207,11 @@ pub const fn encode_be_u64(val: u64) -> [u8; 8] {
 /// 8 字节大端序原生二进制解码为 64 位无符号整数
 #[inline(always)]
 pub const fn decode_be_u64(bytes: &[u8]) -> Option<u64> {
-  if bytes.len() < 8 {
-    return None;
+  if let Some((chunk, _)) = bytes.split_first_chunk::<8>() {
+    Some(u64::from_be_bytes(*chunk))
+  } else {
+    None
   }
-  let buf = [
-    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-  ];
-  Some(u64::from_be_bytes(buf))
 }
 
 use std::ops::{Bound, Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
@@ -223,7 +230,7 @@ impl IntoSortedintRange for SortedintRange {
 impl IntoSortedintRange for &SortedintRange {
   #[inline]
   fn into_sortedint_range(self) -> SortedintRange {
-    self.clone()
+    *self
   }
 }
 

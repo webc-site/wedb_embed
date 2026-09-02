@@ -1,5 +1,3 @@
-pub use crate::error::ERR_WRONG_TYPE;
-
 pub const ERR_TSDB_KEY_NOT_EXISTS: &str = "ERR TSDB: the key does not exist";
 pub const ERR_TSDB_KEY_ALREADY_EXISTS: &str = "ERR TSDB: key already exists";
 pub const ERR_TSDB_NOT_TSDB_KEY: &str = "ERR TSDB: the key is not a TSDB key";

@@ -952,3 +952,38 @@ fn test_tdigest_merge_leading_empty_centroids() {
   assert_eq!(merged.min, 10.0);
   assert_eq!(merged.max, 20.0);
 }
+
+#[test]
+fn test_tdigest_single_element_zero_alloc_ops() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  db.tdigest_create("td_single", 100.0)?;
+  db.tdigest_add_one("td_single", 10.0)?;
+  db.tdigest_add_one("td_single", 20.0)?;
+  db.tdigest_add_one("td_single", 30.0)?;
+
+  assert_eq!(db.tdigest_min("td_single")?, 10.0);
+  assert_eq!(db.tdigest_max("td_single")?, 30.0);
+
+  let q50 = db.tdigest_quantile_one("td_single", 0.5)?;
+  assert!(q50.is_some());
+  assert!((q50.unwrap() - 20.0).abs() < 1.0);
+
+  let rank = db.tdigest_rank_one("td_single", 20.0)?;
+  assert!(rank >= 0);
+
+  let revrank = db.tdigest_revrank_one("td_single", 20.0)?;
+  assert!(revrank >= 0);
+
+  let byrank = db.tdigest_byrank_one("td_single", 1)?;
+  assert!(byrank.is_some());
+
+  let byrevrank = db.tdigest_byrevrank_one("td_single", 1)?;
+  assert!(byrevrank.is_some());
+
+  let cdf = db.tdigest_cdf_one("td_single", 20.0)?;
+  assert!(cdf.is_some());
+
+  Ok(())
+}

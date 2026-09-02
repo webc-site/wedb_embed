@@ -1,8 +1,6 @@
 use std::{ops::Bound, str};
 
-use rapidhash::{
-  HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as HashSet, v3::rapidhash_v3,
-};
+use rapidhash::{HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as HashSet};
 
 use crate::{
   api::zset::{
@@ -99,13 +97,14 @@ fn score_range_bounds(score_prefix: &[u8], spec: &RangeScore) -> (Bound<Vec<u8>>
       spec.min
     };
     let min_enc = encode_sortable_f64(min_val);
-    let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 1);
+    let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN);
     k.extend_from_slice(score_prefix);
     k.extend_from_slice(&min_enc);
     if spec.minex {
-      k.push(0xFF);
+      prefix_upper_bound(&k)
+    } else {
+      Bound::Included(k)
     }
-    Bound::Included(k)
   };
 
   let end = if spec.max == f64::INFINITY {
@@ -117,14 +116,13 @@ fn score_range_bounds(score_prefix: &[u8], spec: &RangeScore) -> (Bound<Vec<u8>>
       spec.max
     };
     let max_enc = encode_sortable_f64(max_val);
-    let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 1);
+    let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN);
     k.extend_from_slice(score_prefix);
     k.extend_from_slice(&max_enc);
     if spec.maxex {
       Bound::Excluded(k)
     } else {
-      k.push(0xFF);
-      Bound::Included(k)
+      prefix_upper_bound(&k)
     }
   };
 
@@ -138,13 +136,14 @@ fn lex_range_bounds(member_prefix: &[u8], spec: &RangeLex) -> (Bound<Vec<u8>>, B
   let start = if spec.min_infinite {
     Bound::Included(member_prefix.to_vec())
   } else {
-    let mut k = Vec::with_capacity(member_prefix.len() + spec.min.len() + 1);
+    let mut k = Vec::with_capacity(member_prefix.len() + spec.min.len());
     k.extend_from_slice(member_prefix);
     k.extend_from_slice(&spec.min);
     if spec.minex {
-      k.push(0x00);
+      Bound::Excluded(k)
+    } else {
+      Bound::Included(k)
     }
-    Bound::Included(k)
   };
 
   let end = if spec.max_infinite {
@@ -720,14 +719,7 @@ where
           }
           let old_score = decode_sortable_f64(sb);
 
-          let final_score = if incr {
-            if (lt && *input_score >= 0.0) || (gt && *input_score <= 0.0) {
-              continue;
-            }
-            old_score + *input_score
-          } else {
-            *input_score
-          };
+          let final_score = *input_score;
 
           if final_score.is_nan() {
             return Err(Error::invalid_data(
@@ -1933,17 +1925,17 @@ where
         }
       }
       if spec.check(member) {
-        let mut sb = [0u8; 8];
         if v.len() >= 8 {
+          let mut sb = [0u8; 8];
           sb.copy_from_slice(&v[..8]);
+
+          s_key.clear();
+          s_key.extend_from_slice(&score_prefix);
+          s_key.extend_from_slice(&sb);
+          s_key.extend_from_slice(member);
+
+          batch.rm_weak_data(&s_key);
         }
-
-        s_key.clear();
-        s_key.extend_from_slice(&score_prefix);
-        s_key.extend_from_slice(&sb);
-        s_key.extend_from_slice(member);
-
-        batch.rm_weak_data(&s_key);
         batch.rm_weak_data(k);
         deleted += 1;
       }
@@ -2052,12 +2044,12 @@ where
       if (base_items.len() as u64).saturating_mul(4) < card {
         base_items.retain(|(member, _)| self.zscore(k, member).unwrap_or(None).is_none());
       } else {
-        let mut exclude: HashSet<u64> = HashSet::with_capacity(card as usize);
+        let mut exclude: HashSet<Vec<u8>> = HashSet::with_capacity(card as usize);
         self.ziter(k, |m, _| {
-          exclude.insert(rapidhash_v3(m));
+          exclude.insert(m.to_vec());
           true
         })?;
-        base_items.retain(|(member, _)| !exclude.contains(&rapidhash_v3(member)));
+        base_items.retain(|(member, _)| !exclude.contains(member));
       }
     }
 
@@ -2093,7 +2085,9 @@ where
             *score = 0.0;
           }
         }
-        items.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        if *weight <= 0.0 {
+          items.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        }
       }
       return Ok(items);
     }
@@ -2347,7 +2341,9 @@ where
 
     if let Some(cursor_bytes) = cursor {
       let start_k = compose_zset_key(&kc, k_bytes, cursor_bytes);
-      for g in data_ks.range((Bound::Excluded(start_k.as_slice()), Bound::Unbounded)) {
+      let upper = prefix_upper_bound(prefix_bytes);
+      let upper_ref = Bound::as_ref(&upper).map(|v| v.as_slice());
+      for g in data_ks.range((Bound::Excluded(start_k.as_slice()), upper_ref)) {
         let entry = g?;
         let (k, v) = (entry.key(), entry.value());
         if !k.starts_with(prefix_bytes) {

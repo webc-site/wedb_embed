@@ -17,7 +17,7 @@ use crate::{
       meta::BitmapMeta,
       opt::{BitCount, BitOp, BitPos, BitUnit, BitfieldOpType, BitfieldOperation, BitfieldValue},
     },
-    key::check_composite_meta_not_other_type,
+    key::{check_composite_meta_not_other_type, clear_prefix_in_batch},
     string::key::raw,
   },
   engine::{Engine, Partition},
@@ -165,8 +165,8 @@ where
       meta.base.size = bitmap_size;
 
       let mut batch = self.batch();
-      batch.insert_data(&seg_k, &seg);
-      batch.insert_meta(&bm_meta_k, &meta.encode());
+      batch.insert_data(seg_k.as_slice(), &seg);
+      batch.insert_meta(bm_meta_k.as_slice(), &meta.encode());
       batch.commit()?;
 
       return Ok(old_bit);
@@ -209,8 +209,12 @@ where
 
     let seg_k = key::segment(&kc, key_bytes, seg_idx);
     let mut batch = self.batch();
-    batch.insert_data(&seg_k, &seg);
-    batch.insert_meta(&bm_meta_k, &meta.encode());
+    if cur_meta_opt.is_some() {
+      let bm_prefix = key::prefix_stack(&kc, key_bytes);
+      clear_prefix_in_batch(self.data(), bm_prefix.as_slice(), &mut batch)?;
+    }
+    batch.insert_data(seg_k.as_slice(), &seg);
+    batch.insert_meta(bm_meta_k.as_slice(), &meta.encode());
     batch.commit()?;
 
     Ok(old_bit)
@@ -630,14 +634,14 @@ where
         let old_stop_seg = (old_m.base.size.saturating_sub(1) as usize) / BITMAP_SEGMENT_BYTES;
         for seg_idx in 0..=old_stop_seg {
           let seg_k = key::segment(&kc, dest_bytes, seg_idx as u32);
-          batch.rm_data(&seg_k);
+          batch.rm_weak_data(seg_k.as_slice());
         }
       }
     };
 
     if max_bitmap_size == 0 {
       // 清理目标 bitmap
-      batch.rm_meta(&dest_meta_k);
+      batch.rm_meta(dest_meta_k.as_slice());
       clean_old_dest_segments(&mut batch);
       batch.commit()?;
       return Ok(0);
@@ -648,21 +652,23 @@ where
       // AND 运算中只要任一源键为空，结果即全为 0，但记录目标元数据大小为 max_bitmap_size
       clean_old_dest_segments(&mut batch);
       let dest_meta = BitmapMeta::new_with_version(0, max_bitmap_size);
-      batch.insert_meta(&dest_meta_k, &dest_meta.encode());
+      batch.insert_meta(dest_meta_k.as_slice(), &dest_meta.encode());
       batch.commit()?;
       return Ok(max_bitmap_size as usize);
     }
 
     let stop_seg_index = (max_bitmap_size.saturating_sub(1) as usize) / BITMAP_SEGMENT_BYTES;
     let mut frag_res = [0u8; BITMAP_SEGMENT_BYTES];
+    let mut fragments: Vec<Option<<E::Partition as Partition>::Value>> =
+      Vec::with_capacity(src_metas.len());
+
     for frag_idx in 0..=stop_seg_index {
-      let mut fragments: Vec<Option<<E::Partition as Partition>::Value>> =
-        Vec::with_capacity(src_metas.len());
+      fragments.clear();
       let mut frag_maxlen = 0usize;
 
       for (sk_bytes, _) in &src_metas {
         let sub_k = key::segment(&kc, sk_bytes, frag_idx as u32);
-        let frag_opt = data_ks.get(&sub_k)?;
+        let frag_opt = data_ks.get(sub_k.as_slice())?;
 
         if let Some(ref frag) = frag_opt {
           if frag.is_empty() {
@@ -702,9 +708,9 @@ where
           .collect();
         bit_op_exec_into(op, &frag_slices, &mut frag_res[..write_len])?;
 
-        batch.insert_data(&dest_sub_k, &frag_res[..write_len]);
+        batch.insert_data(dest_sub_k.as_slice(), &frag_res[..write_len]);
       } else {
-        batch.rm_data(&dest_sub_k);
+        batch.rm_weak_data(dest_sub_k.as_slice());
       }
     }
 
@@ -714,13 +720,13 @@ where
       if old_stop_seg > stop_seg_index {
         for seg_idx in (stop_seg_index + 1)..=old_stop_seg {
           let seg_k = key::segment(&kc, dest_bytes, seg_idx as u32);
-          batch.rm_data(&seg_k);
+          batch.rm_weak_data(seg_k.as_slice());
         }
       }
     }
 
     let dest_meta = BitmapMeta::new_with_version(0, max_bitmap_size);
-    batch.insert_meta(&dest_meta_k, &dest_meta.encode());
+    batch.insert_meta(dest_meta_k.as_slice(), &dest_meta.encode());
     batch.commit()?;
 
     Ok(max_bitmap_size as usize)
@@ -732,7 +738,7 @@ where
     key: K,
     ops: impl IntoIterator<Item = O>,
   ) -> Result<Vec<Option<BitfieldValue>>> {
-    let ops_vec: Vec<BitfieldOperation> = ops.into_iter().map(|o| o.borrow().clone()).collect();
+    let ops_vec: Vec<BitfieldOperation> = ops.into_iter().map(|o| *o.borrow()).collect();
     self.exec_bitfield(key, &ops_vec, false)
   }
 
@@ -742,13 +748,15 @@ where
     key: K,
     ops: impl IntoIterator<Item = O>,
   ) -> Result<Vec<Option<BitfieldValue>>> {
-    let ops_vec: Vec<BitfieldOperation> = ops.into_iter().map(|o| o.borrow().clone()).collect();
-    for op in &ops_vec {
+    let mut ops_vec = Vec::new();
+    for op in ops {
+      let op = op.borrow();
       if op.op_type != BitfieldOpType::Get {
         return Err(Error::invalid_data(
           "ERR BITFIELD_RO only supports the GET subcmd",
         ));
       }
+      ops_vec.push(*op);
     }
     self.exec_bitfield(key, &ops_vec, true)
   }
@@ -1009,5 +1017,12 @@ where
     check_composite_meta_not_other_type(self, key_bytes, KeyTag::BitmapMeta.as_slice(), now_ms)?;
 
     Ok(None)
+  }
+
+  /// Retrieves bitmap as bytes string (aligned with Apache Kvrocks Bitmap::GetString).
+  /// 将位图导出为连续字节字符串（对标 Apache Kvrocks Bitmap::GetString）
+  #[inline]
+  pub fn get_bitmap_string<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+    self.get_bitmap_bytes(key)
   }
 }

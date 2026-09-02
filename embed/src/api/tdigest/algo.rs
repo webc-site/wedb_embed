@@ -1419,7 +1419,7 @@ where
   if get_meta_checked::<TDigestMeta, _>(db, key_bytes, &meta_k, now_ms)?.is_none() {
     return Err(Error::invalid_data("ERR key does not exist"));
   }
-  let data_k = key::prefix(&kc, key_bytes);
+  let data_k = key::prefix_stack(&kc, key_bytes);
   match db.data().get(&data_k)? {
     Some(bytes) => bitcode::decode::<TDigestState>(&bytes)
       .map_err(|e| Error::invalid_data(format!("ERR tdigest deserialize: {e}"))),
@@ -1434,7 +1434,7 @@ where
 {
   let kc = db.kc();
   let meta_k = key::meta(&kc, key_bytes);
-  let data_k = key::prefix(&kc, key_bytes);
+  let data_k = key::prefix_stack(&kc, key_bytes);
   let serialized = bitcode::encode(td);
 
   let meta = TDigestMeta::new(td.compression as u32, 0, generate_version());

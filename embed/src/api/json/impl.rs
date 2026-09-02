@@ -233,7 +233,7 @@ where
     None => return Ok(None),
   };
 
-  let data_k = key::prefix(kc, key_bytes);
+  let data_k = key::prefix_stack(kc, key_bytes);
   let data_ks = db.data();
 
   let payload = match data_ks.get(&data_k)? {
@@ -262,7 +262,7 @@ where
 {
   let key_bytes = key.as_ref();
   let meta_k = key::meta(kc, key_bytes);
-  let data_k = key::prefix(kc, key_bytes);
+  let data_k = key::prefix_stack(kc, key_bytes);
 
   let payload =
     sonic_rs::to_vec(val).map_err(|e| Error::invalid_data(format!("ERR JSON serialize: {e}")))?;
@@ -474,7 +474,7 @@ where
 
     let Some(p) = path else {
       let meta_k = key::meta(&kc, key_bytes);
-      let data_k = key::prefix(&kc, key_bytes);
+      let data_k = key::prefix_stack(&kc, key_bytes);
       let mut batch = self.batch();
       batch.rm_meta(&meta_k);
       batch.rm_data(&data_k);
@@ -484,7 +484,7 @@ where
     let p = p.trim();
     if p == JSON_ROOT_PATH || p == "." {
       let meta_k = key::meta(&kc, key_bytes);
-      let data_k = key::prefix(&kc, key_bytes);
+      let data_k = key::prefix_stack(&kc, key_bytes);
       let mut batch = self.batch();
       batch.rm_meta(&meta_k);
       batch.rm_data(&data_k);

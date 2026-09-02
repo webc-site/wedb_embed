@@ -965,12 +965,20 @@ fn test_zset_binary_key_with_ff_boundary() -> Void {
   assert_eq!(items[1].0, b"m2");
   assert_eq!(items[2].0, b"m3\xff");
 
+  // 严格闭区间测试包含以 \xFF 开头的多字节成员（验证 score_range_bounds 无漏洞）
+  db.zadd(key_ff, &[(30.0, b"\xff\x01\x02".as_slice())], [])?;
+  let spec_closed = RangeScore::new(10.0, 30.0);
+  let items_closed = db.zrangebyscore(key_ff, spec_closed)?;
+  assert_eq!(items_closed.len(), 4);
+  assert!(items_closed.iter().any(|(m, _)| m == b"\xff\x01\x02"));
+
   let lex_spec = RangeLex::unbounded();
   let lex_items = db.zrangebylex(key_ff, &lex_spec)?;
-  assert_eq!(lex_items.len(), 3);
+  assert_eq!(lex_items.len(), 4);
   assert_eq!(lex_items[0], b"m1");
   assert_eq!(lex_items[1], b"m2");
   assert_eq!(lex_items[2], b"m3\xff");
+  assert_eq!(lex_items[3], b"\xff\x01\x02");
 
   Ok(())
 }

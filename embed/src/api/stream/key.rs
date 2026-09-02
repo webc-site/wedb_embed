@@ -83,6 +83,13 @@ pub fn consumer_prefix_all(kc: &KeyComposer, key: &[u8]) -> Vec<u8> {
 }
 
 /// Composes storage key or prefix.
+/// 栈上定长构造 Stream 所有消费者数据前缀（零堆分配）
+#[inline]
+pub fn consumer_prefix_all_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
+  kc.compose_prefix_stack(KeyTag::StreamConsumer.as_slice(), key)
+}
+
+/// Composes storage key or prefix.
 /// 栈上定长构造 Stream PEL 项数据键（零堆分配，编码格式：`[prefix][oppv(len(group))][group][ms_u64_be][seq_u64_be]`）
 #[inline]
 pub fn pel_item(kc: &KeyComposer, key: &[u8], group: &[u8], ms: u64, seq: u64) -> SmallKey {
@@ -111,4 +118,11 @@ pub fn pel_prefix(kc: &KeyComposer, key: &[u8], group: &[u8]) -> Vec<u8> {
 #[inline]
 pub fn pel_prefix_all(kc: &KeyComposer, key: &[u8]) -> Vec<u8> {
   kc.compose_prefix(KeyTag::StreamPel.as_slice(), key)
+}
+
+/// Composes storage key or prefix.
+/// 栈上定长构造 Stream 所有 PEL 数据前缀（零堆分配）
+#[inline]
+pub fn pel_prefix_all_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
+  kc.compose_prefix_stack(KeyTag::StreamPel.as_slice(), key)
 }

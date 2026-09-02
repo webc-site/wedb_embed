@@ -63,15 +63,15 @@ fn main() -> Result<()> {
     max: 400,
     ..Default::default()
   };
-  assert_eq!(db.si_count(b"si:1", &spec)?, 3);
-  assert_eq!(db.si_range_by_value(b"si:1", &spec)?, [200, 300, 400]);
-  assert_eq!(db.si_rev_range_by_value(b"si:1", &spec)?, [400, 300, 200]);
+  assert_eq!(db.si_count(b"si:1", spec)?, 3);
+  assert_eq!(db.si_range_by_value(b"si:1", spec)?, [200, 300, 400]);
+  assert_eq!(db.si_rev_range_by_value(b"si:1", spec)?, [400, 300, 200]);
 
   // Range deletion and clearing
   // 按数值、排名范围删除与全量清空
   let _ = db.si_rem_range_by_value(
     b"si:1",
-    &SortedintRange {
+    SortedintRange {
       min: 100,
       max: 150,
       ..Default::default()
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
   )?;
   let _ = db.si_rem_range_by_value(
     b"si:1",
-    &SortedintRange {
+    SortedintRange {
       min: 150,
       max: 250,
       ..Default::default()

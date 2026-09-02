@@ -39,6 +39,13 @@ pub fn prefix_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
   kc.compose_prefix_stack(KeyTag::TimeSeriesData.as_slice(), key)
 }
 
+/// Composes TimeSeries metadata prefix.
+/// 栈上定长构造 TimeSeries 元数据前缀（零堆分配）
+#[inline]
+pub fn meta_prefix_stack(kc: &KeyComposer) -> SmallKey {
+  kc.compose_meta_prefix_stack(KeyTag::TimeSeriesMeta.as_slice())
+}
+
 /// Composes storage key or prefix.
 /// 栈上定长构造 TimeSeries 下游规则元数据键（零堆分配，编码：`[prefix][dst_key]`）
 #[inline]
@@ -51,4 +58,11 @@ pub fn downstream_meta(kc: &KeyComposer, src_key: &[u8], dst_key: &[u8]) -> Smal
 #[inline]
 pub fn downstream_prefix(kc: &KeyComposer, src_key: &[u8]) -> Vec<u8> {
   kc.compose_prefix(KeyTag::TimeSeriesData.as_slice(), src_key)
+}
+
+/// Composes storage key or prefix.
+/// 栈上定长构造 TimeSeries 下游规则前缀（零堆分配）
+#[inline]
+pub fn downstream_prefix_stack(kc: &KeyComposer, src_key: &[u8]) -> SmallKey {
+  kc.compose_prefix_stack(KeyTag::TimeSeriesData.as_slice(), src_key)
 }

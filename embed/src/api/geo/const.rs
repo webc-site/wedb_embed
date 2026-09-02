@@ -1,7 +1,5 @@
 pub use std::f64::consts::PI;
 
-pub use crate::error::ERR_WRONG_TYPE;
-
 /// Earth mean radius in meters aligned with Apache Kvrocks / Redis (6372797.560856).
 /// 地球平均半径（米）（对标 Apache Kvrocks / Redis）
 pub const EARTH_RADIUS_METERS: f64 = 6372797.560856;

@@ -59,35 +59,35 @@ fn test_sortedint_range_by_value() -> Void {
 
   // [20, 60]
   let spec1 = parse_range_spec("20", "60")?;
-  let r1 = db.si_range_by_value("sikey", &spec1)?;
+  let r1 = db.si_range_by_value("sikey", spec1)?;
   assert_eq!(r1, vec![20, 30, 40, 50, 60]);
 
   // (20, (60)
   let spec2 = parse_range_spec("(20", "(60")?;
-  let r2 = db.si_range_by_value("sikey", &spec2)?;
+  let r2 = db.si_range_by_value("sikey", spec2)?;
   assert_eq!(r2, vec![30, 40, 50]);
 
   // [20, (60)
   let spec2_half = parse_range_spec("[20", "(60")?;
-  let r2_half = db.si_range_by_value("sikey", &spec2_half)?;
+  let r2_half = db.si_range_by_value("sikey", spec2_half)?;
   assert_eq!(r2_half, vec![20, 30, 40, 50]);
 
   // (20, 60]
   let spec2_half2 = parse_range_spec("(20", "[60")?;
-  let r2_half2 = db.si_range_by_value("sikey", &spec2_half2)?;
+  let r2_half2 = db.si_range_by_value("sikey", spec2_half2)?;
   assert_eq!(r2_half2, vec![30, 40, 50, 60]);
 
   // -inf, +inf with offset & count
   let mut spec3 = parse_range_spec("-inf", "+inf")?;
   spec3.offset = 2;
   spec3.count = Some(3);
-  let r3 = db.si_range_by_value("sikey", &spec3)?;
+  let r3 = db.si_range_by_value("sikey", spec3)?;
   assert_eq!(r3, vec![30, 40, 50]);
 
   // Reversed range by value
   let mut spec_rev = parse_range_spec("20", "60")?;
   spec_rev.reversed = true;
-  let r_rev = db.si_range_by_value("sikey", &spec_rev)?;
+  let r_rev = db.si_range_by_value("sikey", spec_rev)?;
   assert_eq!(r_rev, vec![60, 50, 40, 30, 20]);
 
   Ok(())
@@ -112,16 +112,16 @@ fn test_sortedint_rank_revrank_and_count() -> Void {
   assert_eq!(db.si_revrank("rank_k", 99)?, None);
 
   let spec = parse_range_spec("20", "40")?;
-  assert_eq!(db.si_count("rank_k", &spec)?, 3);
+  assert_eq!(db.si_count("rank_k", spec)?, 3);
 
   let spec_ex = parse_range_spec("(20", "(40")?;
-  assert_eq!(db.si_count("rank_k", &spec_ex)?, 1);
+  assert_eq!(db.si_count("rank_k", spec_ex)?, 1);
 
   let spec_all = parse_range_spec("-inf", "+inf")?;
-  assert_eq!(db.si_count("rank_k", &spec_all)?, 5);
+  assert_eq!(db.si_count("rank_k", spec_all)?, 5);
 
   let spec_none = parse_range_spec("100", "200")?;
-  assert_eq!(db.si_count("rank_k", &spec_none)?, 0);
+  assert_eq!(db.si_count("rank_k", spec_none)?, 0);
 
   Ok(())
 }
@@ -135,7 +135,7 @@ fn test_sortedint_rem_range_by_value_and_rank() -> Void {
 
   // Remove by value (20, 50] -> 30, 40, 50 removed (3 items)
   let spec = parse_range_spec("(20", "50")?;
-  assert_eq!(db.si_rem_range_by_value("rem_k", &spec)?, 3);
+  assert_eq!(db.si_rem_range_by_value("rem_k", spec)?, 3);
   assert_eq!(db.si_card("rem_k")?, 5);
   assert_eq!(
     db.si_range("rem_k", 0, 0, 10, false)?,
@@ -235,45 +235,45 @@ fn test_sortedint_edge_cases_and_clear() -> Void {
   let mut spec_count_0 = parse_range_spec("10", "50")?;
   spec_count_0.count = Some(0);
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_count_0)?,
+    db.si_range_by_value("edge_k", spec_count_0)?,
     Vec::<u64>::new()
   );
   assert_eq!(
-    db.si_rev_range_by_value("edge_k", &spec_count_0)?,
+    db.si_rev_range_by_value("edge_k", spec_count_0)?,
     Vec::<u64>::new()
   );
 
   // 2. Empty range cases (min > max, min == max with exclusive)
   let spec_min_gt_max = parse_range_spec("100", "50")?;
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_min_gt_max)?,
+    db.si_range_by_value("edge_k", spec_min_gt_max)?,
     Vec::<u64>::new()
   );
   assert_eq!(
-    db.si_rev_range_by_value("edge_k", &spec_min_gt_max)?,
+    db.si_rev_range_by_value("edge_k", spec_min_gt_max)?,
     Vec::<u64>::new()
   );
 
   let spec_ex_eq = parse_range_spec("(30", "30")?;
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_ex_eq)?,
+    db.si_range_by_value("edge_k", spec_ex_eq)?,
     Vec::<u64>::new()
   );
   let spec_eq_ex = parse_range_spec("30", "(30")?;
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_eq_ex)?,
+    db.si_range_by_value("edge_k", spec_eq_ex)?,
     Vec::<u64>::new()
   );
 
   // Extreme boundaries
   let spec_max_ex = SortedintRange::all().with_min(u64::MAX, true);
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_max_ex)?,
+    db.si_range_by_value("edge_k", spec_max_ex)?,
     Vec::<u64>::new()
   );
   let spec_zero_ex = SortedintRange::all().with_max(0, true);
   assert_eq!(
-    db.si_range_by_value("edge_k", &spec_zero_ex)?,
+    db.si_range_by_value("edge_k", spec_zero_ex)?,
     Vec::<u64>::new()
   );
 
@@ -288,14 +288,11 @@ fn test_sortedint_edge_cases_and_clear() -> Void {
   spec_rev_page.reversed = true;
   spec_rev_page.offset = 1;
   spec_rev_page.count = Some(2);
-  assert_eq!(
-    db.si_range_by_value("edge_k", &spec_rev_page)?,
-    vec![40, 30]
-  );
+  assert_eq!(db.si_range_by_value("edge_k", spec_rev_page)?, vec![40, 30]);
 
   // 4. si_rem_range_by_value test
   let spec_rem = parse_range_spec("20", "40")?;
-  assert_eq!(db.si_rem_range_by_value("edge_k", &spec_rem)?, 3);
+  assert_eq!(db.si_rem_range_by_value("edge_k", spec_rem)?, 3);
   assert_eq!(db.si_card("edge_k")?, 2);
   assert_eq!(db.si_range("edge_k", 0, 0, 10, false)?, vec![10, 50]);
 
@@ -320,7 +317,7 @@ fn test_sortedint_advanced_features_and_builder() -> Void {
   // Builder test
   let spec_builder = SortedintRange::all().with_offset(2).with_count(3);
   assert_eq!(
-    db.si_range_by_value("adv_k", &spec_builder)?,
+    db.si_range_by_value("adv_k", spec_builder)?,
     vec![30, 40, 50]
   );
 
@@ -329,7 +326,7 @@ fn test_sortedint_advanced_features_and_builder() -> Void {
     .with_count(2)
     .with_reversed(true);
   assert_eq!(
-    db.si_range_by_value("adv_k", &spec_builder_rev)?,
+    db.si_range_by_value("adv_k", spec_builder_rev)?,
     vec![60, 50]
   );
 
@@ -337,7 +334,7 @@ fn test_sortedint_advanced_features_and_builder() -> Void {
   let mut spec_rev_unlimited = SortedintRange::all().with_reversed(true);
   spec_rev_unlimited.offset = 3;
   assert_eq!(
-    db.si_range_by_value("adv_k", &spec_rev_unlimited)?,
+    db.si_range_by_value("adv_k", spec_rev_unlimited)?,
     vec![40, 30, 20, 10]
   );
 
@@ -391,7 +388,7 @@ fn test_sortedint_streaming_iter_and_namespace() -> Void {
 
   let spec_ns = SortedintRange::all().with_min(150, false);
   assert_eq!(
-    tenant1.si_range_by_value("ns_key", &spec_ns)?,
+    tenant1.si_range_by_value("ns_key", spec_ns)?,
     vec![200, 300]
   );
 
@@ -435,7 +432,7 @@ fn test_sortedint_large_dataset_and_cursor_range() -> Void {
   // 3. 范围查询：[4980, 5020]
   let spec_mid = parse_range_spec("4980", "5020")?;
   assert_eq!(
-    db.si_range_by_value("scale_k", &spec_mid)?,
+    db.si_range_by_value("scale_k", spec_mid)?,
     vec![4980, 4990, 5000, 5010, 5020]
   );
 
@@ -443,17 +440,17 @@ fn test_sortedint_large_dataset_and_cursor_range() -> Void {
   let mut spec_mid_rev = parse_range_spec("4980", "5020")?;
   spec_mid_rev.reversed = true;
   assert_eq!(
-    db.si_range_by_value("scale_k", &spec_mid_rev)?,
+    db.si_range_by_value("scale_k", spec_mid_rev)?,
     vec![5020, 5010, 5000, 4990, 4980]
   );
 
   // 统计范围元素数量
-  assert_eq!(db.si_count("scale_k", &spec_mid)?, 5);
+  assert_eq!(db.si_count("scale_k", spec_mid)?, 5);
 
   // 删除范围 [4980, 5020]
-  assert_eq!(db.si_rem_range_by_value("scale_k", &spec_mid)?, 5);
+  assert_eq!(db.si_rem_range_by_value("scale_k", spec_mid)?, 5);
   assert_eq!(db.si_card("scale_k")?, 995);
-  assert_eq!(db.si_count("scale_k", &spec_mid)?, 0);
+  assert_eq!(db.si_count("scale_k", spec_mid)?, 0);
 
   Ok(())
 }
@@ -502,8 +499,8 @@ fn test_sortedint_wrongtype_checks() -> Void {
   assert!(db.si_members("str_key").is_err());
   assert!(db.si_range("str_key", 0, 0, 10, false).is_err());
   let spec = parse_range_spec("-inf", "+inf")?;
-  assert!(db.si_range_by_value("str_key", &spec).is_err());
-  assert!(db.si_count("str_key", &spec).is_err());
+  assert!(db.si_range_by_value("str_key", spec).is_err());
+  assert!(db.si_count("str_key", spec).is_err());
 
   // 2. Hash 键类型冲突
   db.hset("h_key", &[("field", "val")])?;
@@ -581,6 +578,41 @@ fn test_sortedint_range_spec_parsing_errors() -> Void {
 
   let err9 = parse_range_spec("10", "-5").unwrap_err();
   assert!(err9.to_string().contains("ERR the max isn't integer"));
+
+  Ok(())
+}
+
+#[test]
+fn test_sortedint_fast_path_and_boundary_pruning() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 测试全范围 rank 删除快路径
+  db.si_add("si_full_rank", &[1, 2, 3, 4, 5])?;
+  assert_eq!(db.si_card("si_full_rank")?, 5);
+  assert_eq!(db.si_rem_range_by_rank("si_full_rank", (0, 4))?, 5);
+  assert_eq!(db.si_card("si_full_rank")?, 0);
+
+  // 2. 测试全范围 value 删除快路径
+  db.si_add("si_full_val", &[10, 20, 30])?;
+  assert_eq!(db.si_card("si_full_val")?, 3);
+  let all_spec = SortedintRange::all();
+  assert_eq!(db.si_rem_range_by_value("si_full_val", all_spec)?, 3);
+  assert_eq!(db.si_card("si_full_val")?, 0);
+
+  // 3. 测试 Bound::Excluded 精确边界过滤
+  db.si_add("si_bound", &[100, 200, 300, 400, 500])?;
+  let spec_ex = SortedintRange::default()
+    .with_min(200, true)
+    .with_max(400, true);
+  let res_ex = db.si_range_by_value("si_bound", spec_ex)?;
+  assert_eq!(res_ex, vec![300]);
+  assert_eq!(db.si_count("si_bound", spec_ex)?, 1);
+
+  // 4. 测试 si_rank 在不存在元素时的早停行为
+  assert_eq!(db.si_rank("si_bound", 250)?, None);
+  assert_eq!(db.si_rank("si_bound", 300)?, Some(2));
+  assert_eq!(db.si_revrank("si_bound", 300)?, Some(2));
 
   Ok(())
 }

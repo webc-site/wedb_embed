@@ -60,8 +60,8 @@ fn main() -> Result<()> {
   // Arbitrary bitfield operations
   // 位域复合操作与只读执行
   let ops = [BitfieldOperation::get(BitfieldEncoding::Unsigned(8), 0)];
-  let _ = db.bitfield(b"bm1", &ops)?;
-  let _ = db.bitfield_read_only(b"bm1", &ops)?;
+  let _ = db.bitfield(b"bm1", ops)?;
+  let _ = db.bitfield_read_only(b"bm1", ops)?;
 
   // Raw byte retrieval and bitmap deletion
   // 底层原始字节获取与位图删除

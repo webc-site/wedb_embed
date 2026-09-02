@@ -31,7 +31,7 @@ where
 {
   let kc = db.kc();
   let meta_ks = db.meta();
-  let ds_prefix_k = key::downstream_prefix(&kc, src_key);
+  let ds_prefix_k = key::downstream_prefix_stack(&kc, src_key);
 
   for g in meta_ks.prefix(&ds_prefix_k) {
     let entry = g?;
@@ -85,7 +85,7 @@ where
 {
   let kc = db.kc();
   let meta_ks = db.meta();
-  let ds_prefix_k = key::downstream_prefix(&kc, src_key);
+  let ds_prefix_k = key::downstream_prefix_stack(&kc, src_key);
 
   for g in meta_ks.prefix(&ds_prefix_k) {
     let entry = g?;
@@ -212,7 +212,7 @@ where
 
     let policy = on_duplicate.unwrap_or(meta.duplicate_policy);
     let sample = TSSample::new(timestamp, value);
-    let prefix = key::prefix(&kc, key_bytes);
+    let prefix = key::prefix_stack(&kc, key_bytes);
 
     let mut batch = self.batch();
     let mut final_value = value;
@@ -422,11 +422,11 @@ where
     if let Some(m) = meta
       && m.total_samples > 0
     {
-      let prefix = key::prefix(&kc, key_bytes);
+      let prefix = key::prefix_stack(&kc, key_bytes);
       if let Some(g) = data_ks.prefix(&prefix).next_back() {
         let entry = g?;
         let (k, v) = (entry.key(), entry.value());
-        if k.starts_with(&prefix)
+        if k.starts_with(prefix.as_slice())
           && let Ok(Some(sample)) = TSChunk::get_latest_sample(v)
         {
           return Ok(Some(sample));
@@ -601,7 +601,7 @@ where
     }
 
     let kc = self.kc();
-    let prefix = key::prefix(&kc, key_bytes);
+    let prefix = key::prefix_stack(&kc, key_bytes);
     let meta_k = key::meta(&kc, key_bytes);
     let data_ks = self.data();
     let now_ms = current_now_ms();
@@ -641,19 +641,19 @@ where
     {
       let entry = g?;
       let (k, _) = (entry.key(), entry.value());
-      if k.starts_with(&prefix) {
+      if k.starts_with(prefix.as_slice()) {
         k.to_vec()
       } else {
-        prefix.clone()
+        prefix.to_vec()
       }
     } else {
-      prefix.clone()
+      prefix.to_vec()
     };
 
     for g in data_ks.range((Bound::Included(start_range_k.as_slice()), Bound::Unbounded)) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(&prefix) {
+      if !k.starts_with(prefix.as_slice()) {
         break;
       }
       let sub = &k[prefix.len()..];
@@ -699,7 +699,7 @@ where
     let (from_ts, to_ts) = range.into_ts_range();
     let key_bytes = key.as_ref();
     let kc = self.kc();
-    let prefix = key::prefix(&kc, key_bytes);
+    let prefix = key::prefix_stack(&kc, key_bytes);
     let meta_k = key::meta(&kc, key_bytes);
     let meta_ks = self.meta();
     let data_ks = self.data();
@@ -710,7 +710,7 @@ where
       None => return Ok(0),
     };
 
-    let ds_prefix_k = key::downstream_prefix(&kc, key_bytes);
+    let ds_prefix_k = key::downstream_prefix_stack(&kc, key_bytes);
     let retention_bound = if meta.retention_time > 0 && meta.retention_time < meta.last_time {
       meta.last_time - meta.retention_time
     } else {
@@ -721,7 +721,7 @@ where
       for g in meta_ks.prefix(&ds_prefix_k) {
         let entry = g?;
         let (k, v) = (entry.key(), entry.value());
-        if k.starts_with(&ds_prefix_k)
+        if k.starts_with(ds_prefix_k.as_slice())
           && let Some(ds_meta) = TSDownStreamMeta::decode(v)
           && ds_meta.aggregator.calculate_aligned_bucket_left(from_ts) < retention_bound
         {
@@ -739,7 +739,7 @@ where
     for g in data_ks.prefix(&prefix) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(&prefix) {
+      if k.starts_with(prefix.as_slice()) {
         let sub = &k[prefix.len()..];
         if let Ok(b8) = sub.try_into() {
           let chunk_ts = u64::from_be_bytes(b8);
@@ -829,13 +829,13 @@ where
     let data_ks = self.data();
     let now_ms = current_now_ms();
     let filter = TimeSeriesLabelFilter::parse(&filters);
-    let prefix = key::meta_prefix(&kc);
+    let prefix = key::meta_prefix_stack(&kc);
 
     let mut results = Vec::new();
     for g in meta_ks.prefix(&prefix) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(&prefix)
+      if k.starts_with(prefix.as_slice())
         && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
@@ -844,10 +844,10 @@ where
         let name = String::from_utf8_lossy(name_bytes).into_owned();
 
         let latest_sample = if meta.total_samples > 0 {
-          let data_prefix = key::prefix(&kc, name_bytes);
+          let data_prefix = key::prefix_stack(&kc, name_bytes);
           if let Some(chunk_entry) = data_ks.prefix(&data_prefix).next_back() {
             let chunk = chunk_entry?;
-            if chunk.key().starts_with(&data_prefix) {
+            if chunk.key().starts_with(data_prefix.as_slice()) {
               TSChunk::get_latest_sample(chunk.value()).ok().flatten()
             } else {
               None
@@ -937,7 +937,7 @@ where
     let meta_ks = self.meta();
     let now_ms = current_now_ms();
     let filter = TimeSeriesLabelFilter::parse(&filters);
-    let prefix = key::meta_prefix(&kc);
+    let prefix = key::meta_prefix_stack(&kc);
 
     let query = TsRangeQuery {
       start_ts,
@@ -957,7 +957,7 @@ where
     for g in meta_ks.prefix(&prefix) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(&prefix)
+      if k.starts_with(prefix.as_slice())
         && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
@@ -1081,7 +1081,7 @@ where
       None => return Err(Error::invalid_data(ERR_TSDB_KEY_NOT_EXISTS)),
     };
 
-    let ds_prefix_k = key::downstream_prefix(&kc, key_bytes);
+    let ds_prefix_k = key::downstream_prefix_stack(&kc, key_bytes);
     let mut downstream_rules = Vec::new();
 
     for g in meta_ks.prefix(&ds_prefix_k) {
@@ -1120,7 +1120,7 @@ where
   #[inline]
   pub fn ts_queryindex(&self, filters: &[String]) -> Result<Vec<String>> {
     let filter = TimeSeriesLabelFilter::parse(filters);
-    let prefix = key::meta_prefix(&self.kc());
+    let prefix = key::meta_prefix_stack(&self.kc());
     let meta_ks = self.meta();
     let now_ms = current_now_ms();
 
@@ -1128,7 +1128,7 @@ where
     for g in meta_ks.prefix(&prefix) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(&prefix)
+      if k.starts_with(prefix.as_slice())
         && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
@@ -1182,7 +1182,7 @@ where
       return Err(Error::invalid_data(ERR_TSDB_DST_ALREADY_HAS_SRC_RULE));
     }
 
-    let dst_ds_prefix_k = key::downstream_prefix(&kc, dst_bytes);
+    let dst_ds_prefix_k = key::downstream_prefix_stack(&kc, dst_bytes);
     if meta_ks.prefix(&dst_ds_prefix_k).next().is_some() {
       return Err(Error::invalid_data(ERR_TSDB_DST_ALREADY_HAS_DST_RULE));
     }

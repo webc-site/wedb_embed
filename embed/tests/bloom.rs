@@ -305,3 +305,23 @@ fn test_bloom_expired_meta() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_bloom_card_and_point_lookups() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  assert_eq!(db.bf_card("bf_card_key")?, 0);
+  assert!(!db.bf_exists("bf_card_key", "elem1")?);
+
+  assert!(db.bf_add("bf_card_key", "elem1")?);
+  assert!(db.bf_add("bf_card_key", "elem2")?);
+  assert_eq!(db.bf_card("bf_card_key")?, 2);
+
+  // 验证 bf_exists 单点反向探测快路径
+  assert!(db.bf_exists("bf_card_key", "elem1")?);
+  assert!(db.bf_exists("bf_card_key", "elem2")?);
+  assert!(!db.bf_exists("bf_card_key", "non_exist")?);
+
+  Ok(())
+}

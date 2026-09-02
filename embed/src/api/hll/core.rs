@@ -9,9 +9,9 @@ use crate::{
     dense::{hll_dense_estimate, hll_dense_get_register, hll_dense_set_register, hll_merge_bytes},
     meta::HllEncodeType,
     sparse::{
-      hll_dense_to_sparse, hll_merge_sparse_into_dense, hll_sparse_estimate,
-      hll_sparse_get_register, hll_sparse_is_valid, hll_sparse_new, hll_sparse_set_register,
-      hll_sparse_to_dense,
+      HllSparseOp, decode_sparse_op, hll_dense_to_sparse, hll_merge_sparse_into_dense,
+      hll_sparse_estimate, hll_sparse_get_register, hll_sparse_is_valid, hll_sparse_new,
+      hll_sparse_set_register, hll_sparse_to_dense,
     },
   },
 };
@@ -269,12 +269,22 @@ impl HyperLogLog {
   }
 
   /// Returns whether HyperLogLog is completely empty (cardinality 0).
-  /// 判断是否全空（估算为 0）
+  /// 判断是否全空（全零寄存器，稀疏模式单趟操作码快速扫描，避免直方图与浮点运算）
   #[inline]
   pub fn is_empty(&self) -> bool {
     match self.encode_type {
       HllEncodeType::Dense => self.registers.iter().all(|&b| b == 0),
-      HllEncodeType::Sparse => self.count() == 0,
+      HllEncodeType::Sparse => {
+        let mut offset = 0;
+        while offset < self.registers.len() {
+          match decode_sparse_op(&self.registers[offset..]) {
+            Some((HllSparseOp::Val { .. }, _)) => return false,
+            Some((_, consumed)) => offset += consumed,
+            None => return false,
+          }
+        }
+        true
+      }
     }
   }
 

@@ -12,8 +12,8 @@ use crate::{
   key_composer::{KeyTag, matches_glob_bytes},
   meta::{KeyMeta, RedisType, current_now_ms, generate_version},
   string::{
-    compose_string_key as raw, compose_string_prefix as string_key_prefix, decode_string_value,
-    encode_string_value, is_string_expired,
+    compose_string_key as raw, compose_string_prefix_stack as string_key_prefix_stack,
+    decode_string_value, encode_string_value, is_string_expired,
   },
   wedb::{
     Db,
@@ -339,11 +339,11 @@ where
   let pat_bytes = pattern.as_ref();
 
   // 1. 扫描 data_ks 中的 String 键（仅匹配 String 前缀，零子键开销）
-  let str_prefix = string_key_prefix(&kc);
+  let str_prefix = string_key_prefix_stack(&kc);
   for item in data_ks.prefix(&str_prefix) {
     let entry = item?;
     let k = entry.key();
-    if !k.starts_with(&str_prefix) {
+    if !k.starts_with(str_prefix.as_slice()) {
       break;
     }
     let (expire_at, _) = decode_string_value(entry.value());
@@ -357,12 +357,12 @@ where
   }
 
   // 2. 扫描 meta_ks 中的复合数据结构元数据键（单次遍历无子键）
-  let meta_prefix = kc.namespace_prefix();
+  let meta_prefix = kc.namespace_prefix_stack();
   let scope_prefix_len = kc.scope_prefix_len();
   for item in meta_ks.prefix(&meta_prefix) {
     let entry = item?;
     let k = entry.key();
-    if !k.starts_with(&meta_prefix) {
+    if !k.starts_with(meta_prefix.as_slice()) {
       break;
     }
     let remain = &k[scope_prefix_len..];
@@ -402,11 +402,11 @@ where
   let data_ks = db.data();
   let meta_ks = db.meta();
 
-  let str_prefix = string_key_prefix(&kc);
+  let str_prefix = string_key_prefix_stack(&kc);
   for item in data_ks.prefix(&str_prefix) {
     let entry = item?;
     let k = entry.key();
-    if !k.starts_with(&str_prefix) {
+    if !k.starts_with(str_prefix.as_slice()) {
       break;
     }
     let (expire_at, _) = decode_string_value(entry.value());
@@ -417,12 +417,12 @@ where
     seen.insert(rapidhash_v3(user_k));
   }
 
-  let meta_prefix = kc.namespace_prefix();
+  let meta_prefix = kc.namespace_prefix_stack();
   let scope_prefix_len = kc.scope_prefix_len();
   for item in meta_ks.prefix(&meta_prefix) {
     let entry = item?;
     let k = entry.key();
-    if !k.starts_with(&meta_prefix) {
+    if !k.starts_with(meta_prefix.as_slice()) {
       break;
     }
     let remain = &k[scope_prefix_len..];
@@ -604,9 +604,9 @@ where
   // Phase 1: Scan String keys from data_ks if rtype is compatible
   let should_scan_string = rtype.is_none() || rtype == Some(RedisType::String);
   if should_scan_string && !in_meta_phase {
-    let str_prefix = string_key_prefix(&kc);
+    let str_prefix = string_key_prefix_stack(&kc);
     let seek_key = if !is_init && cursor.starts_with(b"s:") {
-      let mut k = str_prefix.clone();
+      let mut k = str_prefix.to_vec();
       k.extend_from_slice(&cursor[2..]);
       Some(k)
     } else {
@@ -628,7 +628,7 @@ where
     for item in iter {
       let entry = item?;
       let k = entry.key();
-      if !k.starts_with(&str_prefix) {
+      if !k.starts_with(str_prefix.as_slice()) {
         break;
       }
       let user_k = &k[str_prefix.len()..];
@@ -665,11 +665,11 @@ where
   // Phase 2: Scan Composite keys from meta_ks
   let should_scan_meta = rtype.map(|t| t != RedisType::String).unwrap_or(true);
   if should_scan_meta {
-    let meta_prefix = kc.namespace_prefix();
+    let meta_prefix = kc.namespace_prefix_stack();
     let scope_prefix_len = kc.scope_prefix_len();
 
     let seek_key = if in_meta_phase {
-      let mut k = meta_prefix.clone();
+      let mut k = meta_prefix.to_vec();
       k.extend_from_slice(&cursor[2..]);
       Some(k)
     } else {
@@ -691,7 +691,7 @@ where
     for item in iter {
       let entry = item?;
       let k = entry.key();
-      if !k.starts_with(&meta_prefix) {
+      if !k.starts_with(meta_prefix.as_slice()) {
         break;
       }
       let remain = &k[scope_prefix_len..];

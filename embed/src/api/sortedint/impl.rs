@@ -269,11 +269,20 @@ where
       None => return Ok(Vec::new()),
     };
 
+    let prefix = compose_si_prefix_stack(&kc, k_bytes);
+    let prefix_len = prefix.len();
     let mut results = Vec::with_capacity((meta.base.size as usize).min(4096));
-    self.si_iter(key, |id| {
-      results.push(id);
-      true
-    })?;
+
+    for g in self.data().prefix(&prefix) {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(&prefix) {
+        break;
+      }
+      if let Some(id) = extract_id(k, prefix_len) {
+        results.push(id);
+      }
+    }
     Ok(results)
   }
 
@@ -406,22 +415,24 @@ where
     let start_k = compose_si_item_key(&prefix, spec.min);
     let end_k = compose_si_item_key(&prefix, spec.max);
 
+    let start_bound = if spec.minex {
+      Bound::Excluded(start_k.as_slice())
+    } else {
+      Bound::Included(start_k.as_slice())
+    };
+    let end_bound = if spec.maxex {
+      Bound::Excluded(end_k.as_slice())
+    } else {
+      Bound::Included(end_k.as_slice())
+    };
+
     if !spec.reversed {
       let mut results = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
       let mut pos = 0usize;
-      for g in self.data().range((
-        Bound::Included(start_k.as_slice()),
-        Bound::Included(end_k.as_slice()),
-      )) {
+      for g in self.data().range((start_bound, end_bound)) {
         let entry = g?;
         let (k, _) = (entry.key(), entry.value());
         if let Some(id) = extract_id(k, prefix_len) {
-          if spec.minex && id == spec.min {
-            continue;
-          }
-          if spec.maxex && id == spec.max {
-            break;
-          }
           if pos < spec.offset {
             pos += 1;
             continue;
@@ -438,23 +449,10 @@ where
     } else {
       let mut results = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
       let mut pos = 0usize;
-      for g in self
-        .data()
-        .range((
-          Bound::Included(start_k.as_slice()),
-          Bound::Included(end_k.as_slice()),
-        ))
-        .rev()
-      {
+      for g in self.data().range((start_bound, end_bound)).rev() {
         let entry = g?;
         let (k, _) = (entry.key(), entry.value());
         if let Some(id) = extract_id(k, prefix_len) {
-          if spec.maxex && id == spec.max {
-            continue;
-          }
-          if spec.minex && id == spec.min {
-            break;
-          }
           if pos < spec.offset {
             pos += 1;
             continue;
@@ -493,37 +491,42 @@ where
     };
 
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
-    let prefix_len = prefix.len();
+    if !spec.minex && !spec.maxex && spec.min == u64::MIN && spec.max == u64::MAX {
+      let mut batch = self.batch();
+      clear_prefix_in_batch(self.data(), prefix.as_slice(), &mut batch)?;
+      batch.rm_meta(meta_k.as_slice());
+      batch.commit()?;
+      return Ok(meta.base.size as usize);
+    }
+
     let start_k = compose_si_item_key(&prefix, spec.min);
     let end_k = compose_si_item_key(&prefix, spec.max);
+    let start_bound = if spec.minex {
+      Bound::Excluded(start_k.as_slice())
+    } else {
+      Bound::Included(start_k.as_slice())
+    };
+    let end_bound = if spec.maxex {
+      Bound::Excluded(end_k.as_slice())
+    } else {
+      Bound::Included(end_k.as_slice())
+    };
 
     let mut deleted = 0usize;
     let mut batch = self.batch();
 
-    for g in self.data().range((
-      Bound::Included(start_k.as_slice()),
-      Bound::Included(end_k.as_slice()),
-    )) {
+    for g in self.data().range((start_bound, end_bound)) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
-      if let Some(id) = extract_id(k, prefix_len) {
-        if spec.minex && id == spec.min {
-          continue;
-        }
-        if spec.maxex && id == spec.max {
-          break;
-        }
-        deleted += 1;
-        batch.rm_weak_data(k);
-      }
+      deleted += 1;
+      batch.rm_weak_data(entry.key());
     }
 
     if deleted > 0 {
       meta.base.size = meta.base.size.saturating_sub(deleted as u64);
       if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
+        batch.rm_meta(meta_k.as_slice());
       } else {
-        batch.insert_meta(&meta_k, &meta.encode());
+        batch.insert_meta(meta_k.as_slice(), &meta.encode());
       }
       batch.commit()?;
     }
@@ -558,6 +561,15 @@ where
     };
 
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
+
+    if s == 0 && e + 1 >= meta.base.size as usize {
+      let mut batch = self.batch();
+      clear_prefix_in_batch(self.data(), prefix.as_slice(), &mut batch)?;
+      batch.rm_meta(meta_k.as_slice());
+      batch.commit()?;
+      return Ok(meta.base.size as usize);
+    }
+
     let mut deleted = 0usize;
     let mut batch = self.batch();
 
@@ -579,9 +591,9 @@ where
     if deleted > 0 {
       meta.base.size = meta.base.size.saturating_sub(deleted as u64);
       if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
+        batch.rm_meta(meta_k.as_slice());
       } else {
-        batch.insert_meta(&meta_k, &meta.encode());
+        batch.insert_meta(meta_k.as_slice(), &meta.encode());
       }
       batch.commit()?;
     }
@@ -591,20 +603,35 @@ where
 
   #[inline]
   pub fn si_rank<K: AsRef<[u8]>>(&self, key: K, id: u64) -> Result<Option<usize>> {
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_si_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    if get_meta_checked::<SortedintMeta, _>(self, k_bytes, &meta_k, now_ms)?.is_none() {
+      return Ok(None);
+    }
+
+    let prefix = compose_si_prefix_stack(&kc, k_bytes);
+    let end_k = compose_si_item_key(&prefix, id);
+
+    // 1. O(1) 布隆过滤器点查：若元素不存在，直接返回 None，避免 O(N) 盲目扫描
+    if !self.data().contains_key(end_k.as_slice())? {
+      return Ok(None);
+    }
+
+    // 2. 元素已确认存在：排位即严格小于 end_k 的元素个数，区间采用 Excluded(end_k)
+    //    该区间内所有 Key 必严格小于 id，因此前序项完全无需反序列化解码
+    let start_k = compose_si_item_key(&prefix, 0);
     let mut rank = 0usize;
-    let mut found = false;
-    self.si_iter(key, |cur_id| {
-      if cur_id == id {
-        found = true;
-        return false;
-      }
-      if cur_id > id {
-        return false;
-      }
+    for g in self.data().range((
+      Bound::Included(start_k.as_slice()),
+      Bound::Excluded(end_k.as_slice()),
+    )) {
+      let _ = g?;
       rank += 1;
-      true
-    })?;
-    if found { Ok(Some(rank)) } else { Ok(None) }
+    }
+    Ok(Some(rank))
   }
 
   #[inline]
@@ -642,31 +669,35 @@ where
     let meta_k = compose_si_meta_key(&kc, k_bytes);
     let now_ms = current_now_ms();
 
-    if get_meta_checked::<SortedintMeta, _>(self, k_bytes, &meta_k, now_ms)?.is_none() {
-      return Ok(0);
+    let meta = match get_meta_checked::<SortedintMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(0),
+    };
+
+    // 全区间 O(1) 极速短路返回
+    if !spec.minex && !spec.maxex && spec.min == u64::MIN && spec.max == u64::MAX {
+      return Ok(meta.base.size as usize);
     }
 
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
-    let prefix_len = prefix.len();
     let start_k = compose_si_item_key(&prefix, spec.min);
     let end_k = compose_si_item_key(&prefix, spec.max);
 
+    let start_bound = if spec.minex {
+      Bound::Excluded(start_k.as_slice())
+    } else {
+      Bound::Included(start_k.as_slice())
+    };
+    let end_bound = if spec.maxex {
+      Bound::Excluded(end_k.as_slice())
+    } else {
+      Bound::Included(end_k.as_slice())
+    };
+
     let mut count = 0usize;
-    for g in self.data().range((
-      Bound::Included(start_k.as_slice()),
-      Bound::Included(end_k.as_slice()),
-    )) {
-      let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
-      if let Some(id) = extract_id(k, prefix_len) {
-        if spec.minex && id == spec.min {
-          continue;
-        }
-        if spec.maxex && id == spec.max {
-          break;
-        }
-        count += 1;
-      }
+    for g in self.data().range((start_bound, end_bound)) {
+      let _ = g?;
+      count += 1;
     }
     Ok(count)
   }

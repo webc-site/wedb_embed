@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use crate::{
   constants::{EARLY_EXIT_BIT_WIDTH, SAMPLES_COUNT},
   float::AlpFloat,
@@ -9,6 +11,7 @@ use crate::{
 pub struct BestParams {
   pub exp: u8,
   pub fac: u8,
+  pub use_div: bool,
 }
 
 /// Checks whether float is special non-encodable value (NaN, Inf, -0.0, out of range).
@@ -58,42 +61,44 @@ pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
   None
 }
 
-/// Generic sampling derivation for optimal (exp, fac) combination.
-/// 通用采样推导最优 (exp, fac) 组合
-pub fn find_best_params<F: AlpFloat>(data: &[F]) -> BestParams {
-  if data.is_empty() {
-    return BestParams { exp: 0, fac: 0 };
+/// Discovers best exponent, factor, and division mode by evaluating cost over sampled subset.
+/// 通过对采样样本进行代价评估，找出最优的指数 (exp)、因子 (fac) 与除法重构模式 (use_div)
+pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
+  if samples.is_empty() {
+    return BestParams {
+      exp: 0,
+      fac: 0,
+      use_div: false,
+    };
   }
 
-  let mut samples = [F::ZERO; SAMPLES_COUNT];
-  let sample_len = data.len().min(SAMPLES_COUNT);
-  if data.len() <= SAMPLES_COUNT {
-    samples[..sample_len].copy_from_slice(data);
-  } else {
-    let step = data.len() / SAMPLES_COUNT;
-    for (i, slot) in samples.iter_mut().enumerate() {
-      // SAFETY: SAMPLES_COUNT 为 32，当 data.len() > 32 时 step >= 1，且 i < 32，因此 i * step <= 31 * (data.len() / 32) < data.len()，索引严格在合法区间内。
-      *slot = unsafe { *data.get_unchecked(i * step) };
-    }
-  }
-  let active_samples = &samples[..sample_len];
-
-  // 常数/同值序列极速探测：如果采样全等，直接寻找首个有效 exp 并返回
-  let first = active_samples[0];
-  if active_samples.iter().all(|&v| v.is_exact_same(first)) {
-    for exp in 0..=F::MAX_EXPONENT {
-      let frac_exp = F::frac_exp(exp);
-      let exp_factor = F::exp_factor(exp, 0);
-      let fac_int = F::fac_int(0);
-      if F::try_encode_fast(first, exp_factor, fac_int, frac_exp).is_some() {
-        return BestParams { exp, fac: 0 };
+  let mut valid_samples: [F; SAMPLES_COUNT] = [F::ZERO; SAMPLES_COUNT];
+  let mut sample_len = 0;
+  for &val in samples {
+    if !val.is_impossible() {
+      valid_samples[sample_len] = val;
+      sample_len += 1;
+      if sample_len == SAMPLES_COUNT {
+        break;
       }
     }
-    return BestParams { exp: 0, fac: 0 };
   }
 
-  let mut best_cost = usize::MAX;
-  let mut best_params = BestParams { exp: 0, fac: 0 };
+  let active_samples = &valid_samples[..sample_len];
+  if sample_len == 0 {
+    return BestParams {
+      exp: 0,
+      fac: 0,
+      use_div: false,
+    };
+  }
+
+  let mut best_cost = size_of::<F>() * 8 * sample_len;
+  let mut best_params = BestParams {
+    exp: 0,
+    fac: 0,
+    use_div: false,
+  };
 
   for exp in 0..=F::MAX_EXPONENT {
     let max_fac = exp.min(F::MAX_FAC);
@@ -119,27 +124,81 @@ pub fn find_best_params<F: AlpFloat>(data: &[F]) -> BestParams {
         }
       }
 
-      if exceptions == sample_len || exceptions * F::EXCEPTION_PENALTY >= best_cost {
-        continue;
+      let zero_exceptions_fac0 = fac == 0 && exceptions == 0;
+
+      if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY < best_cost {
+        let max_offset = if min_val <= max_val {
+          F::calc_range(min_val, max_val)
+        } else {
+          0
+        };
+        let bit_width = F::bits_needed(max_offset) as usize;
+        let fac_penalty = if fac > 0 { sample_len * 2 } else { 0 };
+        let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY + fac_penalty;
+
+        if total_cost < best_cost {
+          best_cost = total_cost;
+          best_params = BestParams {
+            exp,
+            fac,
+            use_div: false,
+          };
+          if total_cost == 0 {
+            return best_params;
+          }
+          if exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH {
+            return best_params;
+          }
+        }
       }
 
-      let max_offset = if min_val <= max_val {
-        F::calc_range(min_val, max_val)
-      } else {
-        0
-      };
-      let bit_width = F::bits_needed(max_offset) as usize;
-      let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
+      // 当 fac == 0 且标准乘法存在异常时，才评估十进制除法重构模式 (Decimal Division Mode)
+      // 若乘法无异常，乘法解码更快，无需且不应尝试除法
+      if fac == 0 && exp > 0 && exceptions > 0 {
+        let mut div_exceptions = 0usize;
+        let mut div_min = F::MAX_INT;
+        let mut div_max = F::MIN_INT;
 
-      if total_cost < best_cost {
-        best_cost = total_cost;
-        best_params = BestParams { exp, fac };
-        if total_cost == 0 {
-          return best_params;
+        for &val in active_samples {
+          if let Some(enc) = F::try_encode_div(val, exp_factor) {
+            div_min = div_min.min(enc);
+            div_max = div_max.max(enc);
+          } else {
+            div_exceptions += 1;
+            if div_exceptions * F::EXCEPTION_PENALTY >= best_cost {
+              break;
+            }
+          }
         }
-        if exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH {
-          return best_params;
+
+        if div_exceptions != sample_len && div_exceptions * F::EXCEPTION_PENALTY < best_cost {
+          let max_offset = if div_min <= div_max {
+            F::calc_range(div_min, div_max)
+          } else {
+            0
+          };
+          let bit_width = F::bits_needed(max_offset) as usize;
+          let total_cost = bit_width * sample_len + div_exceptions * F::EXCEPTION_PENALTY;
+
+          if total_cost < best_cost {
+            best_cost = total_cost;
+            best_params = BestParams {
+              exp,
+              fac: 0,
+              use_div: true,
+            };
+            if total_cost == 0 {
+              return best_params;
+            }
+            if div_exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH {
+              return best_params;
+            }
+          }
         }
+      }
+
+      if zero_exceptions_fac0 {
+        break;
       }
     }
   }
