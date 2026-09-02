@@ -409,6 +409,17 @@ impl KeyComposer {
     v
   }
 
+  /// Composes namespace prefix on stack without heap allocation.
+  /// 栈上零堆分配构造当前命名空间前缀
+  #[inline(always)]
+  pub fn namespace_prefix_stack(&self) -> SmallKey {
+    let mut buf = [0u8; INLINE_CAP];
+    let mut tmp = [0u8; 19];
+    let n = self.encode_scope_prefix_fixed(&mut tmp);
+    buf[..n].copy_from_slice(&tmp[..n]);
+    SmallKey::Inline { buf, len: n as u8 }
+  }
+
   /// Encodes global prefix for all databases in a namespace into a 10-byte stack buffer.
   /// 栈上零堆分配编码指定命名空间下所有 DB 的全局前缀到 10 字节数组（返回写入字节数）
   #[inline(always)]

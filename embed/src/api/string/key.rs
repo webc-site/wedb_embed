@@ -37,3 +37,10 @@ pub fn raw_bytes(kc: &KeyComposer, key: &[u8]) -> Vec<u8> {
 pub fn prefix(kc: &KeyComposer) -> Vec<u8> {
   kc.compose_meta_prefix(KeyTag::RawString.as_slice())
 }
+
+/// Composes storage key or prefix.
+/// 栈分配零堆分配构造 String 物理前缀
+#[inline]
+pub fn prefix_stack(kc: &KeyComposer) -> SmallKey {
+  kc.compose_meta_prefix_stack(KeyTag::RawString.as_slice())
+}
