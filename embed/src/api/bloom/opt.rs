@@ -221,7 +221,7 @@ impl CuckooFilterHelper {
   #[inline]
   pub fn get_alt_bucket_index(bucket_idx: u32, fingerprint: u8, num_buckets: u32) -> u32 {
     let alt_hash = Self::get_alt_hash(fingerprint, bucket_idx as u64);
-    (alt_hash % (num_buckets as u64)) as u32
+    (alt_hash as u32) & (num_buckets - 1)
   }
 
   /// Normalizes expansion factor to power-of-two aligned with Kvrocks NormalizeExpansion.

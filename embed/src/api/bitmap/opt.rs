@@ -251,7 +251,7 @@ pub enum BitfieldOpType {
 
 /// Bitfield operation instruction aligned with Apache Kvrocks BitfieldOperation.
 /// BITFIELD 操作指令（对标 Apache Kvrocks BitfieldOperation）
-#[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct BitfieldOperation {
   pub op_type: BitfieldOpType,
   pub encoding: BitfieldEncoding,

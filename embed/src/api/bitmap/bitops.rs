@@ -95,26 +95,34 @@ pub fn set_bit_in_bytes(bytes: &mut Vec<u8>, bit_offset: usize, bit: u8) -> u8 {
 pub fn raw_bitpos(bytes: &[u8], bit: u8) -> Option<usize> {
   let mut offset = 0usize;
   let (chunks, remainder) = bytes.as_chunks::<8>();
-  for chunk in chunks {
-    let word = u64::from_be_bytes(*chunk);
-    if bit == 1 {
+  if bit == 1 {
+    for chunk in chunks {
+      let word = u64::from_be_bytes(*chunk);
       if word != 0 {
         return Some(offset + word.leading_zeros() as usize);
       }
-    } else if word != u64::MAX {
-      return Some(offset + (!word).leading_zeros() as usize);
+      offset += 64;
     }
-    offset += 64;
-  }
-  for &b in remainder {
-    if bit == 1 {
+    for &b in remainder {
       if b != 0 {
         return Some(offset + b.leading_zeros() as usize);
       }
-    } else if b != 0xFF {
-      return Some(offset + (!b).leading_zeros() as usize);
+      offset += 8;
     }
-    offset += 8;
+  } else {
+    for chunk in chunks {
+      let word = u64::from_be_bytes(*chunk);
+      if word != u64::MAX {
+        return Some(offset + (!word).leading_zeros() as usize);
+      }
+      offset += 64;
+    }
+    for &b in remainder {
+      if b != 0xFF {
+        return Some(offset + (!b).leading_zeros() as usize);
+      }
+      offset += 8;
+    }
   }
   None
 }
@@ -125,26 +133,34 @@ pub fn raw_bitpos(bytes: &[u8], bit: u8) -> Option<usize> {
 pub fn raw_bitpos_lsb(bytes: &[u8], bit: u8) -> Option<usize> {
   let mut offset = 0usize;
   let (chunks, remainder) = bytes.as_chunks::<8>();
-  for chunk in chunks {
-    let word = u64::from_le_bytes(*chunk);
-    if bit == 1 {
+  if bit == 1 {
+    for chunk in chunks {
+      let word = u64::from_le_bytes(*chunk);
       if word != 0 {
         return Some(offset + word.trailing_zeros() as usize);
       }
-    } else if word != u64::MAX {
-      return Some(offset + (!word).trailing_zeros() as usize);
+      offset += 64;
     }
-    offset += 64;
-  }
-  for &b in remainder {
-    if bit == 1 {
+    for &b in remainder {
       if b != 0 {
         return Some(offset + b.trailing_zeros() as usize);
       }
-    } else if b != 0xFF {
-      return Some(offset + (!b).trailing_zeros() as usize);
+      offset += 8;
     }
-    offset += 8;
+  } else {
+    for chunk in chunks {
+      let word = u64::from_le_bytes(*chunk);
+      if word != u64::MAX {
+        return Some(offset + (!word).trailing_zeros() as usize);
+      }
+      offset += 64;
+    }
+    for &b in remainder {
+      if b != 0xFF {
+        return Some(offset + (!b).trailing_zeros() as usize);
+      }
+      offset += 8;
+    }
   }
   None
 }
@@ -321,12 +337,8 @@ impl ArrayBitfieldBitmap {
       return Err(Error::invalid_data("Invalid signed bits (1..=64)"));
     }
     let raw = self.read_raw_bitfield(bit_offset, bits)?;
-    let mut val = raw as i64;
-    let msb = 1u64 << (bits - 1);
-    if (raw & msb) != 0 && bits < 64 {
-      let mask = u64::MAX << bits;
-      val |= mask as i64;
-    }
+    let shift = 64 - bits;
+    let val = ((raw as i64) << shift) >> shift;
     Ok(val)
   }
 

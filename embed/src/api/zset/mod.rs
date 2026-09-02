@@ -9,8 +9,7 @@ pub use r#impl::prepare_zset_meta_for_write;
 pub use key::{
   member as compose_zset_key, meta as compose_zset_meta_key, prefix as compose_zset_prefix,
   prefix_stack as compose_zset_prefix_stack, score as compose_zset_score_key,
-  score_from_bytes as compose_zset_score_from_bytes_key,
-  score_prefix as compose_zset_score_prefix,
+  score_from_bytes as compose_zset_score_from_bytes_key, score_prefix as compose_zset_score_prefix,
   score_prefix_stack as compose_zset_score_prefix_stack,
 };
 pub use meta::{ZSetMeta, decode_sortable_f64, encode_sortable_f64};

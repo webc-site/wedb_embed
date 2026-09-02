@@ -558,3 +558,25 @@ fn test_hll_merge_self_and_idempotency() {
   hll.merge_bytes(&[]);
   assert_eq!(hll.count(), count_before);
 }
+
+#[test]
+fn test_hll_kvrocks_extensions_and_hashes() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 测试 pfadd_murmur 与 pfadd_hashes
+  let h1 = hll_murmur_hash_64a(b"elem1");
+  let h2 = hll_murmur_hash_64a(b"elem2");
+  assert!(db.pfadd_hashes("hll_hash", &[h1, h2])?);
+  assert_eq!(db.pfcount(&["hll_hash"])?, 2);
+  assert!(!db.pfadd_hashes("hll_hash", &[h1, h2])?);
+
+  // 2. 测试 pfadd_murmur 对标 Redis / Kvrocks
+  assert!(db.pfadd_murmur("hll_mur", &["a", "b", "c"])?);
+  assert_eq!(db.pfcount(&["hll_mur"])?, 3);
+
+  // 3. 测试 pfcount_multiple 多键联合统计
+  assert_eq!(db.pfcount_multiple(&["hll_hash", "hll_mur"])?, 5);
+
+  Ok(())
+}

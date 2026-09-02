@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use crate::{
   api::{
     geo::{
@@ -73,6 +75,8 @@ fn search_shape_internal<E: Engine, K: AsRef<[u8]>>(
   key: K,
   geo_shape: &mut GeoShape,
   unit: DistanceUnit,
+  count: Option<usize>,
+  any: bool,
 ) -> Result<Vec<GeoPoint>>
 where
   Error: From<E::Error>,
@@ -124,26 +128,38 @@ where
       count: None,
     };
 
-    let range_members = db.zrangebyscore(&key, spec)?;
-    for (member_bytes, score) in range_members {
+    // 零分配流式扫描：消除 zrangebyscore 的中间堆缓冲与无谓 to_vec()
+    db.ziter_range_byscore(&key, &spec, |member_bytes, score| {
       let bits = GeoHashBits {
         bits: score as u64,
         step: GEO_STEP_MAX,
       };
       let (pt_lon, pt_lat) = geohash_decode_wgs84(bits);
-      let d_meters = haversine_distance(center_lon, center_lat, pt_lon, pt_lat);
 
-      let is_inside = match shape_type {
-        GeoShapeType::Circular => d_meters <= max_radius_meters,
-        GeoShapeType::Rectangular => {
-          pt_lon >= bounds[0] && pt_lon <= bounds[2] && pt_lat >= bounds[1] && pt_lat <= bounds[3]
+      let (is_inside, d_meters) = match shape_type {
+        GeoShapeType::Circular => {
+          let d = haversine_distance(center_lon, center_lat, pt_lon, pt_lat);
+          (d <= max_radius_meters, d)
         }
-        GeoShapeType::None => false,
+        GeoShapeType::Rectangular => {
+          if pt_lon >= bounds[0]
+            && pt_lon <= bounds[2]
+            && pt_lat >= bounds[1]
+            && pt_lat <= bounds[3]
+          {
+            let d = haversine_distance(center_lon, center_lat, pt_lon, pt_lat);
+            (true, d)
+          } else {
+            (false, 0.0)
+          }
+        }
+        GeoShapeType::None => (false, 0.0),
       };
 
       if is_inside {
-        let member_str = String::from_utf8(member_bytes)
-          .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+        let member_str = from_utf8(member_bytes)
+          .map(ToOwned::to_owned)
+          .unwrap_or_else(|_| String::from_utf8_lossy(member_bytes).into_owned());
         let dist = unit.from_meters(d_meters);
         points.push(GeoPoint {
           longitude: pt_lon,
@@ -152,7 +168,23 @@ where
           dist,
           score,
         });
+
+        // 3. ANY 语义短路：一旦收集满目标条数，立即终止后续扫描，实现 O(K) 响应
+        if any
+          && let Some(limit) = count
+          && points.len() >= limit
+        {
+          return false;
+        }
       }
+      true
+    })?;
+
+    if any
+      && let Some(limit) = count
+      && points.len() >= limit
+    {
+      break;
     }
   }
 
@@ -256,6 +288,71 @@ where
     Ok(results)
   }
 
+  /// Retrieves complete GeoPoint for a member aligned with Kvrocks Geo::Get.
+  /// 获取成员完整的 GeoPoint 信息（对标 Kvrocks Geo::Get）
+  #[inline]
+  pub fn geoget<K: AsRef<[u8]>, M: AsRef<[u8]>>(
+    &self,
+    key: K,
+    member: M,
+  ) -> Result<Option<GeoPoint>> {
+    let m_ref = member.as_ref();
+    let score = match self.zscore(&key, m_ref)? {
+      Some(s) => s,
+      None => return Ok(None),
+    };
+    let bits = GeoHashBits {
+      bits: score as u64,
+      step: GEO_STEP_MAX,
+    };
+    let (lon, lat) = geohash_decode_wgs84(bits);
+    let member_str = from_utf8(m_ref)
+      .map(ToOwned::to_owned)
+      .unwrap_or_else(|_| String::from_utf8_lossy(m_ref).into_owned());
+    Ok(Some(GeoPoint {
+      longitude: lon,
+      latitude: lat,
+      member: member_str,
+      dist: 0.0,
+      score,
+    }))
+  }
+
+  /// Retrieves complete GeoPoints for multiple members aligned with Kvrocks Geo::MGet.
+  /// 批量获取多个成员完整的 GeoPoint 信息（对标 Kvrocks Geo::MGet）
+  #[inline]
+  pub fn geomget<K: AsRef<[u8]>, M: AsRef<[u8]>>(
+    &self,
+    key: K,
+    members: &[M],
+  ) -> Result<Vec<Option<GeoPoint>>> {
+    let scores = self.zmscore(&key, members)?;
+    let mut results = Vec::with_capacity(members.len());
+    for (m, score_opt) in members.iter().zip(scores) {
+      match score_opt {
+        Some(s) => {
+          let bits = GeoHashBits {
+            bits: s as u64,
+            step: GEO_STEP_MAX,
+          };
+          let (lon, lat) = geohash_decode_wgs84(bits);
+          let member_str = from_utf8(m.as_ref())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|_| String::from_utf8_lossy(m.as_ref()).into_owned());
+          results.push(Some(GeoPoint {
+            longitude: lon,
+            latitude: lat,
+            member: member_str,
+            dist: 0.0,
+            score: s,
+          }));
+        }
+        None => results.push(None),
+      }
+    }
+    Ok(results)
+  }
+
   #[inline]
   pub fn geohash_one<K: AsRef<[u8]>, M: AsRef<[u8]>>(
     &self,
@@ -316,7 +413,7 @@ where
     }
 
     let mut shape = GeoShape::new_circular_with_unit(longitude, latitude, radius, opt.unit);
-    let mut points = search_shape_internal(self, &key, &mut shape, opt.unit)?;
+    let mut points = search_shape_internal(self, &key, &mut shape, opt.unit, opt.count, opt.any)?;
 
     sort_and_truncate_points(&mut points, opt.sort, opt.count, opt.any);
 
@@ -424,7 +521,7 @@ where
     shape.center_lat = lat;
     bounding_box(shape);
 
-    let mut points = search_shape_internal(self, k_ref, shape, unit)?;
+    let mut points = search_shape_internal(self, k_ref, shape, unit, count, any)?;
     sort_and_truncate_points(&mut points, sort, count, any);
     Ok(points)
   }
@@ -488,7 +585,7 @@ where
     shape.center_lat = lat;
     bounding_box(shape);
 
-    let mut points = search_shape_internal(self, src_ref, shape, unit)?;
+    let mut points = search_shape_internal(self, src_ref, shape, unit, count, any)?;
     sort_and_truncate_points(&mut points, sort, count, any);
 
     self.del(&[dest_ref])?;

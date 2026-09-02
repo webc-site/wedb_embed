@@ -1,7 +1,5 @@
 use std::f64::consts::PI;
 
-pub use crate::error::ERR_WRONG_TYPE;
-
 /// Double-precision comparison epsilon threshold (aligned with Kvrocks DoubleCompare).
 /// 双精度浮点数比较精度阈值（对标 Apache Kvrocks DoubleCompare）
 pub const REL_EPS: f64 = 1e-12;

@@ -583,9 +583,9 @@ where
   Error: From<P::Error>,
 {
   let mut undo_log = Vec::with_capacity(max_iterations as usize * 2);
-  let mut cur_i = (hash % (num_buckets as u64)) as u32;
+  let mut cur_i = (hash as u32) & (num_buckets - 1);
   let mut cur_fp = fp;
-  let mut victim_slot = 0;
+  let mut victim_slot = fastrand::usize(..bucket_size as usize);
 
   for _ in 0..max_iterations {
     let old_fp = match page_cache.get_bucket_slot(filter_idx, num_buckets, cur_i, victim_slot) {
@@ -631,7 +631,7 @@ where
     }
 
     cur_i = alt_bucket_idx;
-    victim_slot = (victim_slot + 1) % (bucket_size as usize);
+    victim_slot = fastrand::usize(..bucket_size as usize);
   }
 
   page_cache.apply_undo_log(&undo_log);
@@ -821,6 +821,7 @@ where
       }
     };
 
+    let initial_n_filters = meta.n_filters;
     let mut blocks = Vec::with_capacity(meta.n_filters as usize);
     for idx in 0..meta.n_filters {
       let item_k = key::bloom_item(&kc, key_bytes, idx);
@@ -872,9 +873,10 @@ where
     }
 
     if dirty {
-      let mut batch = self.batch_with_capacity(blocks.len() + 1);
+      let write_start_idx = (initial_n_filters as usize).saturating_sub(1);
+      let mut batch = self.batch_with_capacity(blocks.len() - write_start_idx + 1);
       batch.insert_meta(&meta_k, &meta.encode());
-      for (idx, blk) in blocks.iter().enumerate() {
+      for (idx, blk) in blocks.iter().enumerate().skip(write_start_idx) {
         let item_k = key::bloom_item(&kc, key_bytes, idx as u16);
         batch.insert_data(&item_k, blk.as_slice());
       }
@@ -886,9 +888,27 @@ where
 
   #[inline]
   pub fn bf_exists<K: AsRef<[u8]>, I: AsRef<[u8]>>(&self, key: K, item: I) -> Result<bool> {
-    let _kc = self.kc();
-    let res = self.bf_mexists(key, &[item])?;
-    Ok(res.first().copied().unwrap_or(false))
+    let kc = self.kc();
+    let key_bytes = key.as_ref();
+    let meta_k = key::bloom_meta(&kc, key_bytes);
+    let data_ks = self.data();
+
+    let now_ms = current_now_ms();
+    let meta = match get_bf_meta_checked(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(false),
+    };
+
+    let h = BlockSplitBloomFilter::hash(item.as_ref());
+    for idx in (0..meta.n_filters).rev() {
+      let item_k = key::bloom_item(&kc, key_bytes, idx);
+      if let Some(b) = data_ks.get(&item_k)?
+        && BlockSplitBloomFilter::find_hash(b.as_ref(), h)
+      {
+        return Ok(true);
+      }
+    }
+    Ok(false)
   }
 
   #[inline]
@@ -955,7 +975,6 @@ where
     let kc = self.kc();
     let key_bytes = key.as_ref();
     let meta_k = key::bloom_meta(&kc, key_bytes);
-    let _meta_ks = self.meta();
 
     let now_ms = current_now_ms();
     Ok(
@@ -1271,9 +1290,62 @@ where
 
   #[inline]
   pub fn cf_exists<K: AsRef<[u8]>, I: AsRef<[u8]>>(&self, key: K, item: I) -> Result<bool> {
-    let _kc = self.kc();
-    let res = self.cf_mexists(key, &[item])?;
-    Ok(res.first().copied().unwrap_or(false))
+    let kc = self.kc();
+    let key_bytes = key.as_ref();
+    let meta_k = key::cuckoo_meta(&kc, key_bytes);
+    let data_ks = self.data();
+
+    let now_ms = current_now_ms();
+    let meta = match get_cf_meta_checked(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(false),
+    };
+
+    let h = CuckooFilterHelper::hash(item.as_ref());
+    let fp = CuckooFilterHelper::generate_fingerprint(h);
+    let bs = meta.bucket_size as u32;
+    let buckets_per_page = (meta.page_size / bs).max(1);
+
+    for filter_idx in (0..meta.n_filters).rev() {
+      let num_buckets = meta.sub_filter_num_buckets(filter_idx)?;
+      let b1 = (h as u32) & (num_buckets - 1);
+      let b2 = CuckooFilterHelper::get_alt_bucket_index(b1, fp, num_buckets);
+
+      let page_idx1 = b1 / buckets_per_page;
+      let off1 = ((b1 % buckets_per_page) as usize) * (meta.bucket_size as usize);
+      let page_key1 = key::cuckoo_page(&kc, key_bytes, filter_idx, page_idx1);
+      let slice1 = data_ks.get(&page_key1)?;
+
+      if let Some(ref slice) = slice1
+        && let Some(sub) = slice.get(off1..off1 + meta.bucket_size as usize)
+        && memchr(fp, sub).is_some()
+      {
+        return Ok(true);
+      }
+
+      if b1 != b2 {
+        let page_idx2 = b2 / buckets_per_page;
+        let off2 = ((b2 % buckets_per_page) as usize) * (meta.bucket_size as usize);
+        if page_idx2 == page_idx1 {
+          if let Some(ref slice) = slice1
+            && let Some(sub) = slice.get(off2..off2 + meta.bucket_size as usize)
+            && memchr(fp, sub).is_some()
+          {
+            return Ok(true);
+          }
+        } else {
+          let page_key2 = key::cuckoo_page(&kc, key_bytes, filter_idx, page_idx2);
+          if let Some(slice2) = data_ks.get(&page_key2)?
+            && let Some(sub) = slice2.get(off2..off2 + meta.bucket_size as usize)
+            && memchr(fp, sub).is_some()
+          {
+            return Ok(true);
+          }
+        }
+      }
+    }
+
+    Ok(false)
   }
 
   #[inline]
@@ -1285,7 +1357,6 @@ where
     let kc = self.kc();
     let key_bytes = key.as_ref();
     let meta_k = key::cuckoo_meta(&kc, key_bytes);
-    let _meta_ks = self.meta();
     let data_ks = self.data();
 
     let now_ms = current_now_ms();
@@ -1410,7 +1481,6 @@ where
     let kc = self.kc();
     let key_bytes = key.as_ref();
     let meta_k = key::cuckoo_meta(&kc, key_bytes);
-    let _meta_ks = self.meta();
 
     let now_ms = current_now_ms();
     let meta = get_cf_meta_checked(self, key_bytes, &meta_k, now_ms)?
@@ -1433,5 +1503,21 @@ where
       expansion: meta.expansion,
       max_iterations: meta.max_iterations,
     })
+  }
+
+  /// Returns the current number of items stored in the Cuckoo filter aligned with Kvrocks CuckooChain::Card.
+  /// 获取布谷鸟过滤器中当前存储的元素基数（对标 Kvrocks CuckooChain::Card）
+  #[inline]
+  pub fn cf_card<K: AsRef<[u8]>>(&self, key: K) -> Result<u64> {
+    let kc = self.kc();
+    let key_bytes = key.as_ref();
+    let meta_k = key::cuckoo_meta(&kc, key_bytes);
+
+    let now_ms = current_now_ms();
+    Ok(
+      get_cf_meta_checked(self, key_bytes, &meta_k, now_ms)?
+        .map(|m| m.base.size)
+        .unwrap_or(0),
+    )
   }
 }

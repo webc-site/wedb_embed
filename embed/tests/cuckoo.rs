@@ -483,3 +483,29 @@ fn test_cuckoo_expired_meta() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_cuckoo_card_and_point_lookups() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // Key 不存在时 cf_card 返回 0
+  assert_eq!(db.cf_card("cf_card_test")?, 0);
+  assert!(!db.cf_exists("cf_card_test", "elem1")?);
+
+  assert!(db.cf_add("cf_card_test", "elem1")?);
+  assert!(db.cf_add("cf_card_test", "elem2")?);
+  assert_eq!(db.cf_card("cf_card_test")?, 2);
+
+  // 验证 cf_exists 单点探测快路径
+  assert!(db.cf_exists("cf_card_test", "elem1")?);
+  assert!(db.cf_exists("cf_card_test", "elem2")?);
+  assert!(!db.cf_exists("cf_card_test", "non_exist")?);
+
+  // 删除元素后基数更新
+  assert!(db.cf_del("cf_card_test", "elem1")?);
+  assert_eq!(db.cf_card("cf_card_test")?, 1);
+  assert!(!db.cf_exists("cf_card_test", "elem1")?);
+
+  Ok(())
+}

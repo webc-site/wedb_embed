@@ -748,3 +748,37 @@ fn test_geo_count_and_any_topk_semantics() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_geo_kvrocks_get_and_mget() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  db.geoadd(
+    "sicily",
+    &[
+      (13.361389, 38.115556, "Palermo"),
+      (15.087269, 37.502669, "Catania"),
+    ],
+    [],
+  )?;
+
+  // 1. geoget
+  let p1 = db.geoget("sicily", "Palermo")?.unwrap();
+  assert_eq!(p1.member, "Palermo");
+  assert!((p1.longitude - 13.361389).abs() < 1e-4);
+  assert!((p1.latitude - 38.115556).abs() < 1e-4);
+
+  assert!(db.geoget("sicily", "Rome")?.is_none());
+
+  // 2. geomget
+  let mg = db.geomget("sicily", &["Palermo", "Rome", "Catania"])?;
+  assert_eq!(mg.len(), 3);
+  assert!(mg[0].is_some());
+  assert!(mg[1].is_none());
+  assert!(mg[2].is_some());
+  assert_eq!(mg[0].as_ref().unwrap().member, "Palermo");
+  assert_eq!(mg[2].as_ref().unwrap().member, "Catania");
+
+  Ok(())
+}
