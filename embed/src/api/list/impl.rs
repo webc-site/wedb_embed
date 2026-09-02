@@ -1,7 +1,7 @@
 use crate::{
   IntoIndexRange,
   api::list::{
-    ListItemKeyComposer, compose_list_meta_key, compose_list_prefix_stack,
+    ListItemKeyComposer, compose_list_item, compose_list_meta_key, compose_list_prefix_stack,
     r#const::{ERR_INDEX_OUT_OF_RANGE, ERR_RANK_ZERO},
     meta::ListMeta,
     opt::LPos,
@@ -120,33 +120,46 @@ where
 
     let num_elems = (e - s + 1) as usize;
     let mut results = Vec::with_capacity(num_elems);
-    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
-    let data_ks = self.data();
-    for idx in s..=e {
-      let actual_idx = meta.head.wrapping_add(idx as u64);
-      let item_k = composer.key_for_idx(actual_idx);
-      if let Some(val) = data_ks.get(item_k)? {
-        results.push(val.to_vec());
+    let actual_start = meta.head.wrapping_add(s as u64);
+    let actual_end = meta.head.wrapping_add(e as u64);
+
+    if actual_start <= actual_end {
+      let start_k = compose_list_item(&kc, key_bytes, actual_start);
+      let end_k = compose_list_item(&kc, key_bytes, actual_end);
+      for g in self.data().range(start_k.as_slice()..=end_k.as_slice()) {
+        let entry = g?;
+        results.push(entry.value().to_vec());
+      }
+    } else {
+      let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
+      let data_ks = self.data();
+      for idx in s..=e {
+        let actual_idx = meta.head.wrapping_add(idx as u64);
+        let item_k = composer.key_for_idx(actual_idx);
+        if let Some(val) = data_ks.get(item_k)? {
+          results.push(val.to_vec());
+        }
       }
     }
     Ok(results)
   }
 
   #[inline]
-  pub fn lindex<K: AsRef<[u8]>>(&self, key: K, index: i64) -> Result<Option<Vec<u8>>> {
+  pub fn with_lindex<K: AsRef<[u8]>, R>(
+    &self,
+    key: K,
+    index: i64,
+    f: impl FnOnce(&[u8]) -> R,
+  ) -> Result<Option<R>> {
     let key_bytes = key.as_ref();
     let kc = self.kc();
     let meta_k = compose_list_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
 
     let meta = match get_meta_checked::<ListMeta, _>(self, key_bytes, &meta_k, now_ms)? {
-      Some(m) => m,
-      None => return Ok(None),
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(None),
     };
-
-    if meta.base.size == 0 {
-      return Ok(None);
-    }
 
     let len = meta.base.size as i64;
     let actual_offset = if index < 0 {
@@ -163,7 +176,12 @@ where
     let actual_idx = meta.head.wrapping_add(actual_offset as u64);
     let item_k = composer.key_for_idx(actual_idx);
     let val = self.data().get(item_k)?;
-    Ok(val.map(|v| v.to_vec()))
+    Ok(val.as_deref().map(f))
+  }
+
+  #[inline]
+  pub fn lindex<K: AsRef<[u8]>>(&self, key: K, index: i64) -> Result<Option<Vec<u8>>> {
+    self.with_lindex(key, index, |v| v.to_vec())
   }
 
   #[inline]
