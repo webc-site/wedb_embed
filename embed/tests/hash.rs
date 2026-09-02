@@ -323,6 +323,19 @@ fn test_hash_legacy_encoding_compatibility() -> Void {
       .contains(ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING)
   );
 
+  // 3. 常规写操作（HSETNX, HINCRBY, HINCRBYFLOAT, HSET）对 Legacy 编码无缝兼容
+  assert!(!db.hsetnx("legacy_key", "f1", "val_nx")?);
+  assert!(db.hsetnx("legacy_key", "f2", "val2")?);
+  assert_eq!(db.hget("legacy_key", "f2")?, Some(b"val2".to_vec()));
+  assert_eq!(db.hincrby("legacy_key", "num_field", 42)?, 42);
+  assert_eq!(db.hincrbyfloat("legacy_key", "float_field", 2.5)?, 2.5);
+
+  // 4. with_hget 零拷贝读取
+  let f1_len = db.with_hget("legacy_key", "f1", |v| v.len())?;
+  assert_eq!(f1_len, Some(4));
+  let nonexist_len = db.with_hget("legacy_key", "nonexist", |v| v.len())?;
+  assert_eq!(nonexist_len, None);
+
   Ok(())
 }
 
@@ -686,6 +699,161 @@ fn test_hash_hrandfield_comprehensive() -> Void {
       .unwrap();
     assert_eq!(v.as_deref(), Some(exp.1.as_bytes()));
   }
+
+  Ok(())
+}
+
+#[test]
+fn test_hash_kvrocks_rangebylex_and_hscan_by_field() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 测试 HRANGEBYLEX 全场景（对标 Kvrocks HRangeByLex 测试用例）
+  let mut fvs = Vec::new();
+  for i in 0..4 {
+    fvs.push((format!("key{i}"), format!("value{i}")));
+  }
+  for i in 0..26 {
+    let ch = (b'a' + i) as char;
+    fvs.push((ch.to_string(), ch.to_string()));
+  }
+  let fv_refs: Vec<(&str, &str)> = fvs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+  db.hset("lex_hash", &fv_refs)?;
+
+  // 1.1 全量覆盖 [key0, key3]
+  let res_all = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      ..Default::default()
+    },
+  )?;
+  assert_eq!(res_all.len(), 4);
+  assert_eq!(res_all[0].0, b"key0");
+  assert_eq!(res_all[1].0, b"key1");
+  assert_eq!(res_all[2].0, b"key2");
+  assert_eq!(res_all[3].0, b"key3");
+
+  // 1.2 offset = 1, count = None (全部剩余)
+  let res_offset1 = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      offset: 1,
+      ..Default::default()
+    },
+  )?;
+  assert_eq!(res_offset1.len(), 3);
+  assert_eq!(res_offset1[0].0, b"key1");
+  assert_eq!(res_offset1[1].0, b"key2");
+  assert_eq!(res_offset1[2].0, b"key3");
+
+  // 1.3 offset = 1, count = Some(1)
+  let res_cnt1 = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      offset: 1,
+      count: Some(1),
+      ..Default::default()
+    },
+  )?;
+  assert_eq!(res_cnt1.len(), 1);
+  assert_eq!(res_cnt1[0].0, b"key1");
+
+  // 1.4 count = Some(0) 或 超大 offset
+  let res_zero = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      count: Some(0),
+      ..Default::default()
+    },
+  )?;
+  assert!(res_zero.is_empty());
+
+  let res_big_offset = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      offset: 1000,
+      count: Some(1000),
+      ..Default::default()
+    },
+  )?;
+  assert!(res_big_offset.is_empty());
+
+  // 1.5 开闭区间 (minex, maxex)
+  let res_minex = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      minex: true,
+      ..Default::default()
+    },
+  )?;
+  assert_eq!(res_minex.len(), 3);
+  assert_eq!(res_minex[0].0, b"key1");
+
+  let res_maxex = db.hrange_by_lex(
+    "lex_hash",
+    RangeLex {
+      min: b"key0".to_vec(),
+      max: b"key3".to_vec(),
+      maxex: true,
+      ..Default::default()
+    },
+  )?;
+  assert_eq!(res_maxex.len(), 3);
+  assert_eq!(res_maxex[2].0, b"key2");
+
+  // 1.6 不存在的键返回空
+  let res_nonexist = db.hrange_by_lex("nonexist_lex", RangeLex::default())?;
+  assert!(res_nonexist.is_empty());
+
+  // 2. 测试 HSCAN_BY_FIELD（对标 Kvrocks Scan 游标直接 Seek）
+  let (cursor1, batch1) = db.hscan_by_field("lex_hash", "", 10, None)?;
+  assert_eq!(batch1.len(), 10);
+  assert!(cursor1.is_some());
+
+  let cursor1_str = cursor1.unwrap();
+  let (cursor2, batch2) = db.hscan_by_field("lex_hash", &cursor1_str, 10, None)?;
+  assert_eq!(batch2.len(), 10);
+  assert_ne!(batch1[0].0, batch2[0].0);
+  assert!(cursor2.is_some());
+
+  let cursor2_str = cursor2.unwrap();
+  let (cursor3, batch3) = db.hscan_by_field("lex_hash", &cursor2_str, 20, None)?;
+  assert_eq!(batch3.len(), 10); // 剩余 10 个全部扫完
+  assert!(cursor3.is_none()); // 遍历结束返回 None
+
+  // 2.4 limit == 0 边界拦截
+  let (cursor_zero, batch_zero) = db.hscan_by_field("lex_hash", "", 0, None)?;
+  assert!(batch_zero.is_empty());
+  assert!(cursor_zero.is_none());
+
+  // 3. 过期字段被 HSETNX 覆盖后的 hlen 准确性验证（防止 size 漂移）
+  db.hset("exp_drift", &[("f_ttl", "v1")])?;
+  db.hpexpire("exp_drift", &["f_ttl"], 1, [])?;
+  sleep(Duration::from_millis(15));
+  assert_eq!(db.hlen("exp_drift")?, 0);
+
+  // 用 hsetnx 覆盖已过期的物理字段，size 不应重复累加
+  assert!(db.hsetnx("exp_drift", "f_ttl", "v2")?);
+  assert_eq!(db.hlen("exp_drift")?, 1);
+  assert_eq!(db.hget("exp_drift", "f_ttl")?, Some(b"v2".to_vec()));
+
+  // 4. HDEL 删除物理过期字段正常提交与清理
+  db.hpexpire("exp_drift", &["f_ttl"], 1, [])?;
+  sleep(Duration::from_millis(15));
+  assert_eq!(db.hdel_one("exp_drift", "f_ttl")?, 0); // 对客户端返回 0
+  assert_eq!(db.hlen("exp_drift")?, 0); // 元数据被正确清理
 
   Ok(())
 }

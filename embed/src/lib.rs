@@ -31,9 +31,10 @@ pub use geo::{
   OriginPoint, base32_to_coords, coords_to_base32, geohash_to_base32,
 };
 pub use hash::{
-  FIELD_EXPIRE_PREFIX_LEN, FieldValue, HExpire, HGetEx, HSet, HashFieldSetCondition, HashGetEx,
-  HashLengthMode, HashMeta, HashSetEx, HashSubkeyEncodingMode, TTLAction, decode_hash_value,
-  decode_live_hash_value, encode_hash_value, encode_hash_value_into, is_field_expired,
+  FIELD_EXPIRE_PREFIX_LEN, FieldValue, HExpire, HGetEx, HSet, HashFieldPair, HashFieldSetCondition,
+  HashGetEx, HashLengthMode, HashMeta, HashRandField, HashScanResult, HashSetEx,
+  HashSubkeyEncodingMode, TTLAction, decode_hash_value, decode_live_hash_value, encode_hash_value,
+  encode_hash_value_into, is_field_expired,
 };
 pub use hll::{
   HLL_ALPHA_INF, HLL_DENSE_SIZE, HLL_HASH_BIT_COUNT, HLL_HASH_SEED, HLL_REGISTER_COUNT_MASK,

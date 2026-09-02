@@ -24,6 +24,7 @@ pub use opt::{
 pub type HashFieldPair = (Vec<u8>, Vec<u8>);
 pub type HashRandField = (Vec<u8>, Option<Vec<u8>>);
 pub type HashScanResult = (usize, Vec<HashFieldPair>);
+pub type HashScanByFieldResult = (Option<Vec<u8>>, Vec<HashFieldPair>);
 
 use crate::{
   error::Result,
