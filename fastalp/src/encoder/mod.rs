@@ -1,8 +1,15 @@
+mod delta;
+mod standard;
+
 use std::slice::from_raw_parts;
 
+pub use delta::encode_delta;
+pub use standard::encode_standard;
+
 use crate::{
-  bitpack::{bitpack_encoded, packed_byte_size},
+  bitpack::packed_byte_size,
   constants::{EXC_COUNT_LEN, HEADER_LEN, MIN_HEADER_LEN},
+  delta::{delta_range, eval_delta_benefit},
   float::AlpFloat,
   params::pack_params,
   sampler::{BestParams, find_best_params, find_identical_base},
@@ -17,8 +24,18 @@ pub struct Exception<R> {
 }
 
 /// Generic floating-point compression writing directly into `dst` buffer.
-/// 通用压缩浮点数组并直接写入 `dst` 缓冲区
+/// 通用压缩浮点数组并直接写入 `dst` 缓冲区（自适应选择 FOR 或 Delta 差分模式）
 pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
+  compress_impl(data, dst, false);
+}
+
+/// Floating-point compression with enforced Delta differential encoding.
+/// 强制使用 Delta 一阶差分模式压缩浮点数组并直接写入 `dst` 缓冲区
+pub fn compress_delta_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
+  compress_impl(data, dst, true);
+}
+
+fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) {
   let count = data.len().min(u16::MAX as usize) as u16;
   if count == 0 {
     dst.reserve(MIN_HEADER_LEN);
@@ -51,7 +68,7 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
     return;
   }
 
-  let BestParams { exp, fac } = find_best_params(slice);
+  let BestParams { exp, fac, use_div } = find_best_params(slice);
 
   let exp_factor = F::exp_factor(exp, fac);
   let fac_int = F::fac_int(fac);
@@ -65,7 +82,21 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
   // SAFETY: encoded_ints 已分配 slice.len() 个插槽，通过指针直接写入，最后 set_len 安全更新长度
   unsafe {
     let enc_ptr: *mut F::Int = encoded_ints.as_mut_ptr();
-    if fac_int == 1 {
+    if use_div {
+      for (i, &val) in slice.iter().enumerate() {
+        if let Some(enc) = val.try_encode_div(exp_factor) {
+          enc_ptr.add(i).write(enc);
+          min_val = min_val.min(enc);
+          max_val = max_val.max(enc);
+        } else {
+          enc_ptr.add(i).write(F::ZERO_INT);
+          exceptions.push(Exception {
+            pos: i as u16,
+            bits: val.to_raw_bits(),
+          });
+        }
+      }
+    } else if fac_int == 1 {
       for (i, &val) in slice.iter().enumerate() {
         let enc = val.fast_round_to_int(exp_factor);
         let decoded = F::decode_from_int(enc, 1, frac_exp);
@@ -115,24 +146,61 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
 
   if !exceptions.is_empty() {
     for exc in &exceptions {
-      // SAFETY: exc.pos 是在上方遍历 slice (0..slice.len()) 时记录的索引，encoded_ints 的长度与 slice.len() 完全一致，因此 exc.pos as usize 严格小于 encoded_ints.len()，索引安全有效。
+      // 异常值填充前一个有效整型值，避免对相邻一阶差分造成额外突变影响
+      let patch_val = if exc.pos > 0 {
+        // SAFETY: exc.pos > 0 且严格小于 encoded_ints.len()
+        unsafe { *encoded_ints.get_unchecked(exc.pos as usize - 1) }
+      } else {
+        base
+      };
+      // SAFETY: exc.pos as usize 严格小于 encoded_ints.len()
       unsafe {
-        *encoded_ints.get_unchecked_mut(exc.pos as usize) = base;
+        *encoded_ints.get_unchecked_mut(exc.pos as usize) = patch_val;
       }
     }
   }
 
-  let bit_width = F::bits_needed(max_offset);
-  let packed_len = packed_byte_size(slice.len(), bit_width);
+  let for_bit_width = F::bits_needed(max_offset);
+  let for_packed_len = packed_byte_size(slice.len(), for_bit_width);
   let exc_len = if exceptions.is_empty() {
     0
   } else {
     EXC_COUNT_LEN + exceptions.len() * F::EXC_ENTRY_SIZE
   };
-  let total_needed = HEADER_LEN + F::BASE_SIZE + packed_len + exc_len;
+
+  // 评估 Delta 差分收益
+  let delta_decision = if slice.len() > 1 {
+    let first = encoded_ints[0];
+    let rest = &encoded_ints[1..];
+    if force_delta {
+      Some(delta_range::<F>(first, rest))
+    } else {
+      eval_delta_benefit::<F>(first, rest, for_bit_width)
+    }
+  } else {
+    None
+  };
+
+  let (use_delta, min_delta, delta_bit_width, total_needed) = match delta_decision {
+    Some((min_d, delta_bw)) => {
+      let delta_packed_len = packed_byte_size(slice.len() - 1, delta_bw);
+      let delta_total = HEADER_LEN + F::BASE_SIZE * 2 + delta_packed_len + exc_len;
+      let for_total = HEADER_LEN + F::BASE_SIZE + for_packed_len + exc_len;
+      if delta_total < for_total || force_delta {
+        (true, min_d, delta_bw, delta_total)
+      } else {
+        (false, F::ZERO_INT, 0, for_total)
+      }
+    }
+    None => {
+      let for_total = HEADER_LEN + F::BASE_SIZE + for_packed_len + exc_len;
+      (false, F::ZERO_INT, 0, for_total)
+    }
+  };
+
   let raw_len = size_of_val(slice);
 
-  // 启用 RAW 模式保底：当 ALP 编码后大小超过原始大小（负压缩）时，直接以 RAW 格式存储
+  // 启用 RAW 模式保底：当压缩后大小超过原始大小（负压缩）时，直接以 RAW 格式存储
   if total_needed >= raw_len + MIN_HEADER_LEN {
     let total_raw = MIN_HEADER_LEN + raw_len;
     dst.reserve(total_raw);
@@ -146,31 +214,30 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
 
   dst.reserve(total_needed);
 
-  // 1. Header (5B): 1B 类型 + 2B 数量 + 2B 参数 (exp, fac, bit_width)
-  let count_bytes = count.to_le_bytes();
-  let params_bytes = pack_params(exp, fac, bit_width).to_le_bytes();
-  let header = [
-    F::TYPE_BYTE,
-    count_bytes[0],
-    count_bytes[1],
-    params_bytes[0],
-    params_bytes[1],
-  ];
-  dst.extend_from_slice(&header);
-
-  // 2. Base
-  F::write_base(base, dst);
-
-  // 3. Bitpacked data
-  bitpack_encoded::<F>(&encoded_ints, base, bit_width, dst);
-
-  // 4. Exceptions (仅在存在异常值时写入)
-  if !exceptions.is_empty() {
-    let exc_count = exceptions.len() as u16;
-    dst.extend_from_slice(&exc_count.to_le_bytes());
-    for exc in exceptions {
-      F::write_exception(exc.pos, exc.bits, dst);
-    }
+  if use_delta {
+    encode_delta::<F>(
+      count,
+      exp,
+      fac,
+      use_div,
+      &mut encoded_ints,
+      min_delta,
+      delta_bit_width,
+      &exceptions,
+      dst,
+    );
+  } else {
+    encode_standard::<F>(
+      count,
+      exp,
+      fac,
+      use_div,
+      &encoded_ints,
+      base,
+      for_bit_width,
+      &exceptions,
+      dst,
+    );
   }
 }
 
@@ -180,5 +247,14 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
 pub fn compress<F: AlpFloat>(data: &[F]) -> Vec<u8> {
   let mut dst = Vec::new();
   compress_into(data, &mut dst);
+  dst
+}
+
+/// Generic floating-point slice compression enforcing Delta differential mode.
+/// 强制使用 Delta 差分模式压缩浮点数切片
+#[inline]
+pub fn compress_delta<F: AlpFloat>(data: &[F]) -> Vec<u8> {
+  let mut dst = Vec::new();
+  compress_delta_into(data, &mut dst);
   dst
 }

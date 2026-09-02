@@ -36,6 +36,30 @@ pub const TYPE_F64_RAW: u8 = 3;
 /// f32 未压缩原始保底回退数据块类型标识
 pub const TYPE_F32_RAW: u8 = 4;
 
+/// Format type identifier for f64 ALP Delta differential compressed chunk.
+/// f64 ALP 时序差分压缩数据块类型标识
+pub const TYPE_F64_DELTA: u8 = 5;
+
+/// Format type identifier for f32 ALP Delta differential compressed chunk.
+/// f32 ALP 时序差分压缩数据块类型标识
+pub const TYPE_F32_DELTA: u8 = 6;
+
+/// Format type identifier for f64 Decimal Division exact compressed chunk.
+/// f64 十进制精确除法重构压缩数据块类型标识
+pub const TYPE_F64_DEC: u8 = 7;
+
+/// Format type identifier for f32 Decimal Division exact compressed chunk.
+/// f32 十进制精确除法重构压缩数据块类型标识
+pub const TYPE_F32_DEC: u8 = 8;
+
+/// Format type identifier for f64 Decimal Division Delta compressed chunk.
+/// f64 十进制精确除法时序差分压缩数据块类型标识
+pub const TYPE_F64_DEC_DELTA: u8 = 9;
+
+/// Format type identifier for f32 Decimal Division Delta compressed chunk.
+/// f32 十进制精确除法时序差分压缩数据块类型标识
+pub const TYPE_F32_DEC_DELTA: u8 = 10;
+
 /// Maximum decimal exponent for double precision f64.
 /// f64 最大十进制指数
 pub const MAX_EXPONENT_F64: u8 = 18;

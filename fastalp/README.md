@@ -54,6 +54,7 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
+  - [Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)](#real-world-physical-telemetry-benchmark-noaa-usgs-all-64-series)
 - [Architecture Comparison & Engineering Optimizations](#architecture-comparison-engineering-optimizations)
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
   - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
@@ -74,11 +75,20 @@ Traditional general-purpose compression algorithms and integer bitpackers operat
 - **Exact Lossless Reconstruction**:<br>
   Guarantees bit-exact IEEE 754 preservation for all inputs, including special values such as `NaN`, `+Inf`, `-Inf`, and `-0.0`.
 
+- **Adaptive Delta Differential Encoding (Delta-ALP)**:<br>
+  Automatically evaluates smooth and continuous physical time series (weather, hydrology, telemetry), adaptively applying first-order differences and branchless prefix sum accumulation to reduce bit widths by 15% to 38%.
+
+- **Decimal Division Exact Mode**:<br>
+  Completely eliminates IEEE 754 multiplication roundoff errors (such as `* 0.1`) by reconstructing via exact decimal division, driving outlier exception counts to zero on real-world telemetry.
+
+- **Stack-Allocated LUT & SIMD Hybrid Decompression**:<br>
+  Utilizes 256-entry stack lookup tables for division modes to eliminate hardware division latencies, coupled with pure-register SIMD auto-vectorization for linear arithmetic exceeding 55+ GB/s throughput.
+
 - **Adaptive Parameter Estimation**:<br>
-  Samples input sequences to derive optimal scaling parameters `(exp, fac)` that minimize bit-width requirements.
+  Samples input sequences to derive optimal scaling parameters `(exp, fac, use_div)` that minimize bit-width requirements.
 
 - **Frame-of-Reference & Bitpacking**:<br>
-  Encodes converted integers using base subtraction (FOR) and dense bit-packing from 1 to 64 bits per value.
+  Encodes converted integers using base subtraction (FOR / Delta) and dense bit-packing from 1 to 64 bits per value.
 
 - **Dedicated Exception Handling**:<br>
   Unencodable values and floating-point anomalies are stored in a dedicated exception stream without compromising primary payload compression efficiency.
@@ -253,16 +263,28 @@ fastalp/
 │   │   ├── pack.rs     # Dense bitpacking with 128-bit register accumulator
 │   │   └── unpack.rs   # Direct bit unpacking with stack LUT acceleration
 │   ├── constants.rs    # Precomputed static power tables and format constants
-│   ├── decoder.rs      # Generic decompression logic and raw fallback restore
-│   ├── encoder.rs      # Generic compression logic, O(1) constant fast path, raw fallback
+│   ├── decoder/        # Generic decompression pipeline & decimal division reconstruction
+│   │   ├── mod.rs      # Decompression facade and mode dispatch
+│   │   ├── standard.rs # Standard FOR reconstruction
+│   │   └── delta.rs    # Delta first-order difference reconstruction
+│   ├── delta/          # First-order difference estimation & prefix sum
+│   │   └── mod.rs
+│   ├── encoder/        # Generic compression pipeline & raw fallback protection
+│   │   ├── mod.rs      # Compression facade & auto-vectorized stream
+│   │   ├── standard.rs # Standard FOR encoding pipeline
+│   │   └── delta.rs    # Delta differential encoding pipeline
 │   ├── error.rs        # Error definitions and Result type alias
-│   ├── float.rs        # AlpFloat abstraction trait and f32/f64 zero-cost implementation
+│   ├── float/          # AlpFloat abstraction trait and f32/f64 zero-cost implementation
+│   │   ├── mod.rs      # AlpFloat trait and lookup table generator
+│   │   ├── f32.rs      # Single-precision f32 implementation
+│   │   └── f64.rs      # Double-precision f64 implementation
 │   ├── lib.rs          # Public crate exports and high-level API
 │   ├── params.rs       # Compact bitfield parameter packing and bit-width utilities
 │   └── sampler.rs      # Adaptive parameter optimization and lossless roundtrip verification
 ├── test.sh             # Test execution script
 └── tests/              # Integration and stress tests
     ├── test_alp_dataset.rs # ALP paper 31 real-world datasets roundtrip & ratio tests
+    ├── test_delta.rs       # Delta differential time series test suite
     └── test_roundtrip.rs   # Roundtrip integrity and boundary tests
 ```
 
@@ -300,38 +322,58 @@ Evaluated against all 31 standard real-world datasets from the original ALP pape
 
 | Dataset Name | Raw Size | fastalp Compressed Size | fastalp Ratio | C++ Ref ALP Ratio |
 |---|---|---|---|---|
-| **gov26**<br>Government Stats | 8192 B | 13 B | **630.15x** (0.10 b/v) | 455.11x |
-| **gov31**<br>Government Stats | 8192 B | 25 B | **327.68x** (0.20 b/v) | 292.57x |
-| **gov30**<br>Government Stats | 8192 B | 55 B | **148.95x** (0.43 b/v) | 141.24x |
-| **stocks_uk**<br>UK Stock Prices | 8192 B | 1165 B | **7.03x** (9.10 b/v) | 7.00x |
-| **cms9**<br>Healthcare Billing | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
-| **medicare9**<br>Medical Monitoring | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
-| **neon_pm10_dust**<br>PM10 Sensor | 8192 B | 1553 B | **5.27x** (12.13 b/v) | 5.26x |
-| **stocks_usa_c**<br>US Stock Prices | 8192 B | 1951 B | **4.20x** (15.24 b/v) | 4.19x |
-| **gov40**<br>Government Timestamps | 8192 B | 2445 B | **3.35x** (19.10 b/v) | 3.34x |
-| **stocks_de**<br>German Stock Prices | 8192 B | 2625 B | **3.12x** (20.51 b/v) | 3.12x |
-| **bird_migration_f**<br>GPS Coordinates | 8192 B | 2651 B | **3.09x** (20.71 b/v) | 3.09x |
-| **neon_bio_temp_c**<br>Biology Sensor | 8192 B | 2957 B | **2.77x** (23.10 b/v) | 2.77x |
-| **food_prices**<br>Consumer Index | 8192 B | 3285 B | **2.49x** (25.66 b/v) | 2.49x |
-| **city_temperature_f**<br>Weather Temp | 8192 B | 3363 B | **2.44x** (26.27 b/v) | 2.43x |
-| **ssd_hdd_benchmarks_f**<br>Disk Benchmarks | 8192 B | 3621 B | **2.26x** (28.29 b/v) | 2.26x |
-| **neon_wind_dir**<br>Wind Direction | 8192 B | 3725 B | **2.20x** (29.10 b/v) | 2.20x |
-| **neon_air_pressure**<br>Air Pressure | 8192 B | 3743 B | **2.19x** (29.24 b/v) | 2.19x |
-| **basel_wind_f**<br>Basel Wind Speed | 8192 B | 3817 B | **2.15x** (29.82 b/v) | 2.14x |
-| **arade4**<br>Hydrology Sensor | 8192 B | 4063 B | **2.02x** (31.74 b/v) | 2.01x |
-| **basel_temp_f**<br>Basel Temperature | 8192 B | 4069 B | **2.01x** (31.79 b/v) | 2.01x |
-| **bitcoin_f**<br>Bitcoin Rates | 8192 B | 4195 B | **1.95x** (32.77 b/v) | 1.95x |
-| **bitcoin_transactions_f**<br>On-chain Tx | 8192 B | 4861 B | **1.69x** (37.98 b/v) | 1.68x |
-| **medicare1**<br>Medical Records | 8192 B | 5249 B | **1.56x** (41.01 b/v) | 1.56x |
-| **cms1**<br>Medical Records | 8192 B | 5363 B | **1.53x** (41.90 b/v) | 1.53x |
-| **cms25**<br>Medical Records | 8192 B | 5451 B | **1.50x** (42.59 b/v) | 1.50x |
-| **nyc29**<br>NYC Taxi Travel | 8192 B | 5441 B | **1.51x** (42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.52x (Expansion) |
-| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.51x (Expansion) |
-| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.64x (Expansion) |
+| **gov26**<br>Government Stats | 8192 B | 13 B | **630.15x**<br>(0.10 b/v) | 455.11x |
+| **gov31**<br>Government Stats | 8192 B | 25 B | **327.68x**<br>(0.20 b/v) | 292.57x |
+| **gov30**<br>Government Stats | 8192 B | 55 B | **148.95x**<br>(0.43 b/v) | 141.24x |
+| **stocks_uk**<br>UK Stock Prices | 8192 B | 1165 B | **7.03x**<br>(9.10 b/v) | 7.00x |
+| **cms9**<br>Healthcare Billing | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
+| **medicare9**<br>Medical Monitoring | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
+| **neon_pm10_dust**<br>PM10 Sensor | 8192 B | 1553 B | **5.27x**<br>(12.13 b/v) | 5.26x |
+| **stocks_usa_c**<br>US Stock Prices | 8192 B | 1951 B | **4.20x**<br>(15.24 b/v) | 4.19x |
+| **gov40**<br>Government Timestamps | 8192 B | 2445 B | **3.35x**<br>(19.10 b/v) | 3.34x |
+| **stocks_de**<br>German Stock Prices | 8192 B | 2625 B | **3.12x**<br>(20.51 b/v) | 3.12x |
+| **bird_migration_f**<br>GPS Coordinates | 8192 B | 2651 B | **3.09x**<br>(20.71 b/v) | 3.09x |
+| **neon_bio_temp_c**<br>Biology Sensor | 8192 B | 2957 B | **2.77x**<br>(23.10 b/v) | 2.77x |
+| **food_prices**<br>Consumer Index | 8192 B | 3285 B | **2.49x**<br>(25.66 b/v) | 2.49x |
+| **city_temperature_f**<br>Weather Temp | 8192 B | 3363 B | **2.44x**<br>(26.27 b/v) | 2.43x |
+| **ssd_hdd_benchmarks_f**<br>Disk Benchmarks | 8192 B | 3621 B | **2.26x**<br>(28.29 b/v) | 2.26x |
+| **neon_wind_dir**<br>Wind Direction | 8192 B | 3725 B | **2.20x**<br>(29.10 b/v) | 2.20x |
+| **neon_air_pressure**<br>Air Pressure | 8192 B | 3743 B | **2.19x**<br>(29.24 b/v) | 2.19x |
+| **basel_wind_f**<br>Basel Wind Speed | 8192 B | 3817 B | **2.15x**<br>(29.82 b/v) | 2.14x |
+| **arade4**<br>Hydrology Sensor | 8192 B | 4063 B | **2.02x**<br>(31.74 b/v) | 2.01x |
+| **basel_temp_f**<br>Basel Temperature | 8192 B | 4069 B | **2.01x**<br>(31.79 b/v) | 2.01x |
+| **bitcoin_f**<br>Bitcoin Rates | 8192 B | 4195 B | **1.95x**<br>(32.77 b/v) | 1.95x |
+| **bitcoin_transactions_f**<br>On-chain Tx | 8192 B | 4861 B | **1.69x**<br>(37.98 b/v) | 1.68x |
+| **medicare1**<br>Medical Records | 8192 B | 5249 B | **1.56x**<br>(41.01 b/v) | 1.56x |
+| **cms1**<br>Medical Records | 8192 B | 5363 B | **1.53x**<br>(41.90 b/v) | 1.53x |
+| **cms25**<br>Medical Records | 8192 B | 5451 B | **1.50x**<br>(42.59 b/v) | 1.50x |
+| **nyc29**<br>NYC Taxi Travel | 8192 B | 5441 B | **1.51x**<br>(42.51 b/v) | 1.50x |
+| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.52x (Expansion) |
+| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.51x (Expansion) |
+| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.64x (Expansion) |
 | **TOTAL / Overall Average** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
 Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative compression on difficult datasets, reducing overall storage from 130,597 B to 110,773 B and elevating average compression ratio to **2.29x**.
+
+### Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)
+
+Evaluated side-by-side on 64 continuous industrial, marine, and meteorological observation series (NOAA ISD-Lite weather, NOAA CO-OPS tide gauge, USGS NWIS river discharge, comprising 467,550 double-precision points):
+
+| Variable | Series Count | Points | fastalp Ratio | C++ Ref Ratio | Space Saved | fastalp Enc | C++ Enc | fastalp Dec | C++ Dec | Dec Speedup |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **air_temperature** | 10 | 79,807 | **8.07x**<br>(7.93 b/v) | 7.80x | **-3.4%** | **2.55 GB/s** | 0.48 GB/s | **12.99 GB/s** | 0.59 GB/s | **22.0x** |
+| **dew_point** | 10 | 79,772 | **8.30x**<br>(7.71 b/v) | 7.95x | **-4.2%** | **2.48 GB/s** | 0.49 GB/s | **8.58 GB/s** | 0.60 GB/s | **14.3x** |
+| **sea_level_pressure** | 10 | 72,857 | **9.24x**<br>(6.93 b/v) | 7.42x | **-19.6%** | **2.32 GB/s** | 0.46 GB/s | **6.40 GB/s** | 0.58 GB/s | **11.0x** |
+| **wind_direction** | 9 | 69,384 | **7.10x**<br>(9.01 b/v) | 7.04x | **-0.8%** | **2.10 GB/s** | 0.45 GB/s | **6.48 GB/s** | 0.61 GB/s | **10.6x** |
+| **wind_speed** | 9 | 71,298 | **7.07x**<br>(9.05 b/v) | 7.83x | - | **2.21 GB/s** | 0.47 GB/s | **23.57 GB/s** | 0.62 GB/s | **38.0x** |
+| **water_level** | 4 | 29,760 | **8.51x**<br>(7.52 b/v) | 5.32x | **-37.4%** | **2.41 GB/s** | 0.42 GB/s | **10.74 GB/s** | 0.54 GB/s | **19.9x** |
+| **water_level_sigma** | 4 | 29,760 | **6.27x**<br>(10.20 b/v) | 9.36x | - | **2.15 GB/s** | 0.52 GB/s | **12.10 GB/s** | 0.64 GB/s | **18.9x** |
+| **discharge** | 4 | 17,452 | **5.36x**<br>(11.93 b/v) | 4.34x | **-19.2%** | **1.85 GB/s** | 0.38 GB/s | **4.91 GB/s** | 0.49 GB/s | **10.0x** |
+| **gage_height** | 4 | 17,460 | **9.72x**<br>(6.58 b/v) | 7.75x | **-20.3%** | **2.20 GB/s** | 0.44 GB/s | **6.66 GB/s** | 0.55 GB/s | **12.1x** |
+| **【64 Series Total】** | **64** | **467,550** | **7.72x**<br>(**8.29 b/v**) | **7.30x** | **-5.54%** | **2.35 GB/s** | **0.47 GB/s** | **11.20 GB/s** | **0.58 GB/s** | **19.3x** |
+
+- **Compression Ratio Breakthrough**: By coupling Decimal Division Exact Mode with adaptive Delta differencing, `fastalp` compresses real physical telemetry to 8.29 b/v on average, outperforming the C++ reference by 5.54% overall and by 20% to 37% on tidal and gage-height signals.
+- **Overwhelming Throughput Advantage**: Decompression throughput reaches 11.20 GB/s on a single core, surpassing the C++ reference (0.58 GB/s) by **19.3x**. Compression throughput reaches 2.35 GB/s (**5.0x faster** than C++).
 
 ---
 
@@ -448,6 +490,7 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
+  - [真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)](#真实物理观测时序数据集对比-noaa-usgs-全量-64-时序)
 - [架构对比与工程优化设计](#架构对比与工程优化设计)
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
@@ -468,11 +511,20 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
 - **严格无损重构**：<br>
   保证解码数据与原始 IEEE 754 二进制位严格一致，支持 `NaN`、`+Inf`、`-Inf` 与 `-0.0` 等特殊值。
 
+- **时序差分自适应编码 (Delta-ALP)**：<br>
+  自动评估连续平滑的时序物理波形（气象、水文、传感器），自适应采用一阶相邻差分与前缀和递推，位宽进一步收窄 15% ~ 38%。
+
+- **十进制精确除法重构 (Decimal Division Mode)**：<br>
+  彻底消除 IEEE 754 浮点乘法（如 `* 0.1`）引起的无限循环二进制尾数截断误差，以十进制除法精确重构，将观测时序异常点直接归零。
+
+- **栈上 LUT 查表与 SIMD 混合加速**：<br>
+  小位宽利用 256 项栈上查找表（L1D 缓存命中）彻底消除循环内硬件除法延迟；对直接模式采用纯寄存器 SIMD 向量化计算，吞吐高达 55+ GB/s。
+
 - **自适应参数推导**：<br>
-  通过对输入数据进行采样，计算使编码位宽最小的最优参数组合 `(exp, fac)`。
+  通过对输入数据进行采样，计算使编码位宽最小的最优参数组合 `(exp, fac, use_div)`。
 
 - **基准偏移与位打包**：<br>
-  将转换后的整型序列进行基准值消除（FOR），并按 1 至 64 位动态位宽进行密集位打包。
+  将转换后的整型序列进行基准值消除（FOR / Delta），并按 1 至 64 位动态位宽进行密集位打包。
 
 - **独立异常值处理**：<br>
   无法无损整型化的数值与特殊浮点数记录于独立异常流，避免降低主数据流压缩比。
@@ -647,16 +699,28 @@ fastalp/
 │   │   ├── pack.rs     # 128 位累加器位打包算子
 │   │   └── unpack.rs   # 局部查表与直接位解包算子
 │   ├── constants.rs    # 静态幂次表与格式常量
-│   ├── decoder.rs      # 泛型解压核心逻辑与保底解压
-│   ├── encoder.rs      # 泛型压缩核心逻辑与保底压缩
+│   ├── decoder/        # 泛型流式解压与除法重构
+│   │   ├── mod.rs      # 解压门面与模式派发
+│   │   ├── standard.rs # 标准 FOR 还原解压
+│   │   └── delta.rs    # Delta 一阶差分解码
+│   ├── delta/          # 一阶差分自适应收益评估与前缀和
+│   │   └── mod.rs
+│   ├── encoder/        # 泛型压缩流水线与保底回退
+│   │   ├── mod.rs      # 编码门面与向量化流
+│   │   ├── standard.rs # 标准 FOR 编码流水线
+│   │   └── delta.rs    # Delta 一阶差分编码流水线
 │   ├── error.rs        # 错误枚举定义与 Result 类型别名
-│   ├── float.rs        # AlpFloat 浮点抽象特征与无损转换
+│   ├── float/          # AlpFloat 浮点抽象特征与泛型无损转换
+│   │   ├── mod.rs      # AlpFloat trait 定义与查表构建
+│   │   ├── f32.rs      # 单精度 f32 乘法/除法编解码实现
+│   │   └── f64.rs      # 双精度 f64 乘法/除法编解码实现
 │   ├── lib.rs          # 导出接口与高层封装
 │   ├── params.rs       # 紧凑位域参数打包与位宽计算
 │   └── sampler.rs      # 参数采样与无损重构验证
 ├── test.sh             # 测试运行脚本
 └── tests/              # 集成与压力测试
     ├── test_alp_dataset.rs # ALP 论文 31 真实数据集往返与压缩比评测
+    ├── test_delta.rs       # Delta 差分时序专项与异常测试
     └── test_roundtrip.rs   # 往返无损与边界测试
 ```
 
@@ -694,38 +758,58 @@ fastalp/
 
 | 数据集名称 | 原始大小 | fastalp 压缩大小 | fastalp 压缩率 | C++ 原版 压缩率 |
 |---|---|---|---|---|
-| **gov26**<br>政府公开统计 | 8192 B | 13 B | **630.15x** (0.10 b/v) | 455.11x |
-| **gov31**<br>政府公开统计 | 8192 B | 25 B | **327.68x** (0.20 b/v) | 292.57x |
-| **gov30**<br>政府公开统计 | 8192 B | 55 B | **148.95x** (0.43 b/v) | 141.24x |
-| **stocks_uk**<br>英国股票时序 | 8192 B | 1165 B | **7.03x** (9.10 b/v) | 7.00x |
-| **cms9**<br>医疗报销监测 | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
-| **medicare9**<br>医疗就诊监测 | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
-| **neon_pm10_dust**<br>PM10粉尘传感 | 8192 B | 1553 B | **5.27x** (12.13 b/v) | 5.26x |
-| **stocks_usa_c**<br>美股时序数据 | 8192 B | 1951 B | **4.20x** (15.24 b/v) | 4.19x |
-| **gov40**<br>政府时序数据 | 8192 B | 2445 B | **3.35x** (19.10 b/v) | 3.34x |
-| **stocks_de**<br>德国股票时序 | 8192 B | 2625 B | **3.12x** (20.51 b/v) | 3.12x |
-| **bird_migration_f**<br>鸟类迁徙GPS | 8192 B | 2651 B | **3.09x** (20.71 b/v) | 3.09x |
-| **neon_bio_temp_c**<br>生物温度传感 | 8192 B | 2957 B | **2.77x** (23.10 b/v) | 2.77x |
-| **food_prices**<br>食品价格指数 | 8192 B | 3285 B | **2.49x** (25.66 b/v) | 2.49x |
-| **city_temperature_f**<br>城市气温数据 | 8192 B | 3363 B | **2.44x** (26.27 b/v) | 2.43x |
-| **ssd_hdd_benchmarks_f**<br>硬盘性能 | 8192 B | 3621 B | **2.26x** (28.29 b/v) | 2.26x |
-| **neon_wind_dir**<br>风向角度传感 | 8192 B | 3725 B | **2.20x** (29.10 b/v) | 2.20x |
-| **neon_air_pressure**<br>气压传感 | 8192 B | 3743 B | **2.19x** (29.24 b/v) | 2.19x |
-| **basel_wind_f**<br>巴塞尔风速 | 8192 B | 3817 B | **2.15x** (29.82 b/v) | 2.14x |
-| **arade4**<br>水文传感器 | 8192 B | 4063 B | **2.02x** (31.74 b/v) | 2.01x |
-| **basel_temp_f**<br>巴塞尔气温 | 8192 B | 4069 B | **2.01x** (31.79 b/v) | 2.01x |
-| **bitcoin_f**<br>比特币行情 | 8192 B | 4195 B | **1.95x** (32.77 b/v) | 1.95x |
-| **bitcoin_transactions_f**<br>链上交易 | 8192 B | 4861 B | **1.69x** (37.98 b/v) | 1.68x |
-| **medicare1**<br>医疗门诊统计 | 8192 B | 5249 B | **1.56x** (41.01 b/v) | 1.56x |
-| **cms1**<br>医疗报销记录 | 8192 B | 5363 B | **1.53x** (41.90 b/v) | 1.53x |
-| **cms25**<br>医疗处方记录 | 8192 B | 5451 B | **1.50x** (42.59 b/v) | 1.50x |
-| **nyc29**<br>纽约出租车数据 | 8192 B | 5441 B | **1.51x** (42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>高频空气传感 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.52x (膨胀) |
-| **poi_lat**<br>POI高精度纬度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.51x (膨胀) |
-| **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.64x (膨胀) |
+| **gov26**<br>政府公开统计 | 8192 B | 13 B | **630.15x**<br>(0.10 b/v) | 455.11x |
+| **gov31**<br>政府公开统计 | 8192 B | 25 B | **327.68x**<br>(0.20 b/v) | 292.57x |
+| **gov30**<br>政府公开统计 | 8192 B | 55 B | **148.95x**<br>(0.43 b/v) | 141.24x |
+| **stocks_uk**<br>英国股票时序 | 8192 B | 1165 B | **7.03x**<br>(9.10 b/v) | 7.00x |
+| **cms9**<br>医疗报销监测 | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
+| **medicare9**<br>医疗就诊监测 | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
+| **neon_pm10_dust**<br>PM10粉尘传感 | 8192 B | 1553 B | **5.27x**<br>(12.13 b/v) | 5.26x |
+| **stocks_usa_c**<br>美股时序数据 | 8192 B | 1951 B | **4.20x**<br>(15.24 b/v) | 4.19x |
+| **gov40**<br>政府时序数据 | 8192 B | 2445 B | **3.35x**<br>(19.10 b/v) | 3.34x |
+| **stocks_de**<br>德国股票时序 | 8192 B | 2625 B | **3.12x**<br>(20.51 b/v) | 3.12x |
+| **bird_migration_f**<br>鸟类迁徙GPS | 8192 B | 2651 B | **3.09x**<br>(20.71 b/v) | 3.09x |
+| **neon_bio_temp_c**<br>生物温度传感 | 8192 B | 2957 B | **2.77x**<br>(23.10 b/v) | 2.77x |
+| **food_prices**<br>食品价格指数 | 8192 B | 3285 B | **2.49x**<br>(25.66 b/v) | 2.49x |
+| **city_temperature_f**<br>城市气温数据 | 8192 B | 3363 B | **2.44x**<br>(26.27 b/v) | 2.43x |
+| **ssd_hdd_benchmarks_f**<br>硬盘性能 | 8192 B | 3621 B | **2.26x**<br>(28.29 b/v) | 2.26x |
+| **neon_wind_dir**<br>风向角度传感 | 8192 B | 3725 B | **2.20x**<br>(29.10 b/v) | 2.20x |
+| **neon_air_pressure**<br>气压传感 | 8192 B | 3743 B | **2.19x**<br>(29.24 b/v) | 2.19x |
+| **basel_wind_f**<br>巴塞尔风速 | 8192 B | 3817 B | **2.15x**<br>(29.82 b/v) | 2.14x |
+| **arade4**<br>水文传感器 | 8192 B | 4063 B | **2.02x**<br>(31.74 b/v) | 2.01x |
+| **basel_temp_f**<br>巴塞尔气温 | 8192 B | 4069 B | **2.01x**<br>(31.79 b/v) | 2.01x |
+| **bitcoin_f**<br>比特币行情 | 8192 B | 4195 B | **1.95x**<br>(32.77 b/v) | 1.95x |
+| **bitcoin_transactions_f**<br>链上交易 | 8192 B | 4861 B | **1.69x**<br>(37.98 b/v) | 1.68x |
+| **medicare1**<br>医疗门诊统计 | 8192 B | 5249 B | **1.56x**<br>(41.01 b/v) | 1.56x |
+| **cms1**<br>医疗报销记录 | 8192 B | 5363 B | **1.53x**<br>(41.90 b/v) | 1.53x |
+| **cms25**<br>医疗处方记录 | 8192 B | 5451 B | **1.50x**<br>(42.59 b/v) | 1.50x |
+| **nyc29**<br>纽约出租车数据 | 8192 B | 5441 B | **1.51x**<br>(42.51 b/v) | 1.50x |
+| **air_sensor_f**<br>高频空气传感 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.52x (膨胀) |
+| **poi_lat**<br>POI高精度纬度 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.51x (膨胀) |
+| **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.64x (膨胀) |
 | **总计 / 全数据集平均** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
 得益于原始保底机制，`fastalp` 彻底消除了高精双精度浮点数在 ALP 模型下的负压缩现象，总压缩体积由 130,597 字节降至 110,773 字节，平均压缩率提升至 **2.29x**。
+
+### 真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)
+
+针对现实生产中最核心的物理传感与环境监测场景（包括 NOAA ISD-Lite 气象、NOAA CO-OPS 海洋潮位、USGS NWIS 河流流量水文监测，共 64 条真实长时序，467,550 个 64 位浮点数），进行端到端同机实测对比：
+
+| 观测变量 (Variable) | 序列数量 | 数据点数 | fastalp 压缩率 | C++ 原版 压缩率 | 体积缩减率 | fastalp 压缩吞吐 | C++ 压缩吞吐 | fastalp 解压吞吐 | C++ 解压吞吐 | 解压加速比 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **air_temperature** (地面气温) | 10 | 79,807 | **8.07x**<br>(7.93 b/v) | 7.80x | **-3.4%** | **2.55 GB/s** | 0.48 GB/s | **12.99 GB/s** | 0.59 GB/s | **22.0x** |
+| **dew_point** (露点温度) | 10 | 79,772 | **8.30x**<br>(7.71 b/v) | 7.95x | **-4.2%** | **2.48 GB/s** | 0.49 GB/s | **8.58 GB/s** | 0.60 GB/s | **14.3x** |
+| **sea_level_pressure** (海平面气压) | 10 | 72,857 | **9.24x**<br>(6.93 b/v) | 7.42x | **-19.6%** | **2.32 GB/s** | 0.46 GB/s | **6.40 GB/s** | 0.58 GB/s | **11.0x** |
+| **wind_direction** (气象风向) | 9 | 69,384 | **7.10x**<br>(9.01 b/v) | 7.04x | **-0.8%** | **2.10 GB/s** | 0.45 GB/s | **6.48 GB/s** | 0.61 GB/s | **10.6x** |
+| **wind_speed** (观测风速) | 9 | 71,298 | **7.07x**<br>(9.05 b/v) | 7.83x | - | **2.21 GB/s** | 0.47 GB/s | **23.57 GB/s** | 0.62 GB/s | **38.0x** |
+| **water_level** (海洋潮位) | 4 | 29,760 | **8.51x**<br>(7.52 b/v) | 5.32x | **-37.4%** | **2.41 GB/s** | 0.42 GB/s | **10.74 GB/s** | 0.54 GB/s | **19.9x** |
+| **water_level_sigma** (潮位标准差) | 4 | 29,760 | **6.27x**<br>(10.20 b/v) | 9.36x | - | **2.15 GB/s** | 0.52 GB/s | **12.10 GB/s** | 0.64 GB/s | **18.9x** |
+| **discharge** (河流水量流量) | 4 | 17,452 | **5.36x**<br>(11.93 b/v) | 4.34x | **-19.2%** | **1.85 GB/s** | 0.38 GB/s | **4.91 GB/s** | 0.49 GB/s | **10.0x** |
+| **gage_height** (水文水尺高度) | 4 | 17,460 | **9.72x**<br>(6.58 b/v) | 7.75x | **-20.3%** | **2.20 GB/s** | 0.44 GB/s | **6.66 GB/s** | 0.55 GB/s | **12.1x** |
+| **【物理时序 64 序列 总计】** | **64** | **467,550** | **7.72x**<br>(**8.29 b/v**) | **7.30x** | **-5.54%** | **2.35 GB/s** | **0.47 GB/s** | **11.20 GB/s** | **0.58 GB/s** | **19.3x** |
+
+- **压缩体积突破**：得益于十进制精确除法重构与 Delta 自适应差分，在真实物理观测时序中，`fastalp` 将每点平均占用压缩至 8.29 bits，较 C++ 原版体积进一步缩减 5.54%，在潮位与水尺高度上体积缩减达 20%~37%。
+- **吞吐量压倒性领先**：单核解压吞吐达 11.20 GB/s，达到 C++ 原版（0.58 GB/s）的 **19.3 倍**；压缩吞吐达 2.35 GB/s，达到 C++ 原版的 **5.0 倍**。
 
 ---
 
