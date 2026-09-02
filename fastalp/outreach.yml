@@ -142,3 +142,27 @@ records:
     title: Add fastalp under Compression section
     status: submitted
     date: 2026-09-03
+
+  - type: pull_request
+    repo: getsentry/bucket-compression
+    pr_number: 2
+    url: https://github.com/getsentry/bucket-compression/pull/2
+    title: "feat(algo): add fastalp floating-point compression benchmark"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: Entropack/alp-rs
+    issue: 1
+    url: https://github.com/Entropack/alp-rs/issues/1#issuecomment-5518175483
+    title: "Feature Request: `compress_into` and `decompress_into`"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: Entropack/alp-rs
+    issue: 2
+    url: https://github.com/Entropack/alp-rs/issues/2#issuecomment-5518176249
+    title: "Feature Request: Cascade `DELTA` - `FFOR`"
+    status: posted
+    date: 2026-09-03
