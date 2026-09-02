@@ -12,3 +12,5 @@ pub use key::{
 };
 pub use meta::ListMeta;
 pub use opt::LPos;
+
+pub type ListPopResult = (Vec<u8>, Vec<Vec<u8>>);

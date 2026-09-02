@@ -774,3 +774,89 @@ fn test_list_lpos_count_zero_and_maxlen() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_list_with_lindex_and_lmpop_and_kvrocks_suite() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. with_lindex 零拷贝借用读取
+  db.rpush("lindex_k", &["item_zero", "item_one", "item_two"])?;
+  let len0 = db.with_lindex("lindex_k", 0, |v| v.len())?;
+  assert_eq!(len0, Some(9)); // "item_zero".len() == 9
+  let is_two = db.with_lindex("lindex_k", -1, |v| v == b"item_two")?;
+  assert_eq!(is_two, Some(true));
+  let oob = db.with_lindex("lindex_k", 100, |v| v.len())?;
+  assert_eq!(oob, None);
+  let nonexist = db.with_lindex("nonexist_k", 0, |v| v.len())?;
+  assert_eq!(nonexist, None);
+
+  // 2. LMPOP 多键队列弹出 (Redis 7.0 / Kvrocks 对标)
+  db.rpush("queue_b", &["b1", "b2", "b3"])?;
+  db.rpush("queue_c", &["c1", "c2"])?;
+
+  // 从 queue_a (不存在), queue_b, queue_c 依次探查并弹出 2 项
+  let pop_res = db.lmpop(&["queue_a", "queue_b", "queue_c"], true, 2)?;
+  assert!(pop_res.is_some());
+  let (k, items) = pop_res.unwrap();
+  assert_eq!(k, b"queue_b");
+  assert_eq!(items, vec![b"b1".to_vec(), b"b2".to_vec()]);
+  assert_eq!(db.llen("queue_b")?, 1);
+
+  // 再次弹出 2 项（queue_b 仅剩 1 项，应弹出 1 项）
+  let pop_res2 = db.lmpop(&["queue_a", "queue_b", "queue_c"], true, 2)?;
+  assert!(pop_res2.is_some());
+  let (k2, items2) = pop_res2.unwrap();
+  assert_eq!(k2, b"queue_b");
+  assert_eq!(items2, vec![b"b3".to_vec()]);
+  assert_eq!(db.llen("queue_b")?, 0);
+
+  // queue_b 已空，应自动落到 queue_c
+  let pop_res3 = db.lmpop(&["queue_a", "queue_b", "queue_c"], false, 5)?;
+  assert!(pop_res3.is_some());
+  let (k3, items3) = pop_res3.unwrap();
+  assert_eq!(k3, b"queue_c");
+  assert_eq!(items3, vec![b"c2".to_vec(), b"c1".to_vec()]); // right pop 弹出
+  assert_eq!(db.llen("queue_c")?, 0);
+
+  // 全部为空返回 None
+  let pop_none = db.lmpop(&["queue_a", "queue_b", "queue_c"], true, 2)?;
+  assert!(pop_none.is_none());
+
+  // 3. Kvrocks LPop / RPop 边界测试用例对标
+  // 3.1 LPop / RPop 空列表
+  assert!(db.lpop("empty_list", 1)?.is_empty());
+  assert_eq!(db.lpop_one("empty_list")?, None);
+  assert!(db.rpop("empty_list", 1)?.is_empty());
+  assert_eq!(db.rpop_one("empty_list")?, None);
+
+  // 3.2 LPop / RPop 单元素逐项弹出
+  let fields = ["f0", "f1", "f2", "f3", "f4"];
+  db.rpush("single_pop_k", &fields)?;
+  for f in fields {
+    assert_eq!(db.lpop_one("single_pop_k")?, Some(f.as_bytes().to_vec()));
+  }
+  assert_eq!(db.llen("single_pop_k")?, 0);
+  assert_eq!(db.lpop_one("single_pop_k")?, None);
+
+  db.rpush("single_rpop_k", &fields)?;
+  for f in fields.iter().rev() {
+    assert_eq!(db.rpop_one("single_rpop_k")?, Some(f.as_bytes().to_vec()));
+  }
+  assert_eq!(db.llen("single_rpop_k")?, 0);
+  assert_eq!(db.rpop_one("single_rpop_k")?, None);
+
+  // 3.3 PopMulti 数量超限测试 (PopMultiCountGreaterThanListSize)
+  db.rpush("over_pop_k", &fields)?;
+  let over_popped = db.lpop("over_pop_k", 100)?;
+  assert_eq!(over_popped.len(), 5);
+  assert_eq!(db.llen("over_pop_k")?, 0);
+
+  db.rpush("over_rpop_k", &fields)?;
+  let over_rpopped = db.rpop("over_rpop_k", 100)?;
+  assert_eq!(over_rpopped.len(), 5);
+  assert_eq!(over_rpopped[0], b"f4");
+  assert_eq!(db.llen("over_rpop_k")?, 0);
+
+  Ok(())
+}

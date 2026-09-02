@@ -1,12 +1,15 @@
+use std::ops::Bound;
+
 use crate::{
   IntoIndexRange,
   api::list::{
-    ListItemKeyComposer, compose_list_item, compose_list_meta_key, compose_list_prefix_stack,
+    ListItemKeyComposer, ListPopResult, compose_list_item, compose_list_meta_key,
+    compose_list_prefix_stack,
     r#const::{ERR_INDEX_OUT_OF_RANGE, ERR_RANK_ZERO},
     meta::ListMeta,
     opt::LPos,
   },
-  engine::{Engine, Partition},
+  engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key::{clear_prefix_in_batch, get_meta_checked},
   meta::current_now_ms,
@@ -126,7 +129,10 @@ where
     if actual_start <= actual_end {
       let start_k = compose_list_item(&kc, key_bytes, actual_start);
       let end_k = compose_list_item(&kc, key_bytes, actual_end);
-      for g in self.data().range(start_k.as_slice()..=end_k.as_slice()) {
+      for g in self.data().range((
+        Bound::Included(start_k.as_slice()),
+        Bound::Included(end_k.as_slice()),
+      )) {
         let entry = g?;
         results.push(entry.value().to_vec());
       }
@@ -316,9 +322,15 @@ where
     if actual_start <= actual_end {
       let start_k = compose_list_item(&kc, key_bytes, actual_start);
       let end_k = compose_list_item(&kc, key_bytes, actual_end);
-      for (offset, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).enumerate() {
+      for (offset, g) in data_ks
+        .range((
+          Bound::Included(start_k.as_slice()),
+          Bound::Included(end_k.as_slice()),
+        ))
+        .enumerate()
+      {
         let entry = g?;
-        if entry.value() == pivot_bytes {
+        if entry.value().as_ref() == pivot_bytes {
           pivot_offset = Some(offset);
           break;
         }
@@ -418,9 +430,15 @@ where
       let start_k = compose_list_item(&kc, key_bytes, actual_start);
       let end_k = compose_list_item(&kc, key_bytes, actual_end);
       if count >= 0 {
-        for (offset, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).enumerate() {
+        for (offset, g) in data_ks
+          .range((
+            Bound::Included(start_k.as_slice()),
+            Bound::Included(end_k.as_slice()),
+          ))
+          .enumerate()
+        {
           let entry = g?;
-          if entry.value() == elem_bytes {
+          if entry.value().as_ref() == elem_bytes {
             to_delete_offsets.push(offset);
             if to_delete_offsets.len() >= target_del_limit {
               break;
@@ -428,9 +446,16 @@ where
           }
         }
       } else {
-        for (i, g) in data_ks.range(start_k.as_slice()..=end_k.as_slice()).rev().enumerate() {
+        for (i, g) in data_ks
+          .range((
+            Bound::Included(start_k.as_slice()),
+            Bound::Included(end_k.as_slice()),
+          ))
+          .rev()
+          .enumerate()
+        {
           let entry = g?;
-          if entry.value() == elem_bytes {
+          if entry.value().as_ref() == elem_bytes {
             let offset = len - 1 - i;
             to_delete_offsets.push(offset);
             if to_delete_offsets.len() >= target_del_limit {
@@ -713,44 +738,123 @@ where
       _ => Vec::with_capacity(limit.min(16)),
     };
 
-    let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
+    let actual_start = meta.head;
+    let actual_end = meta.head.wrapping_add((len - 1) as u64);
     let mut rank_count = 0usize;
 
-    let mut check_offset = |offset: usize| -> Result<bool> {
-      let idx = meta.head.wrapping_add(offset as u64);
-      let item_k = composer.key_for_idx(idx);
-      if let Some(val) = data_ks.get(item_k)?
-        && val.as_ref() == elem_bytes
-      {
-        rank_count += 1;
-        if rank_count >= target_rank {
-          matches.push(offset as i64);
-          if (is_multi_count && matches.len() >= count_limit) || !is_multi_count {
-            return Ok(false);
+    if actual_start <= actual_end {
+      let start_k = compose_list_item(&kc, key_bytes, actual_start);
+      let end_k = compose_list_item(&kc, key_bytes, actual_end);
+      if !reversed {
+        for (offset, g) in data_ks
+          .range((
+            Bound::Included(start_k.as_slice()),
+            Bound::Included(end_k.as_slice()),
+          ))
+          .enumerate()
+        {
+          if offset >= limit {
+            break;
+          }
+          let entry = g?;
+          if entry.value().as_ref() == elem_bytes {
+            rank_count += 1;
+            if rank_count >= target_rank {
+              matches.push(offset as i64);
+              if (is_multi_count && matches.len() >= count_limit) || !is_multi_count {
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        let start_offset = len - 1;
+        let end_offset = len.saturating_sub(limit);
+        for (i, g) in data_ks
+          .range((
+            Bound::Included(start_k.as_slice()),
+            Bound::Included(end_k.as_slice()),
+          ))
+          .rev()
+          .enumerate()
+        {
+          let offset = start_offset - i;
+          if offset < end_offset {
+            break;
+          }
+          let entry = g?;
+          if entry.value().as_ref() == elem_bytes {
+            rank_count += 1;
+            if rank_count >= target_rank {
+              matches.push(offset as i64);
+              if (is_multi_count && matches.len() >= count_limit) || !is_multi_count {
+                break;
+              }
+            }
           }
         }
       }
-      Ok(true)
-    };
-
-    if !reversed {
-      for offset in 0..limit {
-        if !check_offset(offset)? {
-          break;
-        }
-      }
     } else {
-      let start_offset = len - 1;
-      let end_offset = len.saturating_sub(limit);
-      for offset in (end_offset..=start_offset).rev() {
-        if !check_offset(offset)? {
-          break;
+      let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
+      let mut check_offset = |offset: usize| -> Result<bool> {
+        let idx = meta.head.wrapping_add(offset as u64);
+        let item_k = composer.key_for_idx(idx);
+        if let Some(val) = data_ks.get(item_k)?
+          && val.as_ref() == elem_bytes
+        {
+          rank_count += 1;
+          if rank_count >= target_rank {
+            matches.push(offset as i64);
+            if (is_multi_count && matches.len() >= count_limit) || !is_multi_count {
+              return Ok(false);
+            }
+          }
+        }
+        Ok(true)
+      };
+
+      if !reversed {
+        for offset in 0..limit {
+          if !check_offset(offset)? {
+            break;
+          }
+        }
+      } else {
+        let start_offset = len - 1;
+        let end_offset = len.saturating_sub(limit);
+        for offset in (end_offset..=start_offset).rev() {
+          if !check_offset(offset)? {
+            break;
+          }
         }
       }
     }
 
     Ok(matches)
+  }
+
+  #[inline]
+  pub fn lmpop<K: AsRef<[u8]>>(
+    &self,
+    keys: &[K],
+    left: bool,
+    count: usize,
+  ) -> Result<Option<ListPopResult>> {
+    if count == 0 || keys.is_empty() {
+      return Ok(None);
+    }
+    for k in keys {
+      let popped = if left {
+        self.lpop(k, count)?
+      } else {
+        self.rpop(k, count)?
+      };
+      if !popped.is_empty() {
+        return Ok(Some((k.as_ref().to_vec(), popped)));
+      }
+    }
+    Ok(None)
   }
 }
 

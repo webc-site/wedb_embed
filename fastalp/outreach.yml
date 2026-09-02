@@ -4,7 +4,23 @@ records:
     pr_number: 2763
     url: https://github.com/rust-unofficial/awesome-rust/pull/2763
     title: Add fastalp under Compression section
-    status: posted
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: build-workbench/awesome-compression
+    pr_number: 2
+    url: https://github.com/build-workbench/awesome-compression/pull/2
+    title: "添加 fastalp（自适应无损浮点压缩算法）到 Rust 算法库"
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: rustcc/awesome-rust
+    pr_number: 10
+    url: https://github.com/rustcc/awesome-rust/pull/10
+    title: "添加 fastalp（自适应无损浮点压缩算法库）到压缩章节"
+    status: submitted
     date: 2026-09-03
 
   - type: issue_comment

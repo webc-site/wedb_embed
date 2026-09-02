@@ -61,7 +61,7 @@ pub use key_composer::{
   get_slot_id_from_key, get_tag_from_key, is_default_namespace, matches_glob, matches_glob_bytes,
   oppv_len_u64,
 };
-pub use list::{LPos, ListMeta};
+pub use list::{LPos, ListMeta, ListPopResult};
 pub use meta::{
   IntoIndexRange, KeyMeta, RedisType, current_now_ms, current_now_sec, generate_version,
   init_version_counter, normalize_range, version_to_time,
