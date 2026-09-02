@@ -13,7 +13,7 @@ use crate::{
   },
 };
 
-/// Domain operation (aligned with Apache Kvrocks SearchSubkeyType).
+/// Search subkey type enumeration aligned with Apache Kvrocks SearchSubkeyType.
 /// 检索子键类型枚举（对标 Apache Kvrocks SearchSubkeyType）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -39,7 +39,7 @@ impl SearchSubkeyType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks HnswLevelType).
+/// HNSW graph layer data type aligned with Apache Kvrocks HnswLevelType.
 /// HNSW 图层级数据类型（对标 Apache Kvrocks HnswLevelType）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -557,7 +557,7 @@ pub fn decode_hnsw_node_meta(slice: &[u8]) -> Result<(u16, Vec<f64>)> {
   Ok((num_neighbours, vec))
 }
 
-/// Operation definition.
+/// Encodes float as sortable 64-bit integer preserving lexicographical order for range scans.
 /// 浮点数可排序 64 位整数转换（按位变换保证前缀扫描有序，IEEE 754 标准映射）
 pub use crate::meta::{decode_sortable_f64_u64, encode_sortable_f64_u64};
 
@@ -595,7 +595,7 @@ pub fn decode_sortable_i64(hex_str: &str) -> Option<i64> {
   Some((unsigned ^ (1 << 63)) as i64)
 }
 
-/// Returns or computes calculated value.
+/// Computes distance between SQ8 scalar quantized vectors using SIMD acceleration.
 /// SQ8 标量量化向量距离计算（调用 simsimd AVX-512 / NEON 硬件级 Int8 SIMD 算子，4x~8x 吞吐加速）
 #[inline]
 pub fn compute_sq8_distance(q: &[i8], v: &[i8], metric: DistanceMetric) -> Result<f64> {
@@ -659,7 +659,7 @@ pub fn compute_sq8_distance(q: &[i8], v: &[i8], metric: DistanceMetric) -> Resul
   }
 }
 
-/// Returns or computes calculated value.
+/// Computes distance and similarity metrics with hardware acceleration and unrolled fallback.
 /// 向量距离与相似度度量计算（优先调用 simsimd 硬件加速内核，带 8 路循环展开 fallback）
 #[inline]
 pub fn compute_vector_distance(v1: &[f64], v2: &[f64], metric: DistanceMetric) -> Result<f64> {
@@ -797,7 +797,7 @@ pub fn compute_vector_distance(v1: &[f64], v2: &[f64], metric: DistanceMetric) -
   }
 }
 
-/// Parses parameter or binary slice.
+/// Parses float vector from raw binary byte slice or JSON array.
 /// 从二进制字节数组或 JSON 数组中解析浮点向量（零冗余单次解析）
 pub fn parse_vector_from_slice(bytes: &[u8], vector_type: VectorType) -> Result<Vec<f64>> {
   let mut vec = Vec::new();
@@ -805,7 +805,7 @@ pub fn parse_vector_from_slice(bytes: &[u8], vector_type: VectorType) -> Result<
   Ok(vec)
 }
 
-/// Parses parameter or binary slice.
+/// Parses float vector into reusable buffer without heap allocations.
 /// 从二进制字节数组或 JSON 数组中解析浮点向量至复用缓冲区（零新堆内存分配）
 pub fn parse_vector_from_slice_into(
   bytes: &[u8],

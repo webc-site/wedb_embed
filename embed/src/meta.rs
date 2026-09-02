@@ -143,7 +143,7 @@ pub fn version_to_time(version: u64) -> (u64, u32) {
 
 /// Unified trait for composite metadata types.
 /// 复合数据类型 meta 统一操作 trait（泛型函数核心约束）。
-/// Operation definition.
+/// Trait implemented by all composite metadata structures (Set/List/Hash/HLL/SortedInt).
 /// 所有复合 meta（Set/List/Hash/HLL/SortedInt）实现此 trait，使 `WeDb` 可通过泛型函数消除跨模块重复逻辑。
 pub trait MetaOps: Sized {
   /// Metadata key tag slice (e.g. `b"sm"`, `b"hm"`).

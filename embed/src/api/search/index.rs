@@ -24,7 +24,7 @@ use crate::{
   string::format_float,
 };
 
-/// Operation definition.
+/// Extracts indexable entries from document returning (field_name, term_or_encoded_val).
 /// 提取文档中的索引项（返回 `(field_name, term_or_encoded_val)` 列表）
 pub fn extract_doc_terms(
   schema: &SearchIndexSchema,
@@ -162,7 +162,7 @@ pub fn extract_doc_terms(
   terms
 }
 
-/// Operation definition.
+/// Inverted index posting entry.
 /// 倒排记录条目（Posting）
 #[derive(Debug, Clone, PartialEq)]
 pub struct Posting {
@@ -172,7 +172,7 @@ pub struct Posting {
   pub payload: Option<Vec<u8>>,
 }
 
-/// Operation definition.
+/// Stored document entry tuple: (field-value map, base score, payload data).
 /// 文档存储内容元组：(字段键值映射, 文档基础得分, 附带载荷数据)
 pub type StoredDoc = (
   HashMap<HipStr<'static>, HipStr<'static>>,
@@ -184,25 +184,25 @@ pub type StoredDoc = (
 /// 倒排索引引擎（对标 Apache Kvrocks GlobalIndexer 与 IndexUpdater）
 #[derive(Debug, Clone, Default)]
 pub struct InvertedIndex {
-  /// Operation definition.
+  /// Text inverted index mapping: field_name -> (term -> (doc_id -> Posting)).
   /// 文本倒排索引：field_name -> (term -> (doc_id -> Posting))
   pub text_index: HashMap<String, HashMap<String, HashMap<HipStr<'static>, Posting>>>,
-  /// Operation definition.
+  /// Tag inverted index mapping: field_name -> (tag -> Set<doc_id>).
   /// 标签倒排索引：field_name -> (tag -> Set<doc_id>)
   pub tag_index: HashMap<String, HashMap<String, HashSet<HipStr<'static>>>>,
-  /// Operation definition.
+  /// Numeric index mapping: field_name -> (sortable_f64_hex -> Set<doc_id>).
   /// 数值索引：field_name -> (sortable_f64_hex -> Set<doc_id>)
   pub numeric_index: HashMap<String, BTreeMap<String, HashSet<HipStr<'static>>>>,
-  /// Operation definition.
+  /// Vector index mapping: field_name -> (doc_id -> vector).
   /// 向量索引：field_name -> (doc_id -> vector)
   pub vector_index: HashMap<String, HashMap<HipStr<'static>, Vec<f64>>>,
-  /// Operation definition.
+  /// HNSW vector index graph mapping: field_name -> HnswGraph.
   /// HNSW 向量索引图：field_name -> HnswGraph
   pub hnsw_index: HashMap<String, HnswGraph>,
-  /// Operation definition.
+  /// Geospatial index mapping: field_name -> (doc_id -> (lon, lat)).
   /// 空间索引：field_name -> (doc_id -> (lon, lat))
   pub geo_index: HashMap<String, HashMap<HipStr<'static>, (f64, f64)>>,
-  /// Operation definition.
+  /// Document store mapping: doc_id -> StoredDoc.
   /// 文档全量存储：doc_id -> StoredDoc
   pub docs: HashMap<HipStr<'static>, StoredDoc>,
 }
@@ -213,7 +213,7 @@ impl InvertedIndex {
     Self::default()
   }
 
-  /// Operation definition.
+  /// Indexes document fields into text, tag, numeric, geo, and vector indices.
   /// 针对文档写入索引
   pub fn index_doc(
     &mut self,
@@ -350,7 +350,7 @@ impl InvertedIndex {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Removes document entries from all indices.
   /// 删除指定文档索引
   pub fn delete_doc(&mut self, schema: &SearchIndexSchema, doc_id: &str) -> bool {
     let doc_key = HipStr::from(doc_id);
@@ -387,7 +387,7 @@ impl InvertedIndex {
     true
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves all distinct tag values for a tag field aligned with FT.TAGVALS.
   /// 获取标签字段的所有独立值（对标 FT.TAGVALS）
   pub fn tag_vals(&self, field_name: &str) -> Vec<String> {
     if let Some(map) = self.tag_index.get(field_name) {
@@ -403,7 +403,7 @@ impl InvertedIndex {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Evaluates query AST node to retrieve matching document IDs.
   /// 评估查询节点获取匹配的文档集合
   pub fn eval_query_node(
     &self,
@@ -764,7 +764,7 @@ impl InvertedIndex {
     }
   }
 
-  /// Domain operation (aligned with Apache Kvrocks FT.SEARCH).
+  /// Executes full-text search aligned with Apache Kvrocks FT.SEARCH.
   /// 执行全文检索（对标 Apache Kvrocks FT.SEARCH）
   pub fn search(
     &self,
@@ -984,7 +984,7 @@ impl InvertedIndex {
     })
   }
 
-  /// Domain operation aligned with FT.AGGREGATE Apache Kvrocks .
+  /// Executes aggregate query aligned with FT.AGGREGATE.
   /// 执行聚合检索（对标 FT.AGGREGATE 与 Apache Kvrocks 聚合支持）
   pub fn aggregate(
     &self,
@@ -1242,7 +1242,7 @@ impl InvertedIndex {
     })
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves index statistics and schema info aligned with FT.INFO.
   /// 获取索引详细统计信息（对标 FT.INFO）
   pub fn info(&self, schema: &SearchIndexSchema) -> FtInfo {
     let mut index_opts = Vec::new();

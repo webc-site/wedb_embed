@@ -12,7 +12,7 @@ use crate::{
   },
 };
 
-/// Operation definition.
+/// Candidate node distance score and ID pair (16-byte Copy primitive).
 /// 候选节点得分与 ID 紧凑结构（纯 16 字节 Copy 原语，零堆内存分配）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candidate {
@@ -36,7 +36,7 @@ impl Ord for Candidate {
   }
 }
 
-/// Operation definition.
+/// Min-heap element wrapper for nearest-neighbor priority queues.
 /// 最小堆包装器（用于优先队列弹出最近邻居，16 字节 Copy 原语）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MinCandidate(pub Candidate);
@@ -64,7 +64,7 @@ pub struct HnswNode {
   pub vector: Vec<f64>,
   pub sq8: Sq8Vector,
   pub level: usize,
-  /// Operation definition.
+  /// List of neighbor nodes per layer indexed by 0..=level.
   /// 每一层的邻居列表，索引为层号 0..=level
   pub neighbors: Vec<Vec<u64>>,
 }
@@ -189,7 +189,7 @@ impl HnswGraph {
     }
   }
 
-  /// Domain operation (aligned with Apache Kvrocks metadata.num_levels).
+  /// Returns the number of levels in the HNSW graph aligned with Kvrocks.
   /// 返回当前图的层级数（对标 Apache Kvrocks metadata.num_levels）
   #[inline]
   pub fn num_levels(&self) -> u16 {
@@ -200,7 +200,7 @@ impl HnswGraph {
     }
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::RandomizeLayer).
+  /// Randomly selects layer for a newly inserted node aligned with Kvrocks.
   /// 随机生成新插入节点的层数（对标 Apache Kvrocks HnswIndex::RandomizeLayer）
   #[inline]
   pub fn random_level(&self) -> usize {
@@ -209,21 +209,21 @@ impl HnswGraph {
     ((-r.ln()) * self.level_mult).floor() as usize
   }
 
-  /// Returns or computes calculated value.
+  /// Computes full-precision distance between two vectors.
   /// 计算两向量间距离（全精度）
   #[inline]
   pub fn dist(&self, v1: &[f64], v2: &[f64]) -> Result<f64> {
     compute_vector_distance(v1, v2, self.distance_metric)
   }
 
-  /// Returns or computes calculated value.
+  /// Computes distance between two SQ8 quantized vectors using SIMD acceleration.
   /// 计算两 SQ8 量化向量间距离（硬件级 SIMD 极速计算）
   #[inline]
   pub fn dist_sq8(&self, q: &[i8], v: &[i8]) -> Result<f64> {
     compute_sq8_distance(q, v, self.distance_metric)
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::InsertVectorEntry).
+  /// Inserts a new vector into the HNSW graph aligned with Kvrocks.
   /// 插入新向量（对标 Apache Kvrocks HnswIndex::InsertVectorEntry）
   pub fn insert(&mut self, doc_id: HipStr<'static>, vector: Vec<f64>) -> Result<u64> {
     if self.dim != 0 && vector.len() != self.dim {
@@ -339,7 +339,7 @@ impl HnswGraph {
     Ok(node_id)
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::DeleteVectorEntry).
+  /// Deletes a node from the HNSW graph aligned with Kvrocks.
   /// 删除节点（对标 Apache Kvrocks HnswIndex::DeleteVectorEntry）
   pub fn delete(&mut self, doc_id: &str) -> bool {
     let node_id = match self.doc_to_node.remove(doc_id) {
@@ -384,7 +384,7 @@ impl HnswGraph {
     true
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::SearchLayerInternal).
+  /// Performs beam search in a single layer aligned with Apache Kvrocks.
   /// 单层 Beam Search 搜索邻近候选集（对标 Apache Kvrocks HnswIndex::SearchLayerInternal）
   pub fn search_layer_internal(
     &self,
@@ -446,7 +446,7 @@ impl HnswGraph {
     Ok(res)
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::SelectNeighbors).
+  /// Selects neighbor candidates using heuristics aligned with Apache Kvrocks.
   /// 邻居启发式筛选（对标 Apache Kvrocks HnswIndex::SelectNeighbors）
   #[inline]
   pub fn select_neighbors(&self, candidates: &[Candidate], m_max: usize) -> Vec<u64> {
@@ -471,10 +471,10 @@ impl HnswGraph {
     scored.into_iter().take(m_max).map(|c| c.node_id).collect()
   }
 
-  /// Operation definition.
+  /// Robust neighbor pruning algorithm (RobustPrune) based on Vamana / DiskANN alpha-RNG with zero heap allocations.
   /// 基于 Vamana / DiskANN 的 $\alpha$-RNG 鲁棒邻居修剪算法（RobustPrune，零堆内存分配）
   ///
-  /// Operation definition.
+  /// The parameter alpha >= 1.0 controls long skip edges and directional diversity (default recommended 1.2).
   /// $\alpha \ge 1.0$ 控制长跳跃边与方向多样性（默认推荐 1.2）
   pub fn robust_prune(
     &self,
@@ -529,7 +529,7 @@ impl HnswGraph {
     pruned
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::KnnSearch).
+  /// Performs K-Nearest-Neighbor search aligned with Apache Kvrocks HnswIndex::KnnSearch.
   /// 执行 KNN 近邻检索（对标 Apache Kvrocks HnswIndex::KnnSearch）
   pub fn search_knn(
     &self,
@@ -593,7 +593,7 @@ impl HnswGraph {
     Ok(results)
   }
 
-  /// Domain operation aligned with Apache Kvrocks VECTOR_RANGE .
+  /// Performs vector range query aligned with Apache Kvrocks VECTOR_RANGE.
   /// 执行范围检索（对标 Apache Kvrocks VECTOR_RANGE 检索）
   pub fn search_range(
     &self,
@@ -611,7 +611,7 @@ impl HnswGraph {
     Ok(filtered)
   }
 
-  /// Domain operation (aligned with Apache Kvrocks HnswIndex::ExpandSearchScope).
+  /// Expands search scope to locate candidate entry points aligned with Kvrocks.
   /// 扩展搜索范围（对标 Apache Kvrocks HnswIndex::ExpandSearchScope）
   pub fn expand_search_scope(
     &self,
@@ -640,7 +640,7 @@ impl HnswGraph {
     Ok(result)
   }
 
-  /// Operation definition.
+  /// Clears all nodes and edges from the index.
   /// 清空索引
   #[inline]
   pub fn clear(&mut self) {

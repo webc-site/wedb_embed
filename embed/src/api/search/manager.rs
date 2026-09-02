@@ -37,7 +37,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Creates an index (FT.CREATE).
   /// 创建索引（FT.CREATE）
   pub fn create_index(&mut self, schema: impl Into<SearchIndexSchema>) -> Result<()> {
     let schema = schema.into();
@@ -53,7 +53,7 @@ impl SearchIndexManager {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Drops an index (FT.DROPINDEX).
   /// 删除索引（FT.DROPINDEX）
   pub fn drop_index(&mut self, index_name: &str, dd: bool) -> Result<Vec<HipStr<'static>>> {
     let resolved_key = if let Some(target) = self.aliases.get(index_name) {
@@ -78,7 +78,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves reference to index and inverted table.
   /// 获取索引及其倒排表引用
   #[inline]
   pub fn get_index(&self, index_name: &str) -> Option<&(SearchIndexSchema, InvertedIndex)> {
@@ -86,7 +86,7 @@ impl SearchIndexManager {
     self.indexes.get(resolved)
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves mutable reference to index and inverted table.
   /// 获取索引及其倒排表可变引用
   #[inline]
   pub fn get_index_mut(
@@ -100,7 +100,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Lists all index names in the current database (FT._LIST).
   /// 列出所有索引名称（FT._LIST）
   pub fn list_indexes(&self) -> Vec<String> {
     let mut list: Vec<String> = self.indexes.keys().map(HipStr::to_string).collect();
@@ -108,7 +108,7 @@ impl SearchIndexManager {
     list
   }
 
-  /// Parses parameter or binary slice.
+  /// Resolves index name supporting index aliases.
   /// 解析索引名称（支持别名解析）
   #[inline]
   pub fn resolve_index_name<'a>(&'a self, alias_or_name: &'a str) -> &'a str {
@@ -119,7 +119,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Adds an alias for an index (FT.ALIASADD).
   /// 添加别名（FT.ALIASADD）
   pub fn add_alias(&mut self, alias: &str, index_name: &str) -> Result<()> {
     if self.aliases.contains_key(alias) {
@@ -138,7 +138,7 @@ impl SearchIndexManager {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Deletes an alias (FT.ALIASDEL).
   /// 删除别名（FT.ALIASDEL）
   pub fn del_alias(&mut self, alias: &str) -> Result<()> {
     if self.aliases.remove(alias).is_none() {
@@ -147,7 +147,7 @@ impl SearchIndexManager {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Updates an alias to point to another index (FT.ALIASUPDATE).
   /// 更新别名（FT.ALIASUPDATE）
   pub fn update_alias(&mut self, alias: &str, index_name: &str) -> Result<()> {
     if !self.indexes.contains_key(index_name) {
@@ -161,7 +161,7 @@ impl SearchIndexManager {
     Ok(())
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves all distinct tag values for a field (FT.TAGVALS).
   /// 获取标签字段值列表（FT.TAGVALS）
   pub fn tag_vals(&self, index_name: &str, field_name: &str) -> Result<Vec<String>> {
     if let Some((_, idx)) = self.get_index(index_name) {
@@ -173,7 +173,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Executes search query (FT.SEARCH).
   /// 执行检索（FT.SEARCH）
   pub fn search(&self, index_name: &str, query: &str, opts: &FtSearch) -> Result<SearchResult> {
     let resolved = self.resolve_index_name(index_name);
@@ -186,7 +186,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Executes aggregate query (FT.AGGREGATE).
   /// 执行聚合检索（FT.AGGREGATE）
   pub fn aggregate(&self, index_name: &str, opts: &FtAggregate) -> Result<AggregateResult> {
     let resolved = self.resolve_index_name(index_name);
@@ -199,7 +199,7 @@ impl SearchIndexManager {
     }
   }
 
-  /// Operation definition.
+  /// Explains query execution plan (FT.EXPLAIN).
   /// 查询执行计划（FT.EXPLAIN）
   #[inline]
   pub fn explain(&self, query: &str, opts: &FtSearch) -> String {
@@ -207,7 +207,7 @@ impl SearchIndexManager {
     explain_search_query(&ast)
   }
 
-  /// Operation definition.
+  /// Explains query execution plan in CLI format (FT.EXPLAINCLI).
   /// 查询 CLI 执行计划（FT.EXPLAINCLI）
   #[inline]
   pub fn explain_cli(&self, query: &str, opts: &FtSearch) -> String {
@@ -215,7 +215,7 @@ impl SearchIndexManager {
     explain_search_query_cli(&ast)
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves index information and statistics (FT.INFO).
   /// 获取索引信息（FT.INFO）
   pub fn info(&self, index_name: &str) -> Result<FtInfo> {
     if let Some((schema, idx)) = self.get_index(index_name) {

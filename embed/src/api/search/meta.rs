@@ -1,4 +1,4 @@
-/// Domain operation (aligned with Apache Kvrocks IndexOnDataType).
+/// Target data structure type for indexing aligned with Apache Kvrocks IndexOnDataType.
 /// 索引针对的数据类型（对标 Apache Kvrocks IndexOnDataType）
 #[derive(
   Debug,
@@ -36,7 +36,7 @@ impl IndexOnDataType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks IndexFieldType).
+/// Index field type enumeration aligned with Apache Kvrocks IndexFieldType.
 /// 索引字段类型（对标 Apache Kvrocks IndexFieldType）
 #[derive(
   Debug,
@@ -83,7 +83,7 @@ impl IndexFieldType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks VectorType).
+/// Vector numeric data type aligned with Apache Kvrocks VectorType.
 /// 向量数据类型（对标 Apache Kvrocks VectorType）
 #[derive(
   Debug,
@@ -131,7 +131,7 @@ impl VectorType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks DistanceMetric).
+/// Vector distance metric aligned with Apache Kvrocks DistanceMetric.
 /// 向量距离度量方式（对标 Apache Kvrocks DistanceMetric）
 #[derive(
   Debug,
@@ -174,7 +174,7 @@ impl DistanceMetric {
   }
 }
 
-/// Operation definition.
+/// Vector index construction algorithm type (Flat, HNSW).
 /// 向量索引构建算法
 #[derive(
   Debug,
@@ -214,7 +214,7 @@ impl VectorAlgorithm {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks HnswVectorFieldMetadata).
+/// HNSW vector field metadata options aligned with Apache Kvrocks HnswVectorFieldMetadata.
 /// 向量字段元数据（对标 Apache Kvrocks HnswVectorFieldMetadata）
 #[derive(Debug, Clone, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub struct VectorFieldMetadata {
@@ -370,7 +370,7 @@ impl IndexField {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks kqir::IndexInfo).
+/// Full-text search engine schema definition aligned with Apache Kvrocks kqir::IndexInfo.
 /// 全文检索引擎模式定义（对标 Apache Kvrocks kqir::IndexInfo）
 #[derive(Debug, Clone, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub struct SearchIndexSchema {

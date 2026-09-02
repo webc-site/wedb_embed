@@ -130,7 +130,7 @@ where
   Ok(())
 }
 
-/// Operation definition.
+/// Cleans up subkey data for specific composite data structure.
 /// 清理特定复合数据结构的子键数据（按需精准清理，单缓冲区零堆分配，二进制安全）
 #[inline]
 pub fn cleanup_composite_data<E: Engine>(
@@ -194,7 +194,7 @@ where
   cleanup_all_composite_data_with_buf(db, k_bytes, batch, &mut buf)
 }
 
-/// Operation definition.
+/// Checks for active metadata of other complex data types with external buffer reuse.
 /// 检查是否存在其他复杂数据类型的活跃元数据（支持外部复用缓冲区与底层分区直传）
 #[inline]
 pub fn check_composite_meta_not_other_type_with_buf<E: Engine>(
@@ -225,7 +225,7 @@ where
   Ok(())
 }
 
-/// Operation definition.
+/// Core internal check for active metadata of other complex data types.
 /// 检查是否存在其他复杂数据类型的活跃元数据（内部核心方法，单缓冲区零冗余分配）
 #[inline]
 pub fn check_composite_meta_not_other_type<E: Engine>(
@@ -280,11 +280,11 @@ where
   check_composite_meta_not_other_type(db, k_bytes, current_meta_tag, now_ms)
 }
 
-/// Operation definition.
+/// Active composite metadata entry tuple: (meta_tag, base_meta, raw_value_guard).
 /// 活跃复合元数据项三元组：(meta_tag, base_meta, raw_value_guard)
 pub type ActiveCompositeMeta<V> = (u8, KeyMeta, V);
 
-/// Operation definition.
+/// Finds live unexpired metadata across composite metadata tables with single buffer reuse.
 /// 在复合元数据表中查找未过期的元数据（单缓冲区复用，零堆分配）
 #[inline]
 pub fn find_active_composite_meta<E: Engine>(
@@ -313,7 +313,7 @@ where
   Ok(None)
 }
 
-/// Returns or computes calculated value.
+/// Generic metadata retrieval and type validation in a single pass.
 /// 泛型 meta 获取 + 类型校验（单次判断，零冗余双重检索）
 #[inline]
 pub fn get_meta_checked<M: MetaOps, E: Engine>(

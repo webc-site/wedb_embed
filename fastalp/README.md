@@ -29,13 +29,12 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-- [Architecture & Optimizations](#architecture-optimizations)
+- [Architecture Comparison & Engineering Optimizations](#architecture-comparison--engineering-optimizations)
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection--zero-heap-allocation)
-  - [Raw Fallback Mode Against Data Expansion](#raw-fallback-mode-against-data-expansion)
+  - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
+  - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
   - [Zero-Multiplication LUT Decompression Acceleration](#zero-multiplication-lut-decompression-acceleration)
-  - [Zero-Allocation Single-Pass Direct Streaming](#zero-allocation-single-pass-direct-streaming)
-  - [128-bit Register Bitpacker](#128-bit-register-bitpacker)
-  - [SIMD Auto-Vectorization with `as_chunks`](#simd-auto-vectorization-with-as_chunks)
+  - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
   - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
   - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
 
@@ -55,13 +54,12 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-- [Architecture & Optimizations](#architecture-optimizations)
+- [Architecture Comparison & Engineering Optimizations](#architecture-comparison-engineering-optimizations)
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
-  - [Raw Fallback Mode Against Data Expansion](#raw-fallback-mode-against-data-expansion)
+  - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
+  - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
   - [Zero-Multiplication LUT Decompression Acceleration](#zero-multiplication-lut-decompression-acceleration)
-  - [Zero-Allocation Single-Pass Direct Streaming](#zero-allocation-single-pass-direct-streaming)
-  - [128-bit Register Bitpacker](#128-bit-register-bitpacker)
-  - [SIMD Auto-Vectorization with `as_chunks`](#simd-auto-vectorization-with-as_chunks)
+  - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
   - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
   - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
 
@@ -336,57 +334,61 @@ Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative c
 
 ---
 
-## Architecture & Optimizations
+## Architecture Comparison & Engineering Optimizations
 
-`fastalp` achieves high throughput compression and decompression in pure Rust through modular architectural optimizations:
+Compared with the reference C++ implementation, `fastalp` achieves superior compression ratio and memory efficiency in safe pure Rust:
 
 ### Constant Sequence Fast Detection & Zero-Heap Allocation
 
-- Constant and smooth sequences are checked at entry using bit-exact comparisons (`v.is_exact_same(first)`), properly differentiating `+0.0` and `-0.0`.<br>
-- Bypasses parameter sampling search and intermediate vector allocations, writing a 5-byte header and base value (`bit_width = 0`) directly, reducing compression time from microseconds to 351 nanoseconds.
+- **Reference C++ Implementation**:<br>
+  Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
+- **fastalp Optimization**:<br>
+  Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
+  Directly emits a 5-byte header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
 
-### Raw Fallback Mode Against Data Expansion
+### Raw Fallback Safeguard Against Negative Compression
 
-- Under high-frequency noise or non-decimal doubles, exception lists can expand beyond original payload size.<br>
-- `fastalp` detects when encoded size exceeds raw size plus header overhead, immediately switching to `TYPE_F64_RAW` or `TYPE_F32_RAW` mode.<br>
-- Employs 3-byte minimal headers and zero-copy restoration via `copy_nonoverlapping`, strictly bounding worst-case overhead to 3 bytes.
+- **Reference C++ Implementation**:<br>
+  Lacks safeguard against data expansion; on non-decimal double datasets with high exception rates, the exception table expands beyond original payload size (e.g. `poi_lat` yields 0.51x, `air_sensor` yields 0.52x).<br>
+- **fastalp Optimization**:<br>
+  Monitors estimated payload size during encoding; when compressed size exceeds uncompressed input plus header overhead, automatically falls back to `TYPE_F64_RAW` or `TYPE_F32_RAW` mode;<br>
+  Writes a 3-byte header and stores raw uncompressed bytes, restored via zero-copy `copy_nonoverlapping`, eliminating negative compression and raising dataset average ratio to 2.29x.
+
+### Zero-Heap Direct Streaming Decompression
+
+- **Reference C++ Implementation**:<br>
+  Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
+- **fastalp Optimization**:<br>
+  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
 
 ### Zero-Multiplication LUT Decompression Acceleration
 
-- For small bit-widths (1, 2, 4, 8 bits), there are only 2, 4, 16, or 256 possible offset states.<br>
-- `fastalp` precomputes a compact (16 B – 2 KB) stack-allocated lookup table before entering the unpacking loop:<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`.<br>
-- In the unpacking inner loop, float reconstruction reduces to $O(1)$ direct array index lookups, eliminating integer and floating-point multiplication from the critical decode path, driving throughput to 24+ GB/s.
-
-### Zero-Allocation Single-Pass Direct Streaming
-
-- **Conventional Codec Bottleneck**:<br>
-  C++ ALP and other codecs employ a two-stage decoding model: stage 1 unpacks the bitstream into intermediate heap arrays (triggering cache pollution and allocator overhead), while stage 2 iterates over the array to compute inverse float scaling.<br>
+- **Reference C++ Implementation**:<br>
+  Inner loop executes integer and floating-point multiplications for every element.<br>
 - **fastalp Optimization**:<br>
-  Employs a single-pass direct reconstruction pipeline. As bits are unpacked within CPU registers, float values are written directly to the target destination buffer, resulting in zero intermediate heap allocations and high L1/L2 cache locality.
+  For small bit-widths (1, 2, 4, 8 bits with 2, 4, 16, 256 possible offsets), precomputes a compact stack lookup table:<br>
+  `lut[offset] = (offset + base) * 10^fac * 10^-exp`;<br>
+  Inner loop reduces to $O(1)$ direct array lookups, eliminating all integer and floating-point multiplications on the decode path.
 
-### 128-bit Register Bitpacker
+### Pure 128-bit Register Bitpacker
 
-- Eliminates slice allocation and memory barriers in the critical bitpacking path.<br>
-- Utilizes a single 128-bit register pair (`acc: u128`, `bits_in_acc: u32`) as a sliding bit-window.<br>
-- Flushing and fetching are executed with single 64-bit integer instructions.
-
-### SIMD Auto-Vectorization with `as_chunks`
-
-- Dedicated fast-paths for bit-widths `0, 1, 2, 4, 8, 16, 32, 64`:<br>
-  - `bit_width == 0` (Identical / Constant streams): Executed via memory-bandwidth saturation (76+ GB/s).<br>
-  - `bit_width == 1, 2, 4`: Extracts 8 / 4 / 2 values per byte with zero accumulator shift overhead.<br>
-  - Leverages standard `as_chunks::<N>()` slices with compile-time fixed dimensions, allowing LLVM to emit optimal SIMD (ARM NEON / x86) vector loops.
+- **Reference C++ Implementation**:<br>
+  Generates extensive template code across multiple compilation units, creating large binaries with architecture-specific intrinsics.<br>
+- **fastalp Optimization**:<br>
+  Maintains a sliding bit window with a single 128-bit register accumulator (`acc: u128`, `bits_in_acc: u32`), executing 64-bit word writes and reads in single instructions;<br>
+  Pure safe Rust with zero external C++ toolchain dependencies, cross-compiling seamlessly for x86_64, ARM64, and WebAssembly.
 
 ### Sample-Space Cost Lower-Bound Pruning
 
-- ALP parameter estimation tests up to 135 `(exp, fac)` combinations across sample vectors.<br>
-- `fastalp` implements dynamic lower-bound pruning: If running exception penalty (`exceptions * penalty`) exceeds current global `best_cost`, the loop breaks immediately, cutting parameter search time significantly.
+- **Reference C++ Implementation**:<br>
+  Evaluates all samples across 135 `(exp, fac)` parameter combinations unconditionally.<br>
+- **fastalp Optimization**:<br>
+  Applies dynamic lower-bound pruning: breaks inner verification immediately once running exception penalty (`exceptions * penalty`) surpasses current global `best_cost`, skipping unnecessary parameter iterations.
 
 ### Branchless Arithmetic & Precomputed Constants
 
-- Exponent factor lookups are pre-extracted outside inner loops to eliminate repeated array dereferences.<br>
-- Bit-width calculation maps directly to hardware `leading_zeros()` instruction (CLZ/BSR), and constant bitmasks avoid branch mispredictions.
+- Pre-extracts exponent factor tables outside inner loops to eliminate repeated array lookups;<br>
+- Calculates bit-width using hardware CLZ instructions and applies compile-time bitmasks to eliminate conditional branch mispredictions.
 
 
 ---
@@ -415,13 +417,12 @@ Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative c
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-- [架构与性能优化设计](#架构与性能优化设计)
+- [架构对比与工程优化设计](#架构对比与工程优化设计)
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
-  - [局部查找表解压加速](#局部查找表解压加速)
   - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-  - [纯寄存器 128 位累加器](#纯寄存器-128-位累加器)
-  - [基于分块切片的常用位宽自动向量化](#基于分块切片的常用位宽自动向量化)
+  - [局部查找表解压加速](#局部查找表解压加速)
+  - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
   - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
   - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
 
@@ -441,13 +442,12 @@ Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative c
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-- [架构与性能优化设计](#架构与性能优化设计)
+- [架构对比与工程优化设计](#架构对比与工程优化设计)
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
-  - [局部查找表解压加速](#局部查找表解压加速)
   - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-  - [纯寄存器 128 位累加器](#纯寄存器-128-位累加器)
-  - [基于分块切片的常用位宽自动向量化](#基于分块切片的常用位宽自动向量化)
+  - [局部查找表解压加速](#局部查找表解压加速)
+  - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
   - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
   - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
 
@@ -722,56 +722,59 @@ fastalp/
 
 ---
 
-## 架构与性能优化设计
+## 架构对比与工程优化设计
 
-`fastalp` 在纯 Rust 实现下保持高吞吐解压与压缩，核心设计如下：
+相比 C++ 原版实现，`fastalp` 在纯安全 Rust 下通过以下架构革新提升压缩率与内存效率：
 
 ### 全等序列常数探测与零堆分配
 
-- 对于常量与平稳序列，在压缩入口处进行基于底层二进制位的快速判定（`v.is_exact_same(first)`），区分 `+0.0` 与 `-0.0`；<br>
-- 校验通过后直接写入 5 字节头部与对应浮点基准值（`bit_width = 0`），跳过参数采样搜索循环与编码中间数组分配，压缩耗时从微秒级降至 351 纳秒。
+- **C++ 原版实现**：<br>
+  面对全量常数序列时，依然需要执行完整的样本采集、临时整型数组转换与位宽分析，端到端耗时达 9.25 微秒。<br>
+- **fastalp 优化**：<br>
+  在压缩入口通过底层原始比特比对（`v.is_exact_same(first)`，严格区分 `+0.0` 与 `-0.0` 符号位）；<br>
+  命中后直接写入 5 字节紧凑头部与基准值（`bit_width = 0`），跳过所有采样与中间数组分配，压缩耗时降至 351 纳秒，相对提速 26 倍。
 
 ### 原始保底机制消除负压缩
 
-- 当面对随机噪声或不可编码的高精度数据时，ALP 异常表可能膨胀至超过原始数据大小；<br>
-- `fastalp` 在判定编码所需体积超过原生大小加头部后，自动切换为 `TYPE_F64_RAW` 或 `TYPE_F32_RAW` 模式；<br>
-- 仅以 3 字节头部记录格式与数量，原始数据零拷贝存储与恢复，将最差情况严格限制在 3 字节开销。
-
-### 局部查找表解压加速
-
-- 对于 1-bit、2-bit、4-bit、8-bit 位宽，解压时每个值仅有 2、4、16、256 种可能的差值偏移。<br>
-- 在解压函数头部计算占用 16B ~ 2KB 栈空间的局部查找表：<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`。<br>
-- 在解包循环中，浮点反缩放简化为 $O(1)$ 数组直接索引查表，消除了循环内部的整数乘法和浮点乘法计算，解压速度达 24+ GB/s。
+- **C++ 原版实现**：<br>
+  缺乏数据膨胀防护机制；在遇到非十进制高频双精度浮点时，异常表膨胀导致体积反超原始数据（如 `poi_lat` 压缩率仅 0.51x，`air_sensor` 仅 0.52x）。<br>
+- **fastalp 优化**：<br>
+  压缩时预估编码体积；当总开销超过原始字节数加上头部后，自动切换为 `TYPE_F64_RAW` 或 `TYPE_F32_RAW` 保底模式；<br>
+  以 3 字节头部存储元数据并直存原始字节流，解码时通过 `copy_nonoverlapping` 零拷贝恢复，消除负压缩，全数据集总体积由 130KB 降至 110KB，平均压缩率提升至 2.29x。
 
 ### 零堆内存分配与单遍流式解码
 
-- **两阶段模型开销**：<br>
-  传统解压器先将压缩位流解包到临时的中间数组（带来 8 字节/元素的堆内存分配与缓存失效），再遍历中间数组完成反缩放与异常修补。<br>
-- **单遍直解优化**：<br>
-  采用单遍直解架构，位流在 CPU 寄存器中解包的同时直接写入目标切片，<br>
-  避免中间堆内存分配，保持 CPU L1/L2 数据缓存命中。
+- **C++ 原版实现**：<br>
+  采用两阶段解码架构：阶段一解包位流到中间堆数组，阶段二遍历中间数组计算浮点逆缩放并修补异常，引发 8 字节/元素的堆分配与 L1/L2 缓存挤占。<br>
+- **fastalp 优化**：<br>
+  采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；对外提供 `compress_into` 与 `decompress_into` 零分配接口。
 
-### 纯寄存器 128 位累加器
+### 局部查找表解压加速
 
-- **位打包与解包**：<br>
-  消除栈分配临时切片与内存读改写开销，直接采用单一 `u128` 寄存器作为滑动窗口（`acc: u128` 与 `bits_in_acc: u32`）。<br>
-- 打包时满 64 位单指令写入 8 字节；解包时批量单指令拉取 64 位，循环内仅有寄存器位移与位掩码。
+- **C++ 原版实现**：<br>
+  解包内层循环对每个元素均执行浮点或整数乘除运算，消耗较多流水线计算周期。<br>
+- **fastalp 优化**：<br>
+  针对 1、2、4、8 位等小位宽（仅 2、4、16、256 种偏移状态），在解压栈上构建微型查找表：<br>
+  `lut[offset] = (offset + base) * 10^fac * 10^-exp`；<br>
+  解压时将算术反缩放简化为 $O(1)$ 数组直接索引查表，消除循环内整数与浮点乘法开销。
 
-### 基于分块切片的常用位宽自动向量化
+### 纯寄存器 128 位累加器与紧凑位打包
 
-- 对 `0, 1, 2, 4, 8, 16, 32, 64` 等常见位宽提供专用快速路径：<br>
-  - `bit_width == 0`（全量常数序列）：通过批量填充，达到 76+ GB/s 的吞吐；<br>
-  - `bit_width == 1, 2, 4`：一个字节内直接解出 8 / 4 / 2 个数值，无位累加器轮转开销；<br>
-  - 使用 Rust 标准库 `as_chunks::<N>()` 提供编译期确定长度的切片，引导编译器生成 ARM NEON 与 x86 向量化指令。
+- **C++ 原版实现**：<br>
+  采用多层宏与模板元编程生成大量打包函数，编译生成的目标代码体积庞大，且高度耦合特定硬件平台的指令扩展。<br>
+- **fastalp 优化**：<br>
+  采用单一 `u128` 寄存器作为滑动窗口（`acc: u128` 与 `bits_in_acc: u32`），单指令 64 位写入或读取；<br>
+  纯安全 Rust 实现，不依赖外部 C++ 编译链，天然跨平台支持 x86_64、ARM64 以及 WebAssembly。
 
 ### 采样搜索代价下界剪枝
 
-- 压缩时需在采样数据上评估多达 135 种 `(exp, fac)` 组合。<br>
-- 引入代价下界动态剪枝：在单次采样的内层循环中，若已累计的异常惩罚（`exceptions * penalty`）已超过当前全局最优代价 `best_cost`，则立即中断探测，跳过剩余的所有样本测试，显著降低参数搜索耗时。
+- **C++ 原版实现**：<br>
+  参数搜索时盲目遍历 135 种 `(exp, fac)` 组合的全部样本，遍历开销较高。<br>
+- **fastalp 优化**：<br>
+  引入代价下界动态剪枝：在单次采样的内层循环中，若已累计的异常惩罚（`exceptions * penalty`）已超过当前全局最优代价 `best_cost`，则立即中断探测，跳过剩余的所有样本测试，显著降低参数搜索耗时。
 
 ### 编译期常量提取与无分支位运算
 
-- 预先在外层提取幂次表项，消除采样与编码循环内对全局表的重复数组索引。<br>
-- 采用硬件级前导零指令计算位宽，利用常量位掩码替代分支判断，减少流水线损耗。
+- Exponent factor 预先在外层提取，消除采样与编码循环内对全局表的重复数组索引；<br>
+- 采用硬件级前导零指令（CLZ）计算位宽，利用常量位掩码替代分支判断，减少流水线损耗。
 

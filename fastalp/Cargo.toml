@@ -1,6 +1,6 @@
 [package]
 name = "fastalp"
-version = "0.1.20"
+version = "0.1.21"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/webc-site/wedb_embed.git"

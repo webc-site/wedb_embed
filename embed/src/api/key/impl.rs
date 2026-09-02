@@ -123,7 +123,7 @@ where
   }
 }
 
-/// Operation definition.
+/// Deletes one or more keys (DEL).
 /// 删除一个或多个键（DEL）
 pub fn del_impl<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, keys: &[K]) -> Result<usize>
 where
@@ -176,7 +176,7 @@ where
   Ok(deleted)
 }
 
-/// Operation definition.
+/// Checks whether a key exists (EXISTS).
 /// 检查键是否存在（EXISTS）
 pub fn exists_impl<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, keys: &[K]) -> Result<usize>
 where
@@ -205,7 +205,7 @@ where
   Ok(count)
 }
 
-/// Operation definition.
+/// Queries all user keys in current namespace matching a wildcard pattern.
 /// 按通配符模式匹配查询当前命名空间下的所有用户 Key
 pub fn keys_impl<E: Engine>(db: &Db<E>, pattern: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>>>
 where
@@ -271,7 +271,7 @@ where
   Ok(result)
 }
 
-/// Operation definition.
+/// Counts the total number of user keys in the current namespace.
 /// 统计当前命名空间下的 Key 总数
 pub fn key_count_impl<E: Engine>(db: &Db<E>) -> Result<usize>
 where
@@ -328,7 +328,7 @@ where
   Ok(seen.len())
 }
 
-/// Operation definition.
+/// Retrieves data type name for any given key (TYPE).
 /// 查询任意键的数据类型名称
 pub fn key_type_impl<E: Engine>(db: &Db<E>, key: &[u8]) -> Result<&'static str>
 where
@@ -356,7 +356,7 @@ where
   Ok("none")
 }
 
-/// Returns or computes calculated value.
+/// Retrieves absolute expiration timestamp in milliseconds for any key.
 /// 获取任意键的绝对过期毫秒时间戳（不存在返回 None，无过期返回 Some(0)，有过期返回 Some(expire_at_ms)）
 pub fn get_key_expire_at_impl<E: Engine>(db: &Db<E>, key: &[u8]) -> Result<Option<u64>>
 where
@@ -380,7 +380,7 @@ where
   Ok(None)
 }
 
-/// Operation definition.
+/// Sets absolute expiration timestamp in milliseconds for any key (expire_at_ms = 0 persists key).
 /// 为任意键设置绝对过期毫秒时间戳（expire_at_ms = 0 表示 PERSIST）
 pub fn set_key_expire_at_impl<E: Engine>(db: &Db<E>, key: &[u8], expire_at_ms: u64) -> Result<bool>
 where
