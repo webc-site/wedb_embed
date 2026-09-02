@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 pub use crate::api::hash::key::{
   ItemKeyComposer as HashItemKeyComposer, field as compose_hash_key, meta as compose_hash_meta_key,
   prefix as compose_hash_prefix, prefix_stack as compose_hash_prefix_stack,
@@ -11,7 +13,9 @@ use crate::{
 
 /// Encodes data into binary format.
 /// 哈希子键编码模式（对标 Apache Kvrocks HashSubkeyEncodingMode）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode, strum::FromRepr,
+)]
 #[repr(u8)]
 pub enum HashSubkeyEncodingMode {
   #[default]
@@ -95,6 +99,21 @@ pub struct HashMeta {
   pub persist: u64,
   pub lower: u64,
   pub upper: u64,
+}
+
+impl Deref for HashMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for HashMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl HashMeta {

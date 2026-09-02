@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::{
   key_composer::KeyTag,
   meta::{KeyMeta, MetaOps, RedisType},
@@ -10,6 +12,21 @@ pub struct ListMeta {
   pub base: KeyMeta,
   pub head: u64,
   pub tail: u64,
+}
+
+impl Deref for ListMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for ListMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl ListMeta {

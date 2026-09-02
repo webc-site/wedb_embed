@@ -241,6 +241,34 @@ pub fn compress_timestamps(timestamps: &[u64]) -> Vec<u8> {
   writer.finish()
 }
 
+#[inline(always)]
+fn read_dod(reader: &mut BitReader<'_>) -> Option<i64> {
+  let bit = reader.read_bit()?;
+  if !bit {
+    return Some(0);
+  }
+  let b2 = reader.read_bit()?;
+  if !b2 {
+    let val = reader.read_bits(7)?;
+    Some((val as i64) - 63)
+  } else {
+    let b3 = reader.read_bit()?;
+    if !b3 {
+      let val = reader.read_bits(9)?;
+      Some((val as i64) - 255)
+    } else {
+      let b4 = reader.read_bit()?;
+      if !b4 {
+        let val = reader.read_bits(12)?;
+        Some((val as i64) - 2047)
+      } else {
+        let val = reader.read_bits(32)?;
+        Some(val as u32 as i32 as i64)
+      }
+    }
+  }
+}
+
 /// Operation definition.
 /// 时间戳 Delta-of-Delta 变长比特流解压（直接写入目标缓冲区）
 pub fn decompress_timestamps_into(data: &[u8], count: usize, out: &mut Vec<u64>) -> Result<()> {
@@ -266,48 +294,8 @@ pub fn decompress_timestamps_into(data: &[u8], count: usize, out: &mut Vec<u64>)
   out.push(prev_ts);
 
   for _ in 2..count {
-    let bit = reader
-      .read_bit()
+    let dod = read_dod(&mut reader)
       .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp dod bit"))?;
-    let dod: i64 = if !bit {
-      0
-    } else {
-      let b2 = reader
-        .read_bit()
-        .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-      if !b2 {
-        let val = reader
-          .read_bits(7)
-          .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-        (val as i64) - 63
-      } else {
-        let b3 = reader
-          .read_bit()
-          .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-        if !b3 {
-          let val = reader
-            .read_bits(9)
-            .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-          (val as i64) - 255
-        } else {
-          let b4 = reader
-            .read_bit()
-            .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-          if !b4 {
-            let val = reader
-              .read_bits(12)
-              .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-            (val as i64) - 2047
-          } else {
-            let val = reader
-              .read_bits(32)
-              .ok_or_else(|| Error::invalid_data("ERR TSDB: corrupted timestamp bits"))?;
-            val as u32 as i32 as i64
-          }
-        }
-      }
-    };
-
     let cur_delta = ((prev_delta as i64) + dod).max(0) as u64;
     prev_ts = prev_ts.saturating_add(cur_delta);
     prev_delta = cur_delta;
@@ -336,32 +324,7 @@ pub fn decompress_last_timestamp(data: &[u8], count: usize) -> Option<u64> {
   }
 
   for _ in 2..count {
-    let bit = reader.read_bit()?;
-    let dod: i64 = if !bit {
-      0
-    } else {
-      let b2 = reader.read_bit()?;
-      if !b2 {
-        let val = reader.read_bits(7)?;
-        (val as i64) - 63
-      } else {
-        let b3 = reader.read_bit()?;
-        if !b3 {
-          let val = reader.read_bits(9)?;
-          (val as i64) - 255
-        } else {
-          let b4 = reader.read_bit()?;
-          if !b4 {
-            let val = reader.read_bits(12)?;
-            (val as i64) - 2047
-          } else {
-            let val = reader.read_bits(32)?;
-            val as u32 as i32 as i64
-          }
-        }
-      }
-    };
-
+    let dod = read_dod(&mut reader)?;
     let cur_delta = ((prev_delta as i64) + dod).max(0) as u64;
     prev_ts = prev_ts.saturating_add(cur_delta);
     prev_delta = cur_delta;

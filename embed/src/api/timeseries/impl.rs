@@ -955,15 +955,15 @@ where
       return Ok(final_res);
     }
 
-    let mut final_res = Vec::with_capacity(series_results.len());
-    for (name, labels, samples) in series_results {
-      final_res.push(TsMRangeResult {
+    let final_res = series_results
+      .into_iter()
+      .map(|(name, labels, samples)| TsMRangeResult {
         source_keys: vec![name.clone()],
         name,
         labels,
         samples,
-      });
-    }
+      })
+      .collect();
     Ok(final_res)
   }
 

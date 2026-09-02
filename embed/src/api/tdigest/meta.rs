@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 pub use crate::meta::{
   decode_sortable_f64_u64 as decode_double_from_u64,
   encode_sortable_f64_u64 as encode_double_to_u64,
@@ -22,6 +24,21 @@ pub struct TDigestMeta {
   pub maximum: f64,
   pub total_observations: u64,
   pub merge_times: u64,
+}
+
+impl Deref for TDigestMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for TDigestMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl TDigestMeta {

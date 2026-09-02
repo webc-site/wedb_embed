@@ -33,15 +33,36 @@ pub enum BitPos {
 
 /// Domain operation (aligned with Apache Kvrocks BitOpFlags).
 /// BITOP 运算类型（对标 Apache Kvrocks BitOpFlags）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum BitOp {
+  #[strum(serialize = "AND")]
   And,
+  #[strum(serialize = "OR")]
   Or,
+  #[strum(serialize = "XOR")]
   Xor,
+  #[strum(serialize = "NOT")]
   Not,
 }
 
 impl BitOp {
+  #[inline]
+  pub fn parse(s: &str) -> Option<Self> {
+    s.parse().ok()
+  }
+
   #[inline]
   pub const fn as_str(&self) -> &'static str {
     match self {
@@ -53,43 +74,38 @@ impl BitOp {
   }
 }
 
-impl FromStr for BitOp {
-  type Err = Error;
-
-  #[inline]
-  fn from_str(s: &str) -> Result<Self> {
-    if s.eq_ignore_ascii_case("AND") {
-      Ok(Self::And)
-    } else if s.eq_ignore_ascii_case("OR") {
-      Ok(Self::Or)
-    } else if s.eq_ignore_ascii_case("XOR") {
-      Ok(Self::Xor)
-    } else if s.eq_ignore_ascii_case("NOT") {
-      Ok(Self::Not)
-    } else {
-      Err(Error::invalid_data(format!("ERR unknown bitop: '{s}'")))
-    }
-  }
-}
-
-impl fmt::Display for BitOp {
-  #[inline]
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}", self.as_str())
-  }
-}
-
 /// Domain operation (aligned with Apache Kvrocks BitfieldOverflowBehavior).
 /// BITFIELD 溢出处理策略（对标 Apache Kvrocks BitfieldOverflowBehavior）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum BitfieldOverflow {
   #[default]
+  #[strum(serialize = "WRAP")]
   Wrap,
+  #[strum(serialize = "SAT")]
   Sat,
+  #[strum(serialize = "FAIL")]
   Fail,
 }
 
 impl BitfieldOverflow {
+  #[inline]
+  pub fn parse(s: &str) -> Option<Self> {
+    s.parse().ok()
+  }
+
   #[inline]
   pub const fn as_str(&self) -> &'static str {
     match self {
@@ -97,32 +113,6 @@ impl BitfieldOverflow {
       Self::Sat => "SAT",
       Self::Fail => "FAIL",
     }
-  }
-}
-
-impl FromStr for BitfieldOverflow {
-  type Err = Error;
-
-  #[inline]
-  fn from_str(s: &str) -> Result<Self> {
-    if s.eq_ignore_ascii_case("WRAP") {
-      Ok(Self::Wrap)
-    } else if s.eq_ignore_ascii_case("SAT") {
-      Ok(Self::Sat)
-    } else if s.eq_ignore_ascii_case("FAIL") {
-      Ok(Self::Fail)
-    } else {
-      Err(Error::invalid_data(format!(
-        "ERR Invalid OVERFLOW type '{s}', must be WRAP, SAT or FAIL"
-      )))
-    }
-  }
-}
-
-impl fmt::Display for BitfieldOverflow {
-  #[inline]
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}", self.as_str())
   }
 }
 

@@ -1,9 +1,23 @@
 /// Domain operation (aligned with Apache Kvrocks IndexOnDataType).
 /// 索引针对的数据类型（对标 Apache Kvrocks IndexOnDataType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum IndexOnDataType {
+  #[strum(serialize = "HASH")]
   Hash = 2,
+  #[strum(serialize = "JSON")]
   Json = 10,
 }
 
@@ -18,23 +32,36 @@ impl IndexOnDataType {
 
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    match s.to_ascii_uppercase().as_str() {
-      "HASH" => Some(Self::Hash),
-      "JSON" => Some(Self::Json),
-      _ => None,
-    }
+    s.parse().ok()
   }
 }
 
 /// Domain operation (aligned with Apache Kvrocks IndexFieldType).
 /// 索引字段类型（对标 Apache Kvrocks IndexFieldType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum IndexFieldType {
+  #[strum(serialize = "TEXT")]
   Text = 0,
+  #[strum(serialize = "TAG")]
   Tag = 1,
+  #[strum(serialize = "NUMERIC")]
   Numeric = 2,
+  #[strum(serialize = "VECTOR")]
   Vector = 3,
+  #[strum(serialize = "GEO")]
   Geo = 4,
 }
 
@@ -52,24 +79,32 @@ impl IndexFieldType {
 
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    match s.to_ascii_uppercase().as_str() {
-      "TEXT" => Some(Self::Text),
-      "TAG" => Some(Self::Tag),
-      "NUMERIC" => Some(Self::Numeric),
-      "VECTOR" => Some(Self::Vector),
-      "GEO" => Some(Self::Geo),
-      _ => None,
-    }
+    s.parse().ok()
   }
 }
 
 /// Domain operation (aligned with Apache Kvrocks VectorType).
 /// 向量数据类型（对标 Apache Kvrocks VectorType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum VectorType {
   #[default]
+  #[strum(serialize = "FLOAT64")]
   Float64 = 1,
+  #[strum(serialize = "FLOAT32")]
   Float32 = 2,
 }
 
@@ -84,11 +119,7 @@ impl VectorType {
 
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    match s.to_ascii_uppercase().as_str() {
-      "FLOAT64" => Some(Self::Float64),
-      "FLOAT32" => Some(Self::Float32),
-      _ => None,
-    }
+    s.parse().ok()
   }
 
   #[inline]
@@ -102,12 +133,28 @@ impl VectorType {
 
 /// Domain operation (aligned with Apache Kvrocks DistanceMetric).
 /// 向量距离度量方式（对标 Apache Kvrocks DistanceMetric）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum DistanceMetric {
   #[default]
+  #[strum(serialize = "L2")]
   L2 = 0,
+  #[strum(serialize = "IP")]
   IP = 1,
+  #[strum(serialize = "COSINE")]
   Cosine = 2,
 }
 
@@ -123,22 +170,32 @@ impl DistanceMetric {
 
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    match s.to_ascii_uppercase().as_str() {
-      "L2" => Some(Self::L2),
-      "IP" => Some(Self::IP),
-      "COSINE" => Some(Self::Cosine),
-      _ => None,
-    }
+    s.parse().ok()
   }
 }
 
 /// Operation definition.
 /// 向量索引构建算法
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum VectorAlgorithm {
   #[default]
+  #[strum(serialize = "HNSW")]
   Hnsw = 1,
+  #[strum(serialize = "FLAT")]
   Flat = 2,
 }
 
@@ -153,11 +210,7 @@ impl VectorAlgorithm {
 
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    match s.to_ascii_uppercase().as_str() {
-      "HNSW" => Some(Self::Hnsw),
-      "FLAT" => Some(Self::Flat),
-      _ => None,
-    }
+    s.parse().ok()
   }
 }
 

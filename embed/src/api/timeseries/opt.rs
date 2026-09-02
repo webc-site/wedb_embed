@@ -32,23 +32,90 @@ pub enum TsRange {
 
 /// Operation definition.
 /// 多序列聚合组 Reducer 类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
+/// Operation definition.
+/// 桶时间戳对齐类型
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
+#[repr(u8)]
+pub enum BucketTimestampType {
+  #[default]
+  #[strum(serialize = "-", serialize = "START", serialize = "low")]
+  Start = 0,
+  #[strum(serialize = "+", serialize = "END", serialize = "high")]
+  End = 1,
+  #[strum(serialize = "~", serialize = "MID", serialize = "mid")]
+  Mid = 2,
+}
+
+impl BucketTimestampType {
+  #[inline(always)]
+  pub const fn calculate_timestamp(&self, bucket_left: u64, bucket_duration: u64) -> u64 {
+    match self {
+      Self::Start => bucket_left,
+      Self::End => bucket_left.saturating_add(bucket_duration),
+      Self::Mid => bucket_left.saturating_add(bucket_duration / 2),
+    }
+  }
+}
+
+/// Operation definition.
+/// 多序列聚合组 Reducer 类型
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum GroupReducerType {
   #[default]
+  #[strum(serialize = "sum", serialize = "SUM")]
   Sum = 0,
+  #[strum(serialize = "min", serialize = "MIN")]
   Min = 1,
+  #[strum(serialize = "max", serialize = "MAX")]
   Max = 2,
+  #[strum(serialize = "avg", serialize = "AVG")]
   Avg = 3,
+  #[strum(serialize = "count", serialize = "COUNT")]
   Count = 4,
+  #[strum(serialize = "range", serialize = "RANGE")]
   Range = 5,
+  #[strum(serialize = "first", serialize = "FIRST")]
   First = 6,
+  #[strum(serialize = "last", serialize = "LAST")]
   Last = 7,
+  #[strum(serialize = "std.p", serialize = "STD.P", serialize = "std_p")]
   StdP = 8,
+  #[strum(serialize = "std.s", serialize = "STD.S", serialize = "std_s")]
   StdS = 9,
+  #[strum(serialize = "var.p", serialize = "VAR.P", serialize = "var_p")]
   VarP = 10,
+  #[strum(serialize = "var.s", serialize = "VAR.S", serialize = "var_s")]
   VarS = 11,
+  #[strum(serialize = "twa", serialize = "TWA")]
   Twa = 12,
+  #[strum(serialize = "none", serialize = "NONE")]
   None = 13,
 }
 
@@ -76,22 +143,48 @@ impl GroupReducerType {
 
 /// Operation definition.
 /// 聚合函数类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum AggregationType {
   #[default]
+  #[strum(serialize = "avg", serialize = "AVG")]
   Avg = 0,
+  #[strum(serialize = "first", serialize = "FIRST")]
   First = 1,
+  #[strum(serialize = "last", serialize = "LAST")]
   Last = 2,
+  #[strum(serialize = "min", serialize = "MIN")]
   Min = 3,
+  #[strum(serialize = "max", serialize = "MAX")]
   Max = 4,
+  #[strum(serialize = "sum", serialize = "SUM")]
   Sum = 5,
+  #[strum(serialize = "count", serialize = "COUNT")]
   Count = 6,
+  #[strum(serialize = "std.p", serialize = "STD.P", serialize = "std_p")]
   StdP = 7,
+  #[strum(serialize = "std.s", serialize = "STD.S", serialize = "std_s")]
   StdS = 8,
+  #[strum(serialize = "var.p", serialize = "VAR.P", serialize = "var_p")]
   VarP = 9,
+  #[strum(serialize = "var.s", serialize = "VAR.S", serialize = "var_s")]
   VarS = 10,
+  #[strum(serialize = "range", serialize = "RANGE")]
   Range = 11,
+  #[strum(serialize = "twa", serialize = "TWA")]
   Twa = 12,
 }
 
@@ -161,11 +254,7 @@ impl Aggregator {
         bucket_samples.push((ts, v));
       } else {
         if is_return_empty {
-          let agg_ts = match bucket_timestamp_type {
-            BucketTimestampType::Start => curr_bucket,
-            BucketTimestampType::End => curr_bucket.saturating_add(self.bucket_duration),
-            BucketTimestampType::Mid => curr_bucket.saturating_add(self.bucket_duration / 2),
-          };
+          let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
           let val = self.aggregate(&bucket_samples);
           last_val = val;
           results.push((agg_ts, val));
@@ -178,11 +267,8 @@ impl Aggregator {
           if self.bucket_duration > 0 {
             let mut next_bucket = curr_bucket.saturating_add(self.bucket_duration);
             while next_bucket < bkt {
-              let empty_ts = match bucket_timestamp_type {
-                BucketTimestampType::Start => next_bucket,
-                BucketTimestampType::End => next_bucket.saturating_add(self.bucket_duration),
-                BucketTimestampType::Mid => next_bucket.saturating_add(self.bucket_duration / 2),
-              };
+              let empty_ts =
+                bucket_timestamp_type.calculate_timestamp(next_bucket, self.bucket_duration);
               let empty_val = if self.agg_type == AggregationType::Last {
                 last_val
               } else {
@@ -198,11 +284,7 @@ impl Aggregator {
             }
           }
         } else if !bucket_samples.is_empty() {
-          let agg_ts = match bucket_timestamp_type {
-            BucketTimestampType::Start => curr_bucket,
-            BucketTimestampType::End => curr_bucket.saturating_add(self.bucket_duration),
-            BucketTimestampType::Mid => curr_bucket.saturating_add(self.bucket_duration / 2),
-          };
+          let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
           let val = self.aggregate(&bucket_samples);
           results.push((agg_ts, val));
           if let Some(limit) = count_limit
@@ -218,11 +300,7 @@ impl Aggregator {
     }
 
     if !bucket_samples.is_empty() || is_return_empty {
-      let agg_ts = match bucket_timestamp_type {
-        BucketTimestampType::Start => curr_bucket,
-        BucketTimestampType::End => curr_bucket.saturating_add(self.bucket_duration),
-        BucketTimestampType::Mid => curr_bucket.saturating_add(self.bucket_duration / 2),
-      };
+      let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
       let val = self.aggregate(&bucket_samples);
       results.push((agg_ts, val));
     }
@@ -258,11 +336,11 @@ impl Aggregator {
       AggregationType::Sum => samples.iter().map(|s| s.1).sum(),
       AggregationType::Count => count,
       AggregationType::Range => {
-        let min = samples.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
-        let max = samples
+        let (min, max) = samples
           .iter()
-          .map(|s| s.1)
-          .fold(f64::NEG_INFINITY, f64::max);
+          .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), s| {
+            (min.min(s.1), max.max(s.1))
+          });
         max - min
       }
       AggregationType::StdP
@@ -294,17 +372,6 @@ impl Aggregator {
       }
     }
   }
-}
-
-/// Operation definition.
-/// 桶时间戳对齐类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
-#[repr(u8)]
-pub enum BucketTimestampType {
-  #[default]
-  Start = 0,
-  End = 1,
-  Mid = 2,
 }
 
 /// TS.MGET command options enumeration.

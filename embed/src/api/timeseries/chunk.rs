@@ -290,7 +290,61 @@ impl TSChunk {
       Ok(samples.last().map(|s| (s.ts, s.v)))
     }
   }
+}
 
+#[inline]
+fn apply_duplicate_policy(
+  old_v: f64,
+  new_v: f64,
+  policy: DuplicatePolicy,
+  stats: &mut MergeStats,
+) -> Result<f64> {
+  match policy {
+    DuplicatePolicy::Block => Err(Error::invalid_data(
+      "ERR TSDB: Error at upsert, update is not supported when DUPLICATE_POLICY is set to BLOCK mode",
+    )),
+    DuplicatePolicy::First => {
+      stats.skipped += 1;
+      Ok(old_v)
+    }
+    DuplicatePolicy::Last => {
+      if (old_v - new_v).abs() < f64::EPSILON {
+        stats.skipped += 1;
+      } else {
+        stats.updated += 1;
+      }
+      Ok(new_v)
+    }
+    DuplicatePolicy::Min => {
+      if new_v < old_v {
+        stats.updated += 1;
+        Ok(new_v)
+      } else {
+        stats.skipped += 1;
+        Ok(old_v)
+      }
+    }
+    DuplicatePolicy::Max => {
+      if new_v > old_v {
+        stats.updated += 1;
+        Ok(new_v)
+      } else {
+        stats.skipped += 1;
+        Ok(old_v)
+      }
+    }
+    DuplicatePolicy::Sum => {
+      if new_v == 0.0 {
+        stats.skipped += 1;
+      } else {
+        stats.updated += 1;
+      }
+      Ok(old_v + new_v)
+    }
+  }
+}
+
+impl TSChunk {
   /// Operation definition.
   /// 提取 Chunk 采样点总数
   #[inline]
@@ -320,49 +374,8 @@ impl TSChunk {
       let new_s = new_samples[0];
       match existing.binary_search_by_key(&new_s.ts, |s| s.ts) {
         Ok(idx) => {
-          let old_v = existing[idx].v;
-          match policy {
-            DuplicatePolicy::Block => {
-              return Err(Error::invalid_data(
-                "ERR TSDB: Error at upsert, update is not supported when DUPLICATE_POLICY is set to BLOCK mode",
-              ));
-            }
-            DuplicatePolicy::First => {
-              stats.skipped += 1;
-            }
-            DuplicatePolicy::Last => {
-              if (existing[idx].v - new_s.v).abs() < f64::EPSILON {
-                stats.skipped += 1;
-              } else {
-                existing[idx].v = new_s.v;
-                stats.updated += 1;
-              }
-            }
-            DuplicatePolicy::Min => {
-              if new_s.v < old_v {
-                existing[idx].v = new_s.v;
-                stats.updated += 1;
-              } else {
-                stats.skipped += 1;
-              }
-            }
-            DuplicatePolicy::Max => {
-              if new_s.v > old_v {
-                existing[idx].v = new_s.v;
-                stats.updated += 1;
-              } else {
-                stats.skipped += 1;
-              }
-            }
-            DuplicatePolicy::Sum => {
-              if new_s.v == 0.0 {
-                stats.skipped += 1;
-              } else {
-                existing[idx].v = old_v + new_s.v;
-                stats.updated += 1;
-              }
-            }
-          }
+          let final_v = apply_duplicate_policy(existing[idx].v, new_s.v, policy, &mut stats)?;
+          existing[idx].v = final_v;
         }
         Err(idx) => {
           existing.insert(idx, new_s);
@@ -381,48 +394,8 @@ impl TSChunk {
       if let Some(last) = deduped_new.last_mut()
         && last.ts == s.ts
       {
-        match policy {
-          DuplicatePolicy::Block => {
-            return Err(Error::invalid_data(
-              "ERR TSDB: Error at upsert, update is not supported when DUPLICATE_POLICY is set to BLOCK mode",
-            ));
-          }
-          DuplicatePolicy::First => {
-            stats.skipped += 1;
-          }
-          DuplicatePolicy::Last => {
-            if (last.v - s.v).abs() < f64::EPSILON {
-              stats.skipped += 1;
-            } else {
-              last.v = s.v;
-              stats.updated += 1;
-            }
-          }
-          DuplicatePolicy::Min => {
-            if s.v < last.v {
-              last.v = s.v;
-              stats.updated += 1;
-            } else {
-              stats.skipped += 1;
-            }
-          }
-          DuplicatePolicy::Max => {
-            if s.v > last.v {
-              last.v = s.v;
-              stats.updated += 1;
-            } else {
-              stats.skipped += 1;
-            }
-          }
-          DuplicatePolicy::Sum => {
-            if s.v == 0.0 {
-              stats.skipped += 1;
-            } else {
-              last.v += s.v;
-              stats.updated += 1;
-            }
-          }
-        }
+        let final_v = apply_duplicate_policy(last.v, s.v, policy, &mut stats)?;
+        last.v = final_v;
       } else {
         deduped_new.push(s);
       }
@@ -443,52 +416,7 @@ impl TSChunk {
         stats.inserted += 1;
         j += 1;
       } else {
-        let old_v = e.v;
-        let final_v = match policy {
-          DuplicatePolicy::Block => {
-            return Err(Error::invalid_data(
-              "ERR TSDB: Error at upsert, update is not supported when DUPLICATE_POLICY is set to BLOCK mode",
-            ));
-          }
-          DuplicatePolicy::First => {
-            stats.skipped += 1;
-            old_v
-          }
-          DuplicatePolicy::Last => {
-            if (old_v - n.v).abs() < f64::EPSILON {
-              stats.skipped += 1;
-            } else {
-              stats.updated += 1;
-            }
-            n.v
-          }
-          DuplicatePolicy::Min => {
-            if n.v < old_v {
-              stats.updated += 1;
-              n.v
-            } else {
-              stats.skipped += 1;
-              old_v
-            }
-          }
-          DuplicatePolicy::Max => {
-            if n.v > old_v {
-              stats.updated += 1;
-              n.v
-            } else {
-              stats.skipped += 1;
-              old_v
-            }
-          }
-          DuplicatePolicy::Sum => {
-            if n.v == 0.0 {
-              stats.skipped += 1;
-            } else {
-              stats.updated += 1;
-            }
-            old_v + n.v
-          }
-        };
+        let final_v = apply_duplicate_policy(e.v, n.v, policy, &mut stats)?;
         merged.push(TSSample::new(e.ts, final_v));
         i += 1;
         j += 1;
@@ -532,11 +460,10 @@ impl TSChunk {
     }
 
     let chunk_size = preferred_chunk_size.max(1);
-    let mut chunks = Vec::new();
-
-    for chunk_slice in samples.chunks(chunk_size) {
-      chunks.push(Self::encode_with_type(chunk_slice, chunk_type));
-    }
+    let chunks = samples
+      .chunks(chunk_size)
+      .map(|chunk_slice| Self::encode_with_type(chunk_slice, chunk_type))
+      .collect();
 
     Ok(chunks)
   }

@@ -107,21 +107,22 @@ fn score_range_bounds(score_prefix: &[u8], spec: &RangeScore) -> (Bound<Vec<u8>>
 
   let end = if spec.max == f64::INFINITY {
     prefix_upper_bound(score_prefix)
-  } else if spec.maxex {
-    let max_val = if spec.max == 0.0 { -0.0 } else { spec.max };
-    let max_enc = encode_sortable_f64(max_val);
-    let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN);
-    k.extend_from_slice(score_prefix);
-    k.extend_from_slice(&max_enc);
-    Bound::Excluded(k)
   } else {
-    let max_val = if spec.max == 0.0 { 0.0 } else { spec.max };
+    let max_val = if spec.max == 0.0 {
+      if spec.maxex { -0.0 } else { 0.0 }
+    } else {
+      spec.max
+    };
     let max_enc = encode_sortable_f64(max_val);
     let mut k = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 1);
     k.extend_from_slice(score_prefix);
     k.extend_from_slice(&max_enc);
-    k.push(0xFF);
-    Bound::Included(k)
+    if spec.maxex {
+      Bound::Excluded(k)
+    } else {
+      k.push(0xFF);
+      Bound::Included(k)
+    }
   };
 
   (start, end)
@@ -133,31 +134,27 @@ fn score_range_bounds(score_prefix: &[u8], spec: &RangeScore) -> (Bound<Vec<u8>>
 fn lex_range_bounds(member_prefix: &[u8], spec: &RangeLex) -> (Bound<Vec<u8>>, Bound<Vec<u8>>) {
   let start = if spec.min_infinite {
     Bound::Included(member_prefix.to_vec())
-  } else if spec.minex {
+  } else {
     let mut k = Vec::with_capacity(member_prefix.len() + spec.min.len() + 1);
     k.extend_from_slice(member_prefix);
     k.extend_from_slice(&spec.min);
-    k.push(0x00);
-    Bound::Included(k)
-  } else {
-    let mut k = Vec::with_capacity(member_prefix.len() + spec.min.len());
-    k.extend_from_slice(member_prefix);
-    k.extend_from_slice(&spec.min);
+    if spec.minex {
+      k.push(0x00);
+    }
     Bound::Included(k)
   };
 
   let end = if spec.max_infinite {
     prefix_upper_bound(member_prefix)
-  } else if spec.maxex {
-    let mut k = Vec::with_capacity(member_prefix.len() + spec.max.len());
-    k.extend_from_slice(member_prefix);
-    k.extend_from_slice(&spec.max);
-    Bound::Excluded(k)
   } else {
     let mut k = Vec::with_capacity(member_prefix.len() + spec.max.len());
     k.extend_from_slice(member_prefix);
     k.extend_from_slice(&spec.max);
-    Bound::Included(k)
+    if spec.maxex {
+      Bound::Excluded(k)
+    } else {
+      Bound::Included(k)
+    }
   };
 
   (start, end)

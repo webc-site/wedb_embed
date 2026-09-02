@@ -280,28 +280,22 @@ pub fn group_samples_and_reduce(
       GroupReducerType::Min => values.iter().copied().fold(f64::INFINITY, f64::min),
       GroupReducerType::Max => values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
       GroupReducerType::Range => {
-        let mut min_v = f64::INFINITY;
-        let mut max_v = f64::NEG_INFINITY;
-        for &v in values {
-          if v < min_v {
-            min_v = v;
-          }
-          if v > max_v {
-            max_v = v;
-          }
-        }
+        let (min_v, max_v) = values
+          .iter()
+          .copied()
+          .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
+            (min.min(v), max.max(v))
+          });
         max_v - min_v
       }
       GroupReducerType::VarP
       | GroupReducerType::StdP
       | GroupReducerType::VarS
       | GroupReducerType::StdS => {
-        let mut sum = 0.0;
-        let mut sq_sum = 0.0;
-        for &v in values {
-          sum += v;
-          sq_sum += v * v;
-        }
+        let (sum, sq_sum) = values
+          .iter()
+          .copied()
+          .fold((0.0, 0.0), |(sum, sq_sum), v| (sum + v, sq_sum + v * v));
         let var_p = ((sq_sum - (sum * sum) / count) / count).max(0.0);
         match reducer_type {
           GroupReducerType::VarP => var_p,

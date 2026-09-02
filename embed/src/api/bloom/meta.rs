@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::{
   error::{Error, Result},
   key_composer::KeyTag,
@@ -14,6 +16,53 @@ pub struct BloomChainMeta {
   pub base_capacity: u32,
   pub error_rate: f64,
   pub bloom_bytes: u32,
+}
+
+impl Deref for BloomChainMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for BloomChainMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
+}
+
+/// Operation definition.
+/// 计算等比数列多层 Filter 链的总容量（支持 Bloom / Cuckoo 链）
+#[inline]
+pub fn calculate_geometric_capacity(base_capacity: u64, expansion: u16, n_filters: u16) -> u64 {
+  if expansion == 0 || n_filters <= 1 {
+    return base_capacity;
+  }
+  if expansion == 1 {
+    return base_capacity.saturating_mul(n_filters as u64);
+  }
+  let r = expansion as u64;
+  let n = n_filters as u32;
+  if let Some(r_pow_n) = r.checked_pow(n) {
+    (base_capacity as u128)
+      .saturating_mul((r_pow_n.saturating_sub(1)) as u128)
+      .checked_div((r - 1) as u128)
+      .map(|v| v.min(u64::MAX as u128) as u64)
+      .unwrap_or(u64::MAX)
+  } else {
+    let mut total = 0u64;
+    let mut cur = base_capacity;
+    for _ in 0..n_filters {
+      total = total.saturating_add(cur);
+      cur = cur.saturating_mul(r);
+      if total == u64::MAX {
+        return u64::MAX;
+      }
+    }
+    total
+  }
 }
 
 impl BloomChainMeta {
@@ -55,29 +104,8 @@ impl BloomChainMeta {
 
   #[inline]
   pub fn get_capacity(&self) -> u32 {
-    if self.expansion == 0 {
-      return self.base_capacity;
-    }
-    if self.expansion == 1 {
-      return self.base_capacity.saturating_mul(self.n_filters as u32);
-    }
-    let r = self.expansion as u64;
-    let n = self.n_filters as u32;
-    if let Some(r_pow_n) = r.checked_pow(n) {
-      let sum = (self.base_capacity as u64).saturating_mul(r_pow_n.saturating_sub(1)) / (r - 1);
-      sum.min(u32::MAX as u64) as u32
-    } else {
-      let mut total = 0u64;
-      let mut cur = self.base_capacity as u64;
-      for _ in 0..self.n_filters {
-        total = total.saturating_add(cur);
-        cur = cur.saturating_mul(r);
-        if total >= u32::MAX as u64 {
-          return u32::MAX;
-        }
-      }
-      total.min(u32::MAX as u64) as u32
-    }
+    calculate_geometric_capacity(self.base_capacity as u64, self.expansion, self.n_filters)
+      .min(u32::MAX as u64) as u32
   }
 
   #[inline]
@@ -174,6 +202,21 @@ pub struct CuckooChainMeta {
   pub page_size: u32,
 }
 
+impl Deref for CuckooChainMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for CuckooChainMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
+}
+
 impl CuckooChainMeta {
   pub const ENCODED_SIZE: usize = KeyMeta::ENCODED_SIZE + 2 + 2 + 8 + 1 + 2 + 8 + 4; // 26 + 27 = 53
 
@@ -217,32 +260,7 @@ impl CuckooChainMeta {
 
   #[inline]
   pub fn get_total_capacity(&self) -> u64 {
-    if self.expansion == 0 || self.n_filters == 1 {
-      return self.base_capacity;
-    }
-    if self.expansion == 1 {
-      return self.base_capacity.saturating_mul(self.n_filters as u64);
-    }
-    let r = self.expansion as u64;
-    let n = self.n_filters as u32;
-    if let Some(r_pow_n) = r.checked_pow(n) {
-      (self.base_capacity as u128)
-        .saturating_mul((r_pow_n.saturating_sub(1)) as u128)
-        .checked_div((r - 1) as u128)
-        .map(|v| v.min(u64::MAX as u128) as u64)
-        .unwrap_or(u64::MAX)
-    } else {
-      let mut total = 0u64;
-      let mut filter_cap = self.base_capacity;
-      for _ in 0..self.n_filters {
-        total = total.saturating_add(filter_cap);
-        filter_cap = filter_cap.saturating_mul(r);
-        if total == u64::MAX {
-          return u64::MAX;
-        }
-      }
-      total
-    }
+    calculate_geometric_capacity(self.base_capacity, self.expansion, self.n_filters)
   }
 
   #[inline]

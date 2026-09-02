@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::{
   key_composer::KeyTag,
   meta::{KeyMeta, MetaOps, RedisType},
@@ -5,7 +7,9 @@ use crate::{
 
 /// Encodes data into binary format.
 /// HyperLogLog 编码模式（对标 Apache Kvrocks HyperLogLogMetadata::EncodeType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default, strum::FromRepr,
+)]
 #[repr(u8)]
 pub enum HllEncodeType {
   #[default]
@@ -19,6 +23,21 @@ pub enum HllEncodeType {
 pub struct HyperLogLogMeta {
   pub base: KeyMeta,
   pub encode_type: HllEncodeType,
+}
+
+impl Deref for HyperLogLogMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for HyperLogLogMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl HyperLogLogMeta {

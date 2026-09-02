@@ -1,3 +1,5 @@
 conf/
 node_modules/
 target/
+Cargo.lock
+

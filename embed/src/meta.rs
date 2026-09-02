@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 
 /// Redis data type enumeration (aligned with Apache Kvrocks RedisType).
 /// Redis 数据类型枚举（对标 Apache Kvrocks RedisType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode, strum::FromRepr)]
 #[repr(u8)]
 pub enum RedisType {
   None = 0,
@@ -54,22 +54,9 @@ impl RedisType {
 
   #[inline]
   pub const fn from_u8(val: u8) -> Self {
-    match val {
-      1 => Self::String,
-      2 => Self::Hash,
-      3 => Self::List,
-      4 => Self::Set,
-      5 => Self::ZSet,
-      6 => Self::Bitmap,
-      7 => Self::SortedInt,
-      8 => Self::Stream,
-      9 => Self::Bloom,
-      10 => Self::Json,
-      11 => Self::HyperLogLog,
-      12 => Self::TDigest,
-      13 => Self::TimeSeries,
-      14 => Self::CuckooFilter,
-      _ => Self::None,
+    match Self::from_repr(val) {
+      Some(t) => t,
+      None => Self::None,
     }
   }
 
@@ -179,6 +166,140 @@ pub trait MetaOps: Sized {
   /// Returns mutable reference to base KeyMeta.
   /// 获取 base 可变引用（修改 expire_at）
   fn base_mut(&mut self) -> &mut KeyMeta;
+}
+
+/// Macro for implementing standard KeyMeta wrapper types with MetaOps and Deref.
+/// 宏：一键实现基于基础 KeyMeta 的复合数据结构元数据及其 MetaOps / Deref 特征
+#[macro_export]
+macro_rules! impl_simple_meta {
+  ($(#[$meta:meta])* $struct_name:ident, $redis_type:expr, $key_tag:expr) => {
+    $(#[$meta])*
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+    pub struct $struct_name {
+      pub base: $crate::meta::KeyMeta,
+    }
+
+    impl $crate::meta::MetaOps for $struct_name {
+      const TAG: &'static [u8] = $key_tag.as_slice();
+      type EncodedBytes = [u8; Self::ENCODED_SIZE];
+
+      #[inline]
+      fn decode(bytes: &[u8]) -> Option<Self> {
+        Self::decode(bytes)
+      }
+
+      #[inline]
+      fn is_expired(&self, now_ms: u64) -> bool {
+        self.base.is_expired(now_ms)
+      }
+
+      #[inline]
+      fn encode_bytes(&self) -> Self::EncodedBytes {
+        self.encode()
+      }
+
+      #[inline]
+      fn base(&self) -> &$crate::meta::KeyMeta {
+        &self.base
+      }
+
+      #[inline]
+      fn base_mut(&mut self) -> &mut $crate::meta::KeyMeta {
+        &mut self.base
+      }
+    }
+
+    impl ::core::ops::Deref for $struct_name {
+      type Target = $crate::meta::KeyMeta;
+      #[inline(always)]
+      fn deref(&self) -> &Self::Target {
+        &self.base
+      }
+    }
+
+    impl ::core::ops::DerefMut for $struct_name {
+      #[inline(always)]
+      fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+      }
+    }
+
+    impl Default for $struct_name {
+      #[inline]
+      fn default() -> Self {
+        Self::new_with_version(0, 0)
+      }
+    }
+
+    impl $struct_name {
+      pub const ENCODED_SIZE: usize = $crate::meta::KeyMeta::ENCODED_SIZE;
+      pub const KVROCKS_ENCODED_SIZE: usize = $crate::meta::KeyMeta::KVROCKS_COMPLEX_ENCODED_SIZE;
+
+      #[inline]
+      pub const fn new(expire_at: u64, version: u64, size: u64) -> Self {
+        Self {
+          base: $crate::meta::KeyMeta::new($redis_type, expire_at, version, size),
+        }
+      }
+
+      #[inline]
+      pub fn new_with_version(expire_at: u64, size: u64) -> Self {
+        Self {
+          base: $crate::meta::KeyMeta::new_with_version($redis_type, expire_at, size),
+        }
+      }
+
+      #[inline]
+      pub const fn size(&self) -> u64 {
+        self.base.size
+      }
+
+      #[inline]
+      pub const fn version(&self) -> u64 {
+        self.base.version
+      }
+
+      #[inline]
+      pub const fn expire_at(&self) -> u64 {
+        self.base.expire_at
+      }
+
+      #[inline]
+      pub const fn ttl(&self, now_ms: u64) -> i64 {
+        self.base.ttl(now_ms)
+      }
+
+      #[inline]
+      pub const fn is_empty(&self) -> bool {
+        self.base.size == 0
+      }
+
+      #[inline]
+      pub const fn is_expired(&self, now_ms: u64) -> bool {
+        self.base.is_expired(now_ms)
+      }
+
+      #[inline]
+      pub fn encode(&self) -> [u8; Self::ENCODED_SIZE] {
+        self.base.encode()
+      }
+
+      #[inline]
+      pub fn encode_kvrocks(&self) -> Vec<u8> {
+        self.base.encode_kvrocks()
+      }
+
+      #[inline]
+      pub fn decode(bytes: &[u8]) -> Option<Self> {
+        let base = $crate::meta::KeyMeta::decode(bytes)?;
+        if base.rtype == $redis_type {
+          Some(Self { base })
+        } else {
+          None
+        }
+      }
+    }
+  };
 }
 
 /// Fundamental 26-byte metadata structure (aligned with Apache Kvrocks KeyMetadata).

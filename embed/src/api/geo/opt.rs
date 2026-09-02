@@ -2,29 +2,36 @@ use bitcode::{Decode, Encode};
 
 /// Domain operation (aligned with Kvrocks DistanceUnit).
 /// 距离单位（对标 Kvrocks DistanceUnit）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum DistanceUnit {
   #[default]
+  #[strum(serialize = "m", serialize = "meters")]
   Meters,
+  #[strum(serialize = "km", serialize = "kilometers")]
   Kilometers,
+  #[strum(serialize = "mi", serialize = "miles")]
   Miles,
+  #[strum(serialize = "ft", serialize = "feet")]
   Feet,
 }
 
 impl DistanceUnit {
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    if s.eq_ignore_ascii_case("m") || s.eq_ignore_ascii_case("meters") {
-      Some(Self::Meters)
-    } else if s.eq_ignore_ascii_case("km") || s.eq_ignore_ascii_case("kilometers") {
-      Some(Self::Kilometers)
-    } else if s.eq_ignore_ascii_case("mi") || s.eq_ignore_ascii_case("miles") {
-      Some(Self::Miles)
-    } else if s.eq_ignore_ascii_case("ft") || s.eq_ignore_ascii_case("feet") {
-      Some(Self::Feet)
-    } else {
-      None
-    }
+    s.parse().ok()
   }
 
   /// Returns or computes calculated value.
@@ -56,11 +63,26 @@ impl DistanceUnit {
 
 /// Domain operation (aligned with Kvrocks DistanceSort).
 /// 空间结果排序方式（对标 Kvrocks DistanceSort）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum DistanceSort {
   #[default]
   None,
+  #[strum(serialize = "asc", serialize = "ASC")]
   Asc,
+  #[strum(serialize = "desc", serialize = "DESC")]
   Desc,
 }
 
@@ -69,13 +91,7 @@ impl DistanceSort {
   /// 解析排序方式字符串（零内存分配）
   #[inline]
   pub fn parse(s: &str) -> Option<Self> {
-    if s.eq_ignore_ascii_case("asc") {
-      Some(Self::Asc)
-    } else if s.eq_ignore_ascii_case("desc") {
-      Some(Self::Desc)
-    } else {
-      None
-    }
+    s.parse().ok()
   }
 }
 
@@ -174,7 +190,20 @@ pub struct GeoHashRadius {
 
 /// Operation definition.
 /// 空间查询形状类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Encode, Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  Encode,
+  Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum GeoShapeType {
   #[default]
   None,

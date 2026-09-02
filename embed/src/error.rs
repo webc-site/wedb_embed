@@ -21,6 +21,9 @@ pub enum Error {
   #[error(transparent)]
   Io(#[from] io::Error),
 
+  #[error(transparent)]
+  Strum(#[from] strum::ParseError),
+
   #[error("Serialization error: {0}")]
   Serialization(String),
 

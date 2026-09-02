@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::{
   key_composer::KeyTag,
   meta::{KeyMeta, MetaOps, RedisType},
@@ -5,7 +7,9 @@ use crate::{
 
 /// Domain operation (aligned with Apache Kvrocks JsonStorageFormat).
 /// JSON 存储格式（对标 Apache Kvrocks JsonStorageFormat）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode, strum::FromRepr,
+)]
 #[repr(u8)]
 pub enum JsonStorageFormat {
   #[default]
@@ -19,6 +23,21 @@ pub enum JsonStorageFormat {
 pub struct JsonMeta {
   pub base: KeyMeta,
   pub format: JsonStorageFormat,
+}
+
+impl Deref for JsonMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for JsonMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl JsonMeta {

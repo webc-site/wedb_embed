@@ -1,6 +1,6 @@
 use std::{
-  fmt::{self, Display},
-  str::FromStr,
+  ops::{Deref, DerefMut},
+  str,
 };
 
 use crate::{
@@ -10,33 +10,36 @@ use crate::{
 
 /// Encodes data into binary format.
 /// 时序块压缩类型（Uncompressed 原始编码 / Compressed FastALP 列式压缩）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum ChunkType {
   #[default]
+  #[strum(serialize = "UNCOMPRESSED", serialize = "RAW")]
   Uncompressed = 0,
+  #[strum(
+    serialize = "COMPRESSED",
+    serialize = "ALP",
+    serialize = "FASTALP",
+    serialize = "GORILLA"
+  )]
   Compressed = 1,
 }
 
-impl FromStr for ChunkType {
-  type Err = ();
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    match s.to_ascii_uppercase().as_str() {
-      "UNCOMPRESSED" | "RAW" => Ok(Self::Uncompressed),
-      "COMPRESSED" | "ALP" | "FASTALP" | "GORILLA" => Ok(Self::Compressed),
-      _ => Err(()),
-    }
-  }
-}
-
-impl Display for ChunkType {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(self.as_str())
-  }
-}
-
 impl ChunkType {
+  #[inline]
   pub fn parse(s: &str) -> Option<Self> {
     s.parse().ok()
   }
@@ -52,41 +55,39 @@ impl ChunkType {
 
 /// Domain operation (aligned with Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy).
 /// 样本重复策略（对标 Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  PartialEq,
+  Eq,
+  Default,
+  bitcode::Encode,
+  bitcode::Decode,
+  strum::Display,
+  strum::EnumString,
+  strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 #[repr(u8)]
 pub enum DuplicatePolicy {
   #[default]
+  #[strum(serialize = "BLOCK")]
   Block = 0,
+  #[strum(serialize = "FIRST")]
   First = 1,
+  #[strum(serialize = "LAST")]
   Last = 2,
+  #[strum(serialize = "MIN")]
   Min = 3,
+  #[strum(serialize = "MAX")]
   Max = 4,
+  #[strum(serialize = "SUM")]
   Sum = 5,
 }
 
-impl FromStr for DuplicatePolicy {
-  type Err = ();
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    match s.to_ascii_uppercase().as_str() {
-      "BLOCK" => Ok(Self::Block),
-      "FIRST" => Ok(Self::First),
-      "LAST" => Ok(Self::Last),
-      "MIN" => Ok(Self::Min),
-      "MAX" => Ok(Self::Max),
-      "SUM" => Ok(Self::Sum),
-      _ => Err(()),
-    }
-  }
-}
-
-impl Display for DuplicatePolicy {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(self.as_str())
-  }
-}
-
 impl DuplicatePolicy {
+  #[inline]
   pub fn parse(s: &str) -> Option<Self> {
     s.parse().ok()
   }
@@ -132,6 +133,21 @@ pub struct TimeSeriesMeta {
   pub first_time: u64,
   pub last_time: u64,
   pub labels: Vec<(String, String)>,
+}
+
+impl Deref for TimeSeriesMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for TimeSeriesMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 /// Operation definition.
@@ -279,29 +295,14 @@ impl TimeSeriesMeta {
     offset += 8;
 
     let (chunk_type, duplicate_policy) = if offset + 2 <= bytes.len() {
-      let chunk_type = match bytes[offset] {
-        1 | 2 => ChunkType::Compressed,
-        _ => ChunkType::Uncompressed,
-      };
-      let duplicate_policy = match bytes[offset + 1] {
-        1 => DuplicatePolicy::First,
-        2 => DuplicatePolicy::Last,
-        3 => DuplicatePolicy::Min,
-        4 => DuplicatePolicy::Max,
-        5 => DuplicatePolicy::Sum,
-        _ => DuplicatePolicy::Block,
-      };
+      let chunk_type = ChunkType::from_repr(bytes[offset]).unwrap_or(ChunkType::Uncompressed);
+      let duplicate_policy =
+        DuplicatePolicy::from_repr(bytes[offset + 1]).unwrap_or(DuplicatePolicy::Block);
       offset += 2;
       (chunk_type, duplicate_policy)
     } else {
-      let duplicate_policy = match bytes[offset] {
-        1 => DuplicatePolicy::First,
-        2 => DuplicatePolicy::Last,
-        3 => DuplicatePolicy::Min,
-        4 => DuplicatePolicy::Max,
-        5 => DuplicatePolicy::Sum,
-        _ => DuplicatePolicy::Block,
-      };
+      let duplicate_policy =
+        DuplicatePolicy::from_repr(bytes[offset]).unwrap_or(DuplicatePolicy::Block);
       offset += 1;
       (ChunkType::Uncompressed, duplicate_policy)
     };
@@ -312,7 +313,9 @@ impl TimeSeriesMeta {
       offset += 4;
       if offset + src_len <= bytes.len() {
         if src_len > 0 {
-          source_key = String::from_utf8_lossy(&bytes[offset..offset + src_len]).into_owned();
+          source_key = str::from_utf8(&bytes[offset..offset + src_len])
+            .ok()?
+            .to_owned();
           offset += src_len;
         }
       } else {
@@ -355,7 +358,9 @@ impl TimeSeriesMeta {
         if offset + klen > bytes.len() {
           break;
         }
-        let k = String::from_utf8_lossy(&bytes[offset..offset + klen]).into_owned();
+        let k = str::from_utf8(&bytes[offset..offset + klen])
+          .ok()?
+          .to_owned();
         offset += klen;
 
         if offset + 4 > bytes.len() {
@@ -367,7 +372,9 @@ impl TimeSeriesMeta {
         if offset + vlen > bytes.len() {
           break;
         }
-        let v = String::from_utf8_lossy(&bytes[offset..offset + vlen]).into_owned();
+        let v = str::from_utf8(&bytes[offset..offset + vlen])
+          .ok()?
+          .to_owned();
         offset += vlen;
 
         labels.push((k, v));
