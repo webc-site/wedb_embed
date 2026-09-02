@@ -25,11 +25,11 @@ pub use opt::{
   StreamTrim, StreamTrimStrategy, StreamXGroupCreate, XAdd, XAutoClaim, XClaim, XGroupCreate,
   XPending, XRange, XRead, XTrim,
 };
-/// Operation definition.
+/// Stream message entry type containing StreamId and field-value pairs.
 /// 流消息项 (StreamId, Fields)
 pub type StreamEntry = (StreamId, Vec<(String, String)>);
 
-/// Parses parameter or binary slice.
+/// Fast zero-copy binary extraction of StreamId from 16-byte subkey [ms: 8B][seq: 8B].
 /// 从子键字节中快速提取 StreamId [ms: 8B][seq: 8B]（零拷贝紧凑二进制解析）
 #[inline]
 pub(crate) fn parse_stream_id_from_subkey(sub: &[u8]) -> Option<StreamId> {
@@ -70,7 +70,7 @@ pub fn encode_stream_entry_fields(fields: &[(String, String)]) -> Vec<u8> {
   encode_stream_entry_pairs(fields)
 }
 
-/// Operation definition.
+/// Zero-copy streaming field-value iterator with zero heap allocation and O(1) space complexity.
 /// 零拷贝流式按需字段迭代器（零堆分配，O(1) 空间复杂度）
 #[derive(Debug, Clone)]
 pub struct StreamEntryFieldIter<'a> {
@@ -117,7 +117,7 @@ impl<'a> Iterator for StreamEntryFieldIter<'a> {
 
 impl<'a> ExactSizeIterator for StreamEntryFieldIter<'a> {}
 
-/// Parses parameter or binary slice.
+/// Iterates and parses raw stream entry key-value byte slice with zero heap allocation.
 /// 零拷贝流式迭代解析 Stream 键值对原始字节切片（零堆分配，O(1) 空间）
 #[inline]
 pub fn decode_stream_entry_raw_iter(bytes: &[u8]) -> Option<StreamEntryFieldIter<'_>> {

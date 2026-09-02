@@ -5,7 +5,7 @@ use crate::{
   meta::{KeyMeta, MetaOps, RedisType},
 };
 
-/// Domain operation (aligned with Apache Kvrocks JsonStorageFormat).
+/// JSON storage encoding format aligned with Apache Kvrocks JsonStorageFormat.
 /// JSON 存储格式（对标 Apache Kvrocks JsonStorageFormat）
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Default, bitcode::Encode, bitcode::Decode, strum::FromRepr,

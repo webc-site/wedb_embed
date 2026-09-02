@@ -282,7 +282,7 @@ impl LabelMatcher {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks TSMQueryFilterParser).
+/// Time series label query filter parser aligned with Apache Kvrocks TSMQueryFilterParser.
 /// 时序标签过滤器（对标 Apache Kvrocks TSMQueryFilterParser）
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TimeSeriesLabelFilter {

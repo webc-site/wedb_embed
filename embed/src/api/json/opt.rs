@@ -1,18 +1,18 @@
 use bitcode::{Decode, Encode};
 
-/// Operation definition.
+/// JSON.SET command conditional write options.
 /// JSON.SET 命令条件选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 pub enum JsonSet {
-  /// Operation definition.
+  /// Write only if key does not exist (NX).
   /// 仅在键不存在时写入
   Nx,
-  /// Operation definition.
+  /// Write only if key already exists (XX).
   /// 仅在键已存在时覆盖写入
   Xx,
 }
 
-/// Command options enumeration.
+/// JSON.ARRINDEX command range options enumeration.
 /// JSON.ARRINDEX 命令区间选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 pub enum JsonArrIndex {
@@ -21,19 +21,19 @@ pub enum JsonArrIndex {
   Range(isize, isize),
 }
 
-/// Operation definition.
+/// JSON numeric operation type (Incr, Mul).
 /// JSON 数值运算类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 pub enum JsonNumberOp {
-  /// Operation definition.
+  /// Numeric addition (Incr).
   /// 数值累加 (Incr)
   Incr,
-  /// Operation definition.
+  /// Numeric multiplication (Mul).
   /// 数值累乘 (Mul)
   Mul,
 }
 
-/// Command options enumeration.
+/// JSON.GET formatting options enumeration.
 /// JSON.GET 格式化选项枚举
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JsonGet {

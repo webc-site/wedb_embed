@@ -6,33 +6,33 @@ use crate::{
   },
 };
 
-/// Domain operation (aligned with Redis hll_sparse_max_bytes).
+/// Maximum allowed byte length for sparse representation (3000 bytes) aligned with Redis hll_sparse_max_bytes.
 /// 稀疏表示最大允许字节数（3000 字节，对标 Redis hll_sparse_max_bytes）
 pub const HLL_SPARSE_MAX_BYTES: usize = 3000;
-/// Operation definition.
+/// Maximum register value supported by VAL opcode (32).
 /// VAL 操作码支持的最大寄存器值（32）
 pub const HLL_SPARSE_VAL_MAX_VALUE: u8 = 32;
-/// Operation definition.
+/// Maximum run length supported by VAL opcode (4).
 /// VAL 操作码支持的最大连乘长度（4）
 pub const HLL_SPARSE_VAL_MAX_LEN: usize = 4;
-/// Operation definition.
+/// Maximum run length supported by ZERO opcode (64).
 /// ZERO 操作码支持的最大连乘长度（64）
 pub const HLL_SPARSE_ZERO_MAX_LEN: usize = 64;
-/// Operation definition.
+/// Maximum run length supported by XZERO opcode (16384).
 /// XZERO 操作码支持的最大连乘长度（16384）
 pub const HLL_SPARSE_XZERO_MAX_LEN: usize = 16384;
 
-/// Domain operation (aligned with Redis/Valkey Sparse Representation).
+/// HyperLogLog sparse RLE opcode aligned with Redis/Valkey sparse representation.
 /// HyperLogLog 稀疏 RLE 操作码（对标 Redis/Valkey Sparse Representation）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HllSparseOp {
-  /// Operation definition.
+  /// ZERO: 00xxxxxx (run length 1..=64, value 0).
   /// ZERO: 00xxxxxx (长度 1..=64，值 0)
   Zero { len: usize },
-  /// Operation definition.
+  /// XZERO: 01xxxxxx yyyyyyyy (run length 1..=16384, value 0).
   /// XZERO: 01xxxxxx yyyyyyyy (长度 1..=16384，值 0)
   XZero { len: usize },
-  /// Operation definition.
+  /// VAL: 1vvvvvxx (value 1..=32, run length 1..=4).
   /// VAL: 1vvvvvxx (值 1..=32，长度 1..=4)
   Val { val: u8, len: usize },
 }
@@ -118,7 +118,7 @@ pub fn encode_sparse_val(val: u8, len: usize, out: &mut Vec<u8>) {
   }
 }
 
-/// Operation definition.
+/// Creates an initial all-zero sparse HLL byte buffer (2-byte XZERO(16384)).
 /// 创建初始全 0 稀疏 HLL 字节切片（仅需 2 字节 XZERO(16384)）
 #[inline]
 pub fn hll_sparse_new() -> Vec<u8> {
@@ -127,7 +127,7 @@ pub fn hll_sparse_new() -> Vec<u8> {
   v
 }
 
-/// Operation definition.
+/// Validates integrity and syntax of a sparse HLL byte buffer.
 /// 校验稀疏 HLL 字节切片完整性与合法性
 #[inline]
 pub fn hll_sparse_is_valid(sparse: &[u8]) -> bool {
@@ -145,7 +145,7 @@ pub fn hll_sparse_is_valid(sparse: &[u8]) -> bool {
   offset == sparse.len() && total_regs == HLL_REGISTERS
 }
 
-/// Returns or computes calculated value.
+/// Computes sparse HLL register histogram in a single pass without heap allocation.
 /// 单次遍历计算稀疏 HLL 寄存器直方图（零堆分配，O(S) 极速扫描）
 #[inline]
 pub fn hll_sparse_reg_histo(sparse: &[u8], reghisto: &mut [usize; 64]) -> Result<()> {

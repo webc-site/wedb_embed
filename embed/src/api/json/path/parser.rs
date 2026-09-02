@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use super::ast::{FilterExpr, FilterOp, PathSegment, SliceIndex};
 use crate::error::{Error, Result};
 
-/// Parses parameter or binary slice.
+/// Parses JSONPath query string into a list of borrowed path segments.
 /// 解析 JSONPath 表达式为片段列表（零堆分配借用切片）
 pub fn parse_json_path<'a>(path: &'a str) -> Result<Vec<PathSegment<'a>>> {
   let s = path.trim();

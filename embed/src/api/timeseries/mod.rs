@@ -26,7 +26,7 @@ pub use opt::{
 };
 pub use reducer::Reducer;
 
-/// Domain operation (aligned with Apache Kvrocks GroupSamplesAndReduce).
+/// Multi-series sample aggregation and reduction aligned with Apache Kvrocks.
 /// 多序列聚合归约（对标 Apache Kvrocks GroupSamplesAndReduce）
 pub fn group_samples_and_reduce(
   all_samples: &[Vec<(u64, f64)>],

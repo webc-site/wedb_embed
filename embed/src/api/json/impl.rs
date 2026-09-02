@@ -131,7 +131,7 @@ pub fn json_set_path(root: &mut Value, path_str: &str, new_val: Value) -> Result
   }
 }
 
-/// Returns or computes calculated value.
+/// Internal generic numeric operation engine aligned with Kvrocks Json::numop.
 /// 内部通用数值计算引擎（对标 Kvrocks Json::numop 与 NumOpEnum）
 fn execute_numop(
   root: &mut Value,
@@ -200,20 +200,20 @@ fn execute_numop(
   Ok(res_values)
 }
 
-/// Returns or computes calculated value.
+/// Recursively locates and retrieves first matching JSON value node.
 /// 内部递归定位并获取首个匹配的 JSON 节点
 pub fn json_get_path<'a>(root: &'a Value, path_str: &str) -> Option<&'a Value> {
   let values = get_path_values(root, path_str).ok()?;
   values.into_iter().next()
 }
 
-/// Operation definition.
+/// Helper utility for evaluating JSONPath queries.
 /// JSON 路径查询辅助
 pub fn json_path_query<'a>(root: &'a Value, path: &str) -> Vec<&'a Value> {
   get_path_values(root, path).unwrap_or_default()
 }
 
-/// Parses parameter or binary slice.
+/// Internal helper reading JSON metadata and parsed value for a given key.
 /// 内部辅助：读取指定 JSON 键的元数据与解析后的 Value
 #[inline]
 fn read_json_meta_and_val<E: Engine, K: AsRef<[u8]>>(

@@ -455,7 +455,7 @@ pub fn tdigest_merge_buffer_and_centroids(
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks TDigestQuantile).
+/// Quantile estimation algorithm aligned with Apache Kvrocks TDigestQuantile.
 /// 分位数估算算法（对标 Apache Kvrocks TDigestQuantile）
 pub fn tdigest_quantile_calc(
   centroids: &[Centroid],
@@ -515,7 +515,7 @@ pub fn tdigest_quantile_calc(
   lerp(lc.mean, rc.mean, diff)
 }
 
-/// Returns or computes calculated value.
+/// Cumulative distribution function CDF calculation aligned with Apache Kvrocks TDigestCDF.
 /// 累积分布函数 CDF 计算（对标 Apache Kvrocks TDigestCDF 与 RedisBloom）
 pub fn tdigest_cdf_calc(
   centroids: &[Centroid],
@@ -748,7 +748,7 @@ pub fn tdigest_cdf_calc(
   result
 }
 
-/// Domain operation (aligned with Apache Kvrocks TDigestRank).
+/// Rank estimation algorithm aligned with Apache Kvrocks TDigestRank.
 /// 排名估算算法（对标 Apache Kvrocks TDigestRank）
 pub fn tdigest_rank_calc(
   centroids: &[Centroid],
@@ -914,7 +914,7 @@ pub fn tdigest_rank_calc(
   result
 }
 
-/// Domain operation (aligned with Apache Kvrocks TDigestByRank).
+/// Query value by rank aligned with Apache Kvrocks TDigestByRank.
 /// 按排名查询值（对标 Apache Kvrocks TDigestByRank）
 pub fn tdigest_by_rank_calc(
   centroids: &[Centroid],
@@ -971,7 +971,7 @@ pub fn tdigest_by_rank_calc(
   result
 }
 
-/// Returns or computes calculated value.
+/// Trimmed mean calculation aligned with Apache Kvrocks TDigestTrimmedMean.
 /// 截断均值计算（对标 Apache Kvrocks TDigestTrimmedMean）
 pub fn tdigest_trimmed_mean_calc(
   centroids: &[Centroid],
@@ -1021,7 +1021,7 @@ pub fn tdigest_trimmed_mean_calc(
   }
 }
 
-/// Operation definition.
+/// T-Digest core algorithm structure.
 /// T-Digest 核心算法结构
 #[derive(Debug, Clone, bitcode::Encode, bitcode::Decode)]
 pub struct TDigestState {
@@ -1396,7 +1396,7 @@ impl TDigestState {
   }
 }
 
-/// Operation definition.
+/// TDigest merger utility.
 /// TDigest 合并器工具
 pub struct TDigestMergerTool;
 

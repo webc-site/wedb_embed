@@ -6,7 +6,7 @@ use super::{
 };
 use crate::error::Result;
 
-/// Operation definition.
+/// Evaluates JSONPath filter expression against a candidate JSON node.
 /// 评估过滤器表达式
 pub(crate) fn eval_filter_expr(val: &Value, filter: &FilterExpr<'_>) -> bool {
   let mut cur = val;
@@ -46,7 +46,7 @@ pub(crate) fn eval_filter_expr(val: &Value, filter: &FilterExpr<'_>) -> bool {
   }
 }
 
-/// Operation definition.
+/// Normalizes single array index handling negative offset and boundary conditions.
 /// 归一化单个数组索引（处理负索引与越界）
 #[inline]
 pub fn normalize_index(len: usize, idx: isize) -> Option<usize> {
@@ -59,7 +59,7 @@ pub fn normalize_index(len: usize, idx: isize) -> Option<usize> {
   }
 }
 
-/// Returns or computes calculated value.
+/// Computes list of absolute indices for slice or index given array length.
 /// 计算切片或索引在指定数组长度下的绝对下标列表（通用复用，消除重复）
 pub fn resolve_slice_indices(len: usize, item: &SliceIndex, out: &mut Vec<usize>) {
   let len_isize = len as isize;
@@ -118,7 +118,7 @@ pub fn resolve_slice_indices(len: usize, item: &SliceIndex, out: &mut Vec<usize>
   }
 }
 
-/// Operation definition.
+/// Evaluates standard array slice with positive/negative step and boundary protection.
 /// 标准数组切片求值（支持正负步长与边界保护）
 pub fn eval_slice(
   arr: &[Value],
@@ -132,7 +132,7 @@ pub fn eval_slice(
   indices.into_iter().map(|idx| &arr[idx]).collect()
 }
 
-/// Operation definition.
+/// Extracts simple single-level field name with zero-heap-allocation fast path.
 /// 提取单层简单字段名（零堆分配快速路径，支持 `$.field`、`.field`、`field`）
 #[inline]
 pub fn extract_simple_field(path: &str) -> Option<&str> {
@@ -160,7 +160,7 @@ pub fn extract_simple_field(path: &str) -> Option<&str> {
   }
 }
 
-/// Operation definition.
+/// Recursively traverses and collects immutable JSON node references.
 /// 递归定位不可变节点引用
 pub fn get_path_values<'a>(root: &'a Value, path: &str) -> Result<Vec<&'a Value>> {
   let s = path.trim();
@@ -332,7 +332,7 @@ fn collect_recursive_matching<'a>(
   }
 }
 
-/// Operation definition.
+/// Recursively modifies matching JSON value nodes in-place.
 /// 就地递归修改 JSON 节点
 pub fn mutate_path_values<F>(root: &mut Value, path: &str, mut f: F) -> Result<usize>
 where
@@ -518,7 +518,7 @@ where
   count
 }
 
-/// Operation definition.
+/// Recursively deletes matching JSON value nodes in-place.
 /// 就地删除匹配路径的节点
 pub fn delete_path_values(root: &mut Value, path: &str) -> Result<usize> {
   let s = path.trim();

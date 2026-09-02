@@ -29,7 +29,6 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-  - [Key Differences vs C++ Implementation](#key-differences-vs-c-implementation)
 - [Architecture & Optimizations](#architecture-optimizations)
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection--zero-heap-allocation)
   - [Raw Fallback Mode Against Data Expansion](#raw-fallback-mode-against-data-expansion)
@@ -56,7 +55,6 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-  - [Key Differences vs C++ Implementation](#key-differences-vs-c-implementation)
 - [Architecture & Optimizations](#architecture-optimizations)
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
   - [Raw Fallback Mode Against Data Expansion](#raw-fallback-mode-against-data-expansion)
@@ -286,16 +284,16 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 
 ### Side-by-Side Throughput Comparison
 
-| Scenario | Data Size | fastalp Duration (Bandwidth) | C++ Ref End-to-End (Bandwidth) | C++ Ref Core Op (Bandwidth) | fastalp vs C++ End-to-End |
-|---|---|---|---|---|---|
-| **f64 Compress**<br>Identical Values | 1024 x f64<br>8 KB | **351 ns**<br>(**23.34 GB/s**) | 9,250 ns<br>(0.89 GB/s) | 1,167 ns<br>(7.02 GB/s) | **26.3x Speedup** |
-| **f64 Compress**<br>Sensor Decimals | 1024 x f64<br>8 KB | **5.99 µs**<br>(**1.37 GB/s**) | 10.17 µs<br>(0.81 GB/s) | 1.33 µs<br>(6.14 GB/s) | **1.70x Speedup** |
-| **f64 Compress**<br>Large Batch | 65535 x f64<br>512 KB | **134.3 µs**<br>(**3.90 GB/s**) | - | 84.3 µs<br>(6.22 GB/s) | 0.63x Core Op |
-| **f32 Compress**<br>Sensor Decimals | 1024 x f32<br>4 KB | **3.37 µs**<br>(**1.22 GB/s**) | 1.63 µs<br>(2.52 GB/s) | 0.75 µs<br>(5.46 GB/s) | 0.48x End-to-End |
-| **f64 Decompress**<br>Identical Values | 1024 x f64<br>8 KB | **107 ns**<br>(**76.56 GB/s**) | - | 83 ns<br>(98.70 GB/s) | 0.78x Core Op |
-| **f64 Decompress**<br>Sensor Decimals | 1024 x f64<br>8 KB | **340 ns**<br>(**24.09 GB/s**) | - | 125 ns<br>(65.54 GB/s) | 0.37x Core Op |
-| **f64 Decompress**<br>Large Batch | 65535 x f64<br>512 KB | **21.1 µs**<br>(**24.85 GB/s**) | - | 10.6 µs<br>(49.34 GB/s) | 0.50x Core Op |
-| **f32 Decompress**<br>Sensor Decimals | 1024 x f32<br>4 KB | **315 ns**<br>(**13.00 GB/s**) | - | 42 ns<br>(97.52 GB/s) | 0.13x Core Op |
+| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio |
+|---|---|---|---|---|
+| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
+| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
+| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
+| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
+| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
+| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
+| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
+| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
 
 ### Real-World Datasets Compression Ratio
 
@@ -329,25 +327,12 @@ Evaluated against all 31 standard real-world datasets from the original ALP pape
 | **cms1**<br>Medical Records | 8192 B | 5363 B | **1.53x** (41.90 b/v) | 1.53x |
 | **cms25**<br>Medical Records | 8192 B | 5451 B | **1.50x** (42.59 b/v) | 1.50x |
 | **nyc29**<br>NYC Taxi Travel | 8192 B | 5441 B | **1.51x** (42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.52x (Negative Expansion) |
-| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.51x (Negative Expansion) |
-| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.64x (Negative Expansion) |
+| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.52x (Expansion) |
+| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.51x (Expansion) |
+| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.64x (Expansion) |
 | **TOTAL / Overall Average** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
 Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative compression on difficult datasets, reducing overall storage from 130,597 B to 110,773 B and elevating average compression ratio to **2.29x**.
-
-### Key Differences vs C++ Implementation
-
-| Aspect | C++ ALP (Reference Paper) | Rust fastalp (This Project) |
-|---|---|---|
-| **Compression Ratio** | Paper baseline benchmark | **Higher ratio** (5B header + 0-exception truncation + raw fallback) |
-| **Memory Allocation** | Heap allocations and raw pointers | **Zero heap allocation** via `_into` |
-| **Decoding Pipeline** | 2-pass (unpack to memory -> convert to float) | **Single-pass streaming**: 128-bit register direct decode |
-| **Bitpacker Code Size** | Bloated auto-generated template files | **Compact 128-bit register accumulator** + LUT lookup |
-| **Safety** | Raw pointers | **Memory safe**, strict bounds validation |
-| **Portability** | Hardcoded x86 AVX2/AVX-512 intrinsics | **Pure Rust**, cross-platform on x86_64, ARM64, and WASM |
-| **Constant Compression** | Standard parameter search (0.89 GB/s) | **26.3x end-to-end speedup** (23.34 GB/s) |
-| **Sensor Compression** | 0.81 GB/s | **1.70x end-to-end speedup** (1.37 GB/s) |
 
 ---
 
@@ -430,7 +415,6 @@ Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative c
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-  - [与 C++ 原版实现的设计对比](#与-c-原版实现的设计对比)
 - [架构与性能优化设计](#架构与性能优化设计)
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
@@ -457,7 +441,6 @@ Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative c
   - [测试环境与编译配置](#测试环境与编译配置)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-  - [与 C++ 原版实现的设计对比](#与-c-原版实现的设计对比)
 - [架构与性能优化设计](#架构与性能优化设计)
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
@@ -687,22 +670,22 @@ fastalp/
 
 ### 同机实测吞吐量对比
 
-| 测试场景 | 数据规模 | fastalp 耗时 (带宽) | C++ 原版 端到端 (带宽) | C++ 原版 核心算子 (带宽) | fastalp 对比 C++ 端到端 |
-|---|---|---|---|---|---|
-| **f64 压缩**<br>常数同值序列 | 1024 个 f64<br>8 KB | **351 ns**<br>(**23.34 GB/s**) | 9,250 ns<br>(0.89 GB/s) | 1,167 ns<br>(7.02 GB/s) | **26.3x 加速** |
-| **f64 压缩**<br>传感器十进制 | 1024 个 f64<br>8 KB | **5.99 µs**<br>(**1.37 GB/s**) | 10.17 µs<br>(0.81 GB/s) | 1.33 µs<br>(6.14 GB/s) | **1.70x 加速** |
-| **f64 压缩**<br>大块批量 | 65535 个 f64<br>512 KB | **134.3 µs**<br>(**3.90 GB/s**) | - | 84.3 µs<br>(6.22 GB/s) | 0.63x 算子比 |
-| **f32 压缩**<br>传感器十进制 | 1024 个 f32<br>4 KB | **3.37 µs**<br>(**1.22 GB/s**) | 1.63 µs<br>(2.52 GB/s) | 0.75 µs<br>(5.46 GB/s) | 0.48x 端到端 |
-| **f64 解压**<br>同值序列 | 1024 个 f64<br>8 KB | **107 ns**<br>(**76.56 GB/s**) | - | 83 ns<br>(98.70 GB/s) | 0.78x 算子比 |
-| **f64 解压**<br>传感器十进制 | 1024 个 f64<br>8 KB | **340 ns**<br>(**24.09 GB/s**) | - | 125 ns<br>(65.54 GB/s) | 0.37x 算子比 |
-| **f64 解压**<br>大块批量 | 65535 个 f64<br>512 KB | **21.1 µs**<br>(**24.85 GB/s**) | - | 10.6 µs<br>(49.34 GB/s) | 0.50x 算子比 |
-| **f32 解压**<br>传感器十进制 | 1024 个 f32<br>4 KB | **315 ns**<br>(**13.00 GB/s**) | - | 42 ns<br>(97.52 GB/s) | 0.13x 算子比 |
+| 测试场景 | 数据规模 | fastalp 吞吐 | C++ 原版 吞吐 | 吞吐比 |
+|---|---|---|---|---|
+| **f64 压缩** (常数同值序列) | 1024 个 f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
+| **f64 压缩** (传感器十进制) | 1024 个 f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
+| **f64 压缩** (大块批量) | 65535 个 f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
+| **f32 压缩** (传感器十进制) | 1024 个 f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
+| **f64 解压** (同值序列) | 1024 个 f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
+| **f64 解压** (传感器十进制) | 1024 个 f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
+| **f64 解压** (大块批量) | 65535 个 f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
+| **f32 解压** (传感器十进制) | 1024 个 f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
 
 ### 真实公开数据集压缩率对比
 
 对 ALP 论文全部 31 个真实公开数据集（共 253,952 字节原始浮点数据）进行精确到 bit 的无损往返验证与压缩率评测：
 
-| 数据集名称 | 原始字节 | fastalp 压缩字节 | fastalp 压缩比 | C++ 原版 ALP 压缩比 |
+| 数据集名称 | 原始大小 | fastalp 压缩大小 | fastalp 压缩率 | C++ 原版 压缩率 |
 |---|---|---|---|---|
 | **gov26**<br>政府公开统计 | 8192 B | 13 B | **630.15x** (0.10 b/v) | 455.11x |
 | **gov31**<br>政府公开统计 | 8192 B | 25 B | **327.68x** (0.20 b/v) | 292.57x |
@@ -730,25 +713,12 @@ fastalp/
 | **cms1**<br>医疗报销记录 | 8192 B | 5363 B | **1.53x** (41.90 b/v) | 1.53x |
 | **cms25**<br>医疗处方记录 | 8192 B | 5451 B | **1.50x** (42.59 b/v) | 1.50x |
 | **nyc29**<br>纽约出租车数据 | 8192 B | 5441 B | **1.51x** (42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>高频空气传感 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.52x (膨胀负压缩) |
-| **poi_lat**<br>POI高精度纬度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.51x (膨胀负压缩) |
-| **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.64x (膨胀负压缩) |
-| **总体 / 全数据集平均** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
+| **air_sensor_f**<br>高频空气传感 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.52x (膨胀) |
+| **poi_lat**<br>POI高精度纬度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.51x (膨胀) |
+| **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x** (回退) | 0.64x (膨胀) |
+| **总计 / 全数据集平均** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
 得益于原始保底机制，`fastalp` 彻底消除了高精双精度浮点数在 ALP 模型下的负压缩现象，总压缩体积由 130,597 字节降至 110,773 字节，平均压缩率提升至 **2.29x**。
-
-### 与 C++ 原版实现的设计对比
-
-| 维度 | C++ 原版 ALP | Rust fastalp |
-|---|---|---|
-| **压缩算法表现** | 论文基准实现 | **压缩比更优**（5B 紧凑头部 + 0 异常截断 + 原始保底） |
-| **内存管理** | 依赖中间缓冲及指针操作 | **零额外堆内存分配**，支持复用 `_into` 缓冲区 |
-| **解压链路** | 两遍扫描：解包到中间数组后转换 | **单遍流式解压**：寄存器位流直解，无中间数组 |
-| **位打包器** | 自动生成庞大模板代码 | **128 位寄存器累加器**与局部查表 |
-| **内存安全** | 裸指针写入 | **内存安全**，边界校验推导完备 |
-| **多架构兼容** | 依赖 x86 指令内联汇编 | **纯 Rust 实现**，支持 x86_64、ARM64、WASM |
-| **常数序列压缩** | 常规流程推导 (0.89 GB/s) | **26.3x 端到端加速** (23.34 GB/s) |
-| **端到端传感器压缩** | 0.81 GB/s | **1.70x 端到端加速** (1.37 GB/s) |
 
 ---
 

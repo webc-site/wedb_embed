@@ -38,7 +38,7 @@ impl ChunkHeader {
   }
 }
 
-/// Operation definition.
+/// Sample insertion and merge statistics result.
 /// 样本合并统计结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MergeStats {
@@ -47,7 +47,7 @@ pub struct MergeStats {
   pub skipped: usize,
 }
 
-/// Operation definition.
+/// TSChunk operational wrapper supporting Uncompressed and FastALP compressed chunks.
 /// TSChunk 操作封装（支持 Uncompressed 原始块与 FastALP 列式压缩块）
 pub struct TSChunk;
 
@@ -199,7 +199,7 @@ impl TSChunk {
     Ok(samples)
   }
 
-  /// Domain operation (aligned with Kvrocks GetFirstTimestamp).
+  /// Extracts first timestamp in chunk without full decompression aligned with Kvrocks.
   /// 提取 Chunk 首个时间戳（零全量解压轻量级提取，对标 Kvrocks GetFirstTimestamp）
   #[inline]
   pub fn get_first_timestamp(chunk_data: &[u8]) -> Option<u64> {
@@ -226,7 +226,7 @@ impl TSChunk {
     }
   }
 
-  /// Domain operation (aligned with Kvrocks GetLastTimestamp).
+  /// Extracts last timestamp in chunk with O(1) space aligned with Kvrocks GetLastTimestamp.
   /// 提取 Chunk 末尾时间戳（未压缩与压缩均实现 O(1) 空间零堆分配提取，对标 Kvrocks GetLastTimestamp）
   #[inline]
   pub fn get_last_timestamp(chunk_data: &[u8]) -> Option<u64> {
@@ -258,7 +258,7 @@ impl TSChunk {
     }
   }
 
-  /// Domain operation (aligned with Kvrocks GetLatestSample).
+  /// Extracts latest sample (ts, val) with O(1) space aligned with Kvrocks GetLatestSample.
   /// 提取末尾采样点 (ts, val)（未压缩模式零拷贝/零堆分配 O(1) 提取，对标 Kvrocks GetLatestSample）
   #[inline]
   pub fn get_latest_sample(chunk_data: &[u8]) -> Result<Option<(u64, f64)>> {
@@ -345,7 +345,7 @@ fn apply_duplicate_policy(
 }
 
 impl TSChunk {
-  /// Operation definition.
+  /// Retrieves total number of samples contained in chunk.
   /// 提取 Chunk 采样点总数
   #[inline]
   pub fn get_count(chunk_data: &[u8]) -> u32 {
@@ -357,7 +357,7 @@ impl TSChunk {
       .unwrap_or(0)
   }
 
-  /// Operation definition.
+  /// Merges new sample applying DuplicatePolicy (returns error on Block policy conflict).
   /// 合并新样本点并应用 DuplicatePolicy（若 Block 策略冲突则返回错误）
   pub fn merge_samples(
     existing: &mut Vec<TSSample>,
@@ -438,7 +438,7 @@ impl TSChunk {
     Ok(stats)
   }
 
-  /// Domain operation (aligned with Apache Kvrocks UpsertSampleAndSplit).
+  /// Upserts sample and splits chunk if exceeding chunk_size aligned with Kvrocks.
   /// Upsert 并按 chunk_size 拆分（对标 Apache Kvrocks UpsertSampleAndSplit）
   pub fn upsert_and_split(
     existing_data: &[u8],
@@ -468,7 +468,7 @@ impl TSChunk {
     Ok(chunks)
   }
 
-  /// Operation definition.
+  /// Deletes samples within specified timestamp interval [from_ts, to_ts].
   /// 删除指定时间范围内的样本点 [from_ts, to_ts]
   pub fn remove_samples_between(
     chunk_data: &[u8],
@@ -490,7 +490,7 @@ impl TSChunk {
     Ok((encoded, deleted))
   }
 
-  /// Operation definition.
+  /// Updates sample value at specified timestamp.
   /// 更新指定时间戳的样本点数值
   pub fn update_sample_value(
     chunk_data: &[u8],

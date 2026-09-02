@@ -43,14 +43,14 @@ pub fn murmur_hash_64a(data: &[u8], seed: u32) -> u64 {
   h
 }
 
-/// Domain operation (aligned with Apache Kvrocks HyperLogLog::HllHash).
+/// MurmurHash64A with default seed aligned with Apache Kvrocks HyperLogLog::HllHash.
 /// 兼容 Redis / Kvrocks 默认 seed 的 HLL MurmurHash64A（对标 Apache Kvrocks HyperLogLog::HllHash）
 #[inline]
 pub fn hll_murmur_hash_64a(data: &[u8]) -> u64 {
   murmur_hash_64a(data, HLL_HASH_SEED)
 }
 
-/// Domain operation (aligned with Apache Kvrocks ExtractDenseHllResult).
+/// Extracts 14-bit bucket index and 50-bit trailing zero count aligned with Apache Kvrocks ExtractDenseHllResult.
 /// 从 64 位哈希值中提取 14 位桶索引和 50 位尾随零计数（对标 Apache Kvrocks ExtractDenseHllResult）
 #[inline]
 pub const fn extract_dense_hll_result(hash: u64) -> (usize, u8) {
@@ -60,7 +60,7 @@ pub const fn extract_dense_hll_result(hash: u64) -> (usize, u8) {
   (index, count)
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllSigma).
+/// Otmar Ertl helper function sigma (arXiv:1702.01284) aligned with Apache Kvrocks HllSigma.
 /// Otmar Ertl 辅助函数 sigma (arXiv:1702.01284，对标 Apache Kvrocks HllSigma)
 #[inline]
 pub fn hll_sigma(x: f64) -> f64 {
@@ -85,7 +85,7 @@ pub fn hll_sigma(x: f64) -> f64 {
   z
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllTau).
+/// Otmar Ertl helper function tau (arXiv:1702.01284) aligned with Apache Kvrocks HllTau.
 /// Otmar Ertl 辅助函数 tau (arXiv:1702.01284，对标 Apache Kvrocks HllTau)
 #[inline]
 pub fn hll_tau(x: f64) -> f64 {
@@ -108,7 +108,7 @@ pub fn hll_tau(x: f64) -> f64 {
   z / 3.0
 }
 
-/// Returns or computes calculated value.
+/// Calculates cardinality estimate from register histogram using Otmar Ertl LogLog-Beta algorithm.
 /// 基于寄存器直方图使用 Otmar Ertl (2017) LogLog-Beta 算法计算基数估算（零堆分配极速计算）
 #[inline]
 pub fn hll_estimate_from_histo(reghisto: &[usize; 64]) -> u64 {

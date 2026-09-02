@@ -54,7 +54,7 @@ pub fn check_lag_valid(stream_meta: &StreamMeta, group_meta: &mut StreamConsumer
   }
 }
 
-/// Domain operation (aligned with Kvrocks StreamRangeHasTombstones).
+/// Checks whether stream range contains tombstone entries aligned with Kvrocks StreamRangeHasTombstones.
 /// 对标 Kvrocks StreamRangeHasTombstones
 fn stream_range_has_tombstones(meta: &StreamMeta, start_id: StreamId) -> bool {
   let end_id = StreamId::max();
@@ -67,7 +67,7 @@ fn stream_range_has_tombstones(meta: &StreamMeta, start_id: StreamId) -> bool {
   start_id <= meta.max_deleted_entry_id && meta.max_deleted_entry_id <= end_id
 }
 
-/// Domain operation (aligned with Kvrocks StreamEstimateDistanceFromFirstEverEntry).
+/// Estimates distance from first ever entry aligned with Kvrocks StreamEstimateDistanceFromFirstEverEntry.
 /// 对标 Kvrocks StreamEstimateDistanceFromFirstEverEntry
 fn stream_estimate_distance_from_first_ever_entry(meta: &StreamMeta, id: StreamId) -> i64 {
   if meta.entries_added == 0 {
@@ -91,7 +91,7 @@ fn stream_estimate_distance_from_first_ever_entry(meta: &StreamMeta, id: StreamI
   -1
 }
 
-/// Returns or computes calculated value.
+/// Retrieves live non-expired StreamMeta (internal helper method).
 /// 获取当前未过期的有效 StreamMeta（内部辅助方法）
 #[inline]
 fn get_stream_meta<E: Engine>(db: &Db<E>, key: &[u8], now_ms: u64) -> Result<Option<StreamMeta>>
@@ -103,7 +103,7 @@ where
   get_meta_checked::<StreamMeta, _>(db, key, &meta_k, now_ms)
 }
 
-/// Operation definition.
+/// Cleans up obsolete data keys, consumer groups, and PEL entries of expired stream.
 /// 清理已过期流的残留数据键与消费者组、PEL（内部辅助方法）
 #[inline]
 fn clean_stream_residue<E: Engine>(db: &Db<E>, key: &[u8], batch: &mut DbBatch<E>) -> Result<()>
@@ -147,7 +147,7 @@ where
   Ok(())
 }
 
-/// Returns or computes calculated value.
+/// Retrieves last generated StreamId from metadata.
 /// 获取最后生成的 StreamId
 pub fn stream_last_id<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, key: K) -> Result<StreamId>
 where
@@ -161,7 +161,7 @@ where
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::trim).
+/// Internal stream trimming logic aligned with Apache Kvrocks Stream::trim.
 /// 内部流裁剪逻辑（对标 Apache Kvrocks Stream::trim）
 fn trim_stream_internal<E: Engine>(
   db: &Db<E>,
@@ -358,7 +358,7 @@ where
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::Len).
+/// Retrieves stream length with options aligned with Apache Kvrocks Stream::Len.
 /// XLEN key with options（对标 Apache Kvrocks Stream::Len）
 pub fn stream_len_with_options<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -463,7 +463,7 @@ where
   stream_range_with_options(db, key, options)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::Range).
+/// Scans stream entries within range aligned with Apache Kvrocks Stream::Range.
 /// XRANGE / XREVRANGE 配置扫描（对标 Apache Kvrocks Stream::Range）
 pub fn stream_range_with_options<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -589,7 +589,7 @@ where
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::Trim).
+/// Trims stream entries (XTRIM) aligned with Apache Kvrocks Stream::Trim.
 /// XTRIM key [MAXLEN|MINID ...]（对标 Apache Kvrocks Stream::Trim）
 pub fn stream_trim<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -696,7 +696,7 @@ where
   Ok(delete_cnt)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::DeleteEntries).
+/// Deletes stream entries by ID (XDEL) aligned with Apache Kvrocks Stream::DeleteEntries.
 /// XDEL key id [id ...]（对标 Apache Kvrocks Stream::DeleteEntries）
 pub fn stream_del<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, key: K, ids: &[StreamId]) -> Result<u64>
 where
@@ -791,7 +791,7 @@ where
   Ok(deleted_cnt)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::CreateGroup).
+/// Creates a stream consumer group (XGROUP CREATE) aligned with Apache Kvrocks Stream::CreateGroup.
 /// XGROUP CREATE key groupname id|$ [MKSTREAM] [ENTRIESREAD entries_read]（对标 Apache Kvrocks Stream::CreateGroup）
 pub fn stream_group_create<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -858,7 +858,7 @@ where
   Ok(())
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::DestroyGroup).
+/// Destroys a stream consumer group (XGROUP DESTROY) aligned with Apache Kvrocks Stream::DestroyGroup.
 /// XGROUP DESTROY key groupname（对标 Apache Kvrocks Stream::DestroyGroup）
 pub fn stream_group_destroy<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -915,7 +915,7 @@ where
   Ok(true)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::CreateConsumer).
+/// Creates a consumer in consumer group (XGROUP CREATECONSUMER) aligned with Kvrocks.
 /// XGROUP CREATECONSUMER key groupname consumername（对标 Apache Kvrocks Stream::CreateConsumer）
 pub fn stream_group_create_consumer<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -968,7 +968,7 @@ where
   Ok(1)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::DeleteConsumer).
+/// Deletes a consumer from consumer group (XGROUP DELCONSUMER) aligned with Kvrocks.
 /// XGROUP DELCONSUMER key groupname consumername（对标 Apache Kvrocks Stream::DeleteConsumer）
 pub fn stream_group_del_consumer<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1033,7 +1033,7 @@ where
   Ok(deleted_pel)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GroupSetId).
+/// Sets consumer group last delivered ID (XGROUP SETID) aligned with Kvrocks.
 /// XGROUP SETID key groupname id|$ [ENTRIESREAD entries_read]（对标 Apache Kvrocks Stream::GroupSetId）
 pub fn stream_group_set_id<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1081,7 +1081,7 @@ where
   Ok(())
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::DeletePelEntries).
+/// Acknowledges pending stream messages (XACK) aligned with Apache Kvrocks Stream::DeletePelEntries.
 /// XACK key groupname id [id ...]（对标 Apache Kvrocks Stream::DeletePelEntries）
 pub fn stream_ack<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1295,7 +1295,7 @@ where
   Ok(result)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::AutoClaim).
+/// Automatically claims pending stream messages (XAUTOCLAIM) aligned with Apache Kvrocks Stream::AutoClaim.
 /// XAUTOCLAIM key group consumer min-idle-time start [COUNT count] [JUSTID]（对标 Apache Kvrocks Stream::AutoClaim）
 pub fn stream_autoclaim<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1491,7 +1491,7 @@ where
   })
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GetPendingEntries summary).
+/// Retrieves pending entries summary (XPENDING summary) aligned with Kvrocks.
 /// XPENDING summary（对标 Apache Kvrocks Stream::GetPendingEntries summary）
 pub fn stream_pending_summary<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1559,7 +1559,7 @@ where
   })
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GetPendingEntries range).
+/// Retrieves pending entries within range (XPENDING range) aligned with Kvrocks.
 /// XPENDING range（对标 Apache Kvrocks Stream::GetPendingEntries range）
 pub fn stream_pending_range<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1654,7 +1654,7 @@ where
   stream_range_with_options(db, key, options)
 }
 
-/// Operation definition.
+/// Reads entries across multiple streams (multi-key XREAD).
 /// XREAD 多流联合查询
 pub fn stream_read_streams<E: Engine>(
   db: &Db<E>,
@@ -1677,7 +1677,7 @@ where
   Ok(results)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::RangeWithPending).
+/// Reads entries via consumer group (XREADGROUP) aligned with Apache Kvrocks Stream::RangeWithPending.
 /// XREADGROUP GROUP group consumer [COUNT count] [NOACK] STREAMS key ID（对标 Apache Kvrocks Stream::RangeWithPending）
 pub fn stream_readgroup<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1808,7 +1808,7 @@ where
   }
 }
 
-/// Operation definition.
+/// Reads entries across multiple streams via consumer group (multi-key XREADGROUP).
 /// XREADGROUP 多流联合消费
 pub fn stream_readgroup_streams<E: Engine>(
   db: &Db<E>,
@@ -1842,7 +1842,7 @@ where
   Ok(results)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GetStreamInfo).
+/// Returns stream information (XINFO STREAM) aligned with Apache Kvrocks Stream::GetStreamInfo.
 /// XINFO STREAM key [FULL [COUNT count]]（对标 Apache Kvrocks Stream::GetStreamInfo）
 pub fn stream_info_stream<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1923,7 +1923,7 @@ where
   })
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GetGroupInfo).
+/// Returns consumer groups information (XINFO GROUPS) aligned with Apache Kvrocks Stream::GetGroupInfo.
 /// XINFO GROUPS key（对标 Apache Kvrocks Stream::GetGroupInfo）
 pub fn stream_info_groups<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -1965,7 +1965,7 @@ where
   Ok(groups)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::GetConsumerInfo).
+/// Returns consumer information (XINFO CONSUMERS) aligned with Apache Kvrocks Stream::GetConsumerInfo.
 /// XINFO CONSUMERS key groupname（对标 Apache Kvrocks Stream::GetConsumerInfo）
 pub fn stream_info_consumers<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
@@ -2003,7 +2003,7 @@ where
   Ok(consumers)
 }
 
-/// Domain operation (aligned with Apache Kvrocks Stream::SetId).
+/// Sets stream last-id and statistics (XSETID) aligned with Apache Kvrocks Stream::SetId.
 /// XSETID key last-id [ENTRIESADDED entries_added] [MAXDELETEDID max_deleted_id]（对标 Apache Kvrocks Stream::SetId）
 pub fn stream_setid<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,

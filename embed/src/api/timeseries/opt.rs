@@ -6,7 +6,7 @@ use crate::api::timeseries::{
   reducer::Reducer,
 };
 
-/// Command options enumeration.
+/// TS.CREATE command options enumeration.
 /// TS.CREATE 选项枚举
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TsCreate {
@@ -18,7 +18,7 @@ pub enum TsCreate {
   Labels(Vec<(String, String)>),
 }
 
-/// Command options enumeration.
+/// TS.RANGE command options enumeration.
 /// TS.RANGE 选项枚举
 #[derive(Debug, Clone, PartialEq)]
 pub enum TsRange {
@@ -70,7 +70,7 @@ impl BucketTimestampType {
   }
 }
 
-/// Operation definition.
+/// Multi-series aggregation group reducer type.
 /// 多序列聚合组 Reducer 类型
 #[derive(
   Debug,
@@ -141,7 +141,7 @@ impl GroupReducerType {
   }
 }
 
-/// Operation definition.
+/// Time series aggregation function type.
 /// 聚合函数类型
 #[derive(
   Debug,
@@ -195,7 +195,7 @@ impl AggregationType {
   }
 }
 
-/// Returns or computes calculated value.
+/// Time series bucket aggregation calculator.
 /// 聚合计算器
 #[derive(Debug, Clone, PartialEq, Default, Encode, Decode)]
 pub struct Aggregator {
@@ -328,7 +328,7 @@ pub enum TsMGet {
   Filters(Vec<String>),
 }
 
-/// Operation definition.
+/// TS.MGET query result item.
 /// TS.MGET 结果
 #[derive(Debug, Clone, PartialEq)]
 pub struct TsMGetResult {
@@ -337,7 +337,7 @@ pub struct TsMGetResult {
   pub sample: Option<(u64, f64)>,
 }
 
-/// Command options enumeration.
+/// TS.MRANGE command options enumeration.
 /// TS.MRANGE 选项枚举
 #[derive(Debug, Clone)]
 pub enum TsMRange {
@@ -355,7 +355,7 @@ pub enum TsMRange {
   GroupBy(String, GroupReducerType),
 }
 
-/// Operation definition.
+/// TS.MRANGE query result item.
 /// TS.MRANGE 结果
 #[derive(Debug, Clone, PartialEq)]
 pub struct TsMRangeResult {
@@ -365,7 +365,7 @@ pub struct TsMRangeResult {
   pub source_keys: Vec<String>,
 }
 
-/// Operation definition.
+/// TS.INFO timeseries details snapshot.
 /// TS.INFO 结果信息
 #[derive(Debug, Clone, PartialEq)]
 pub struct TsInfoResult {
@@ -383,7 +383,7 @@ pub struct TsInfoResult {
   pub downstream_rules: Vec<(Vec<u8>, Aggregator)>,
 }
 
-/// Operation definition.
+/// Downsampling aggregation rule metadata.
 /// 降采样下游规则元数据
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct TSDownStreamMeta {

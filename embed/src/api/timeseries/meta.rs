@@ -53,7 +53,7 @@ impl ChunkType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy).
+/// Sample duplicate timestamp policy aligned with Apache Kvrocks TimeSeriesMetadata.
 /// 样本重复策略（对标 Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy）
 #[derive(
   Debug,
@@ -104,7 +104,7 @@ impl DuplicatePolicy {
     }
   }
 
-  /// Operation definition.
+  /// Merges duplicate timestamp values (returns None on Block policy).
   /// 合并重复时间戳样本值（Block 策略返回 None）
   #[inline]
   pub fn merge_value(&self, old_val: f64, new_val: f64) -> Option<f64> {
@@ -150,7 +150,7 @@ impl DerefMut for TimeSeriesMeta {
   }
 }
 
-/// Operation definition.
+/// Time series metadata creation options.
 /// 时序表元数据创建选项
 #[derive(Debug, Clone)]
 pub struct TimeSeriesMetaArgs {
