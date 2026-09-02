@@ -1,6 +1,6 @@
 [package]
 name = "wedb_embed"
-version = "0.1.8"
+version = "0.1.9"
 readme = "README.md"
 
 [package.edition]
@@ -52,7 +52,7 @@ version = "0.1.8"
 path = "../engine"
 
 [dependencies.fastalp]
-version = "0.1.21"
+version = "0.1.22"
 path = "../fastalp"
 
 [dependencies.hipstr]

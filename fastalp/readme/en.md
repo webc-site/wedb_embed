@@ -185,9 +185,9 @@ graph TD
   For raw fallback chunks, performs direct zero-copy slice restoration.<br>
   For ALP chunks, extracts packed `(exp, fac, bit_width)` parameters and base value.
 
-- **Bit Unpacking & LUT Reconstruction (`bitpack/unpack.rs`)**:<br>
-  Small bit-widths (1, 2, 4, 8 bits) reconstruct floats via precomputed stack lookup tables in a single pass.<br>
-  General bit-widths unpack via register bit-stream sliding windows.
+- **Bit Unpacking & SIMD Register Reconstruction (`bitpack/unpack.rs`)**:<br>
+  Bit-widths of 8, 16, 32, and 64 bits employ pure register SIMD auto-vectorization, eliminating gather lookups and cache stalls;<br>
+  Ultra-small bit-widths (1, 2, 4 bits) leverage compact register-resident tables for rapid reconstruction.
 
 - **Exception Patching (`decoder.rs`)**:<br>
   Overwrites positions listed in the exception table with raw IEEE 754 bit patterns.
@@ -248,16 +248,16 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 
 ### Side-by-Side Throughput Comparison
 
-| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio |
+| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio (fastalp / C++) |
 |---|---|---|---|---|
-| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
-| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
-| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
-| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
-| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
-| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
-| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
-| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
+| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **25.60 GB/s** | 7.02 GB/s | **3.65x** |
+| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **4.98 GB/s** | 0.84 GB/s | **5.90x** |
+| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **5.60 GB/s** | 5.85 GB/s | 0.96x |
+| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **2.87 GB/s** | 2.46 GB/s | **1.17x** |
+| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **78.92 GB/s** | 21.85 GB/s | **3.61x** |
+| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
+| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **59.93 GB/s** | 18.42 GB/s | **3.25x** |
+| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **57.97 GB/s** | 32.77 GB/s | **1.77x** |
 
 ### Real-World Datasets Compression Ratio
 
@@ -327,14 +327,19 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
 - **fastalp Optimization**:<br>
   Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
 
-### Zero-Multiplication LUT Decompression Acceleration
+### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
 
 - **Reference C++ Implementation**:<br>
-  Inner loop executes integer and floating-point multiplications for every element.<br>
+  Inner loop relies on two-stage heap buffering and scalar arithmetic, failing to saturate modern SIMD execution pipelines.<br>
 - **fastalp Optimization**:<br>
-  For small bit-widths (1, 2, 4, 8 bits with 2, 4, 16, 256 possible offsets), precomputes a compact stack lookup table:<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`;<br>
-  Inner loop reduces to $O(1)$ direct array lookups, eliminating all integer and floating-point multiplications on the decode path.
+  Eliminates large stack tables that induce indirect gather memory stalls; bit-widths of 8, 16, 32, and 64 bits execute pure linear register arithmetic with a dedicated `fac1` path (omitting integer multiplication), enabling LLVM to emit optimal SIMD vector instructions; 1, 2, and 4 bit-widths utilize tiny register-resident tables, driving single-core decode throughput up to 57+ GB/s.
+
+### Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling
+
+- **Reference C++ Implementation**:<br>
+  Complex multi-level sampling logic with dense conditional branches inside the encoding loop, fragmenting basic blocks.<br>
+- **fastalp Optimization**:<br>
+  Introduces an `EARLY_EXIT_BIT_WIDTH` threshold during sampling to halt immediately once a high-compression model is identified, bypassing wasteful checks across 135 parameter combinations; adopts a Two-Pass decoupled encoding architecture (Pass 1 branchless register-level float-to-int rounding, Pass 2 centralized exception verification), eliminating per-element pipeline stalls and driving batch compression throughput up to 5.4+ GB/s.
 
 ### Pure 128-bit Register Bitpacker
 

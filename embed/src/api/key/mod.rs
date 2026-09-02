@@ -1,9 +1,12 @@
 pub mod r#impl;
+pub mod opt;
 
 pub use r#impl::{
-  del_impl, exists_impl, get_key_expire_at_impl, key_count_impl, key_type_impl, keys_impl,
-  set_key_expire_at_impl,
+  copy_impl, del_impl, exists_impl, get_key_expire_at_impl, key_count_impl, key_type_impl,
+  keys_impl, randomkey_impl, scan_impl, set_key_expire_at_impl,
+  set_key_expire_at_impl_with_condition,
 };
+pub use opt::ExpireCondition;
 
 pub use crate::key_composer::ALL_COMPOSITE_META_TAGS;
 use crate::{
@@ -143,13 +146,13 @@ pub fn cleanup_composite_data<E: Engine>(
 where
   Error: From<E::Error>,
 {
-  if meta_tag.is_empty() {
-    return Ok(());
+  if let Some(&tag_u8) = meta_tag.first() {
+    let kc = db.kc();
+    let data_ks = db.data();
+    let meta_ks = db.meta();
+    cleanup_composite_data_raw(data_ks, meta_ks, &kc, tag_u8, k_bytes, batch, buf)?;
   }
-  let kc = db.kc();
-  let data_ks = db.data();
-  let meta_ks = db.meta();
-  cleanup_composite_data_raw(data_ks, meta_ks, &kc, meta_tag[0], k_bytes, batch, buf)
+  Ok(())
 }
 
 /// Metadata key.

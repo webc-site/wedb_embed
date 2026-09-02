@@ -108,9 +108,9 @@ pub const EXC_POS_LEN: usize = size_of::<u16>();
 /// 参数推导搜索采样点数量
 pub const SAMPLES_COUNT: usize = 32;
 
-/// Early exit bit width threshold for sampling optimization.
-/// 采样优化提前退出位宽阈值
-pub const EARLY_EXIT_BIT_WIDTH: usize = 2;
+/// Early exit Bit-width threshold for early exit when 0 exceptions are found in parameter sampling.
+/// 采样时当 0 异常且位宽不超过此门限时提前终止探测
+pub const EARLY_EXIT_BIT_WIDTH: usize = 8;
 
 /// Lookup table size for 1-bit unpacking.
 /// 1 比特解包查找表大小

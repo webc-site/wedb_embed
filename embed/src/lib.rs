@@ -51,6 +51,7 @@ pub use json::{
   JsonArrIndex, JsonGet, JsonMeta, JsonNumberOp, JsonSet, JsonStorageFormat, delete_path_values,
   extract_simple_field, get_path_values, mutate_path_values, parse_json_path,
 };
+pub use key::ExpireCondition;
 pub use key_composer::{
   ALL_COMPOSITE_META_TAGS, CATALOG_PREFIX, DEFAULT_NAMESPACE, HASH_SLOTS_MASK, HASH_SLOTS_SIZE,
   INLINE_CAP, KeyComposer, KeyTag, NS_NEXT_ID_KEY, SmallKey, SubkeyComposer, SystemDomainTag,

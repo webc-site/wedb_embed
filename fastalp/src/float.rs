@@ -66,6 +66,10 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
   fn write_exception(pos: u16, bits: Self::RawBits, dst: &mut Vec<u8>);
   fn read_exception(chunk: &[u8]) -> (usize, Self);
 
+  /// Decodes a floating-point value from offset and base when factor is 1 (scale = 10^-exp).
+  /// 当因子为 1 时根据基准值与逆缩放因子快速解码浮点数
+  fn decode_from_offset_fac1(offset: u64, base: Self::Int, frac_exp: Self) -> Self;
+
   #[inline(always)]
   fn build_lut<const N: usize>(base: Self::Int, fac_int: i64, frac_exp: Self) -> [Self; N] {
     let mut lut = [Self::ZERO; N];
@@ -171,6 +175,12 @@ impl AlpFloat for f64 {
       unscaled.wrapping_mul(fac_int)
     };
     (int_with_fac as f64) * frac_exp
+  }
+
+  #[inline(always)]
+  fn decode_from_offset_fac1(offset: u64, base: Self::Int, frac_exp: Self) -> Self {
+    let unscaled = (offset as i64).wrapping_add(base);
+    (unscaled as f64) * frac_exp
   }
 
   #[inline(always)]
@@ -323,6 +333,12 @@ impl AlpFloat for f32 {
       (unscaled as i64).wrapping_mul(fac_int)
     };
     (int_with_fac as f32) * frac_exp
+  }
+
+  #[inline(always)]
+  fn decode_from_offset_fac1(offset: u64, base: Self::Int, frac_exp: Self) -> Self {
+    let unscaled = (offset as i32).wrapping_add(base);
+    (unscaled as f32) * frac_exp
   }
 
   #[inline(always)]
