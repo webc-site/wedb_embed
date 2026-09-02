@@ -1,8 +1,9 @@
-use std::collections::BTreeSet;
-
 use bitcode::{Decode, Encode};
 
-use crate::api::timeseries::meta::{ChunkType, DuplicatePolicy};
+use crate::api::timeseries::{
+  filter::TsFilter,
+  meta::{ChunkType, DuplicatePolicy},
+};
 
 /// Command options enumeration.
 /// TS.CREATE 选项枚举
@@ -21,7 +22,7 @@ pub enum TsCreate {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TsRange {
   Count(usize),
-  FilterByTs(BTreeSet<u64>),
+  FilterByTs(TsFilter),
   FilterByValue(f64, f64),
   Aggregation(AggregationType, u64),
   Alignment(u64),
@@ -30,9 +31,6 @@ pub enum TsRange {
   BucketTimestamp(BucketTimestampType),
 }
 
-/// Operation definition.
-/// 多序列聚合组 Reducer 类型
-/// Operation definition.
 /// 桶时间戳对齐类型
 #[derive(
   Debug,
@@ -89,33 +87,33 @@ impl BucketTimestampType {
 #[repr(u8)]
 pub enum GroupReducerType {
   #[default]
-  #[strum(serialize = "sum", serialize = "SUM")]
+  #[strum(serialize = "sum")]
   Sum = 0,
-  #[strum(serialize = "min", serialize = "MIN")]
+  #[strum(serialize = "min")]
   Min = 1,
-  #[strum(serialize = "max", serialize = "MAX")]
+  #[strum(serialize = "max")]
   Max = 2,
-  #[strum(serialize = "avg", serialize = "AVG")]
+  #[strum(serialize = "avg")]
   Avg = 3,
-  #[strum(serialize = "count", serialize = "COUNT")]
+  #[strum(serialize = "count")]
   Count = 4,
-  #[strum(serialize = "range", serialize = "RANGE")]
+  #[strum(serialize = "range")]
   Range = 5,
-  #[strum(serialize = "first", serialize = "FIRST")]
+  #[strum(serialize = "first")]
   First = 6,
-  #[strum(serialize = "last", serialize = "LAST")]
+  #[strum(serialize = "last")]
   Last = 7,
-  #[strum(serialize = "std.p", serialize = "STD.P", serialize = "std_p")]
+  #[strum(serialize = "std.p", serialize = "std_p")]
   StdP = 8,
-  #[strum(serialize = "std.s", serialize = "STD.S", serialize = "std_s")]
+  #[strum(serialize = "std.s", serialize = "std_s")]
   StdS = 9,
-  #[strum(serialize = "var.p", serialize = "VAR.P", serialize = "var_p")]
+  #[strum(serialize = "var.p", serialize = "var_p")]
   VarP = 10,
-  #[strum(serialize = "var.s", serialize = "VAR.S", serialize = "var_s")]
+  #[strum(serialize = "var.s", serialize = "var_s")]
   VarS = 11,
-  #[strum(serialize = "twa", serialize = "TWA")]
+  #[strum(serialize = "twa")]
   Twa = 12,
-  #[strum(serialize = "none", serialize = "NONE")]
+  #[strum(serialize = "none")]
   None = 13,
 }
 
@@ -160,31 +158,31 @@ impl GroupReducerType {
 #[repr(u8)]
 pub enum AggregationType {
   #[default]
-  #[strum(serialize = "avg", serialize = "AVG")]
+  #[strum(serialize = "avg")]
   Avg = 0,
-  #[strum(serialize = "first", serialize = "FIRST")]
+  #[strum(serialize = "first")]
   First = 1,
-  #[strum(serialize = "last", serialize = "LAST")]
+  #[strum(serialize = "last")]
   Last = 2,
-  #[strum(serialize = "min", serialize = "MIN")]
+  #[strum(serialize = "min")]
   Min = 3,
-  #[strum(serialize = "max", serialize = "MAX")]
+  #[strum(serialize = "max")]
   Max = 4,
-  #[strum(serialize = "sum", serialize = "SUM")]
+  #[strum(serialize = "sum")]
   Sum = 5,
-  #[strum(serialize = "count", serialize = "COUNT")]
+  #[strum(serialize = "count")]
   Count = 6,
-  #[strum(serialize = "std.p", serialize = "STD.P", serialize = "std_p")]
+  #[strum(serialize = "std.p", serialize = "std_p")]
   StdP = 7,
-  #[strum(serialize = "std.s", serialize = "STD.S", serialize = "std_s")]
+  #[strum(serialize = "std.s", serialize = "std_s")]
   StdS = 8,
-  #[strum(serialize = "var.p", serialize = "VAR.P", serialize = "var_p")]
+  #[strum(serialize = "var.p", serialize = "var_p")]
   VarP = 9,
-  #[strum(serialize = "var.s", serialize = "VAR.S", serialize = "var_s")]
+  #[strum(serialize = "var.s", serialize = "var_s")]
   VarS = 10,
-  #[strum(serialize = "range", serialize = "RANGE")]
+  #[strum(serialize = "range")]
   Range = 11,
-  #[strum(serialize = "twa", serialize = "TWA")]
+  #[strum(serialize = "twa")]
   Twa = 12,
 }
 
@@ -243,24 +241,24 @@ impl Aggregator {
     if samples.is_empty() {
       return Vec::new();
     }
-    let mut results = Vec::new();
+
+    let limit = count_limit.unwrap_or(usize::MAX);
+    let mut results = Vec::with_capacity(limit.min(samples.len() / 2));
     let mut curr_bucket = self.calculate_aligned_bucket_left(samples[0].0);
-    let mut bucket_samples = Vec::new();
+    let mut start_idx = 0;
     let mut last_val;
 
-    for &(ts, v) in samples {
+    for (i, &(ts, _v)) in samples.iter().enumerate() {
       let bkt = self.calculate_aligned_bucket_left(ts);
-      if bkt == curr_bucket {
-        bucket_samples.push((ts, v));
-      } else {
+      if bkt != curr_bucket {
+        let bucket_slice = &samples[start_idx..i];
+
         if is_return_empty {
           let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
-          let val = self.aggregate(&bucket_samples);
+          let val = self.aggregate(bucket_slice);
           last_val = val;
           results.push((agg_ts, val));
-          if let Some(limit) = count_limit
-            && results.len() >= limit
-          {
+          if results.len() >= limit {
             return results;
           }
 
@@ -275,33 +273,30 @@ impl Aggregator {
                 0.0
               };
               results.push((empty_ts, empty_val));
-              if let Some(limit) = count_limit
-                && results.len() >= limit
-              {
+              if results.len() >= limit {
                 return results;
               }
               next_bucket = next_bucket.saturating_add(self.bucket_duration);
             }
           }
-        } else if !bucket_samples.is_empty() {
+        } else if !bucket_slice.is_empty() {
           let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
-          let val = self.aggregate(&bucket_samples);
+          let val = self.aggregate(bucket_slice);
           results.push((agg_ts, val));
-          if let Some(limit) = count_limit
-            && results.len() >= limit
-          {
+          if results.len() >= limit {
             return results;
           }
         }
+
         curr_bucket = bkt;
-        bucket_samples.clear();
-        bucket_samples.push((ts, v));
+        start_idx = i;
       }
     }
 
-    if !bucket_samples.is_empty() || is_return_empty {
+    let bucket_slice = &samples[start_idx..];
+    if !bucket_slice.is_empty() || is_return_empty {
       let agg_ts = bucket_timestamp_type.calculate_timestamp(curr_bucket, self.bucket_duration);
-      let val = self.aggregate(&bucket_samples);
+      let val = self.aggregate(bucket_slice);
       results.push((agg_ts, val));
     }
 
@@ -347,9 +342,16 @@ impl Aggregator {
       | AggregationType::VarP
       | AggregationType::StdS
       | AggregationType::VarS => {
-        let sum: f64 = samples.iter().map(|s| s.1).sum();
-        let mean = sum / count;
-        let var_p = samples.iter().map(|s| (s.1 - mean).powi(2)).sum::<f64>() / count;
+        let mut mean = 0.0;
+        let mut m2 = 0.0;
+        for (i, s) in samples.iter().enumerate() {
+          let n = (i + 1) as f64;
+          let delta = s.1 - mean;
+          mean += delta / n;
+          let delta2 = s.1 - mean;
+          m2 += delta * delta2;
+        }
+        let var_p = m2 / count;
         match self.agg_type {
           AggregationType::VarP => var_p,
           AggregationType::StdP => var_p.sqrt(),
@@ -357,14 +359,14 @@ impl Aggregator {
             if count <= 1.0 {
               0.0
             } else {
-              var_p * count / (count - 1.0)
+              m2 / (count - 1.0)
             }
           }
           AggregationType::StdS => {
             if count <= 1.0 {
               0.0
             } else {
-              (var_p * count / (count - 1.0)).max(0.0).sqrt()
+              (m2 / (count - 1.0)).max(0.0).sqrt()
             }
           }
           _ => 0.0,
@@ -400,7 +402,7 @@ pub enum TsMRange {
   SelectedLabels(Vec<String>),
   Filters(Vec<String>),
   Count(usize),
-  FilterByTs(BTreeSet<u64>),
+  FilterByTs(TsFilter),
   FilterByValue(f64, f64),
   Aggregation(AggregationType, u64),
   Alignment(u64),

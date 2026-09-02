@@ -152,7 +152,7 @@ impl DerefMut for TimeSeriesMeta {
 
 /// Operation definition.
 /// 时序表元数据创建选项
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TimeSeriesMetaArgs {
   pub retention_time: u64,
   pub chunk_size: u64,
@@ -162,6 +162,54 @@ pub struct TimeSeriesMetaArgs {
   pub labels: Vec<(String, String)>,
   pub expire_at: u64,
   pub version: u64,
+}
+
+impl Default for TimeSeriesMetaArgs {
+  #[inline]
+  fn default() -> Self {
+    Self {
+      retention_time: 0,
+      chunk_size: 0,
+      chunk_type: ChunkType::Compressed,
+      duplicate_policy: DuplicatePolicy::Block,
+      source_key: String::new(),
+      labels: Vec::new(),
+      expire_at: 0,
+      version: 0,
+    }
+  }
+}
+
+impl From<TimeSeriesMetaArgs> for TimeSeriesMeta {
+  #[inline]
+  fn from(opts: TimeSeriesMetaArgs) -> Self {
+    Self::with_options(opts)
+  }
+}
+
+impl FromIterator<super::opt::TsCreate> for TimeSeriesMetaArgs {
+  fn from_iter<I: IntoIterator<Item = super::opt::TsCreate>>(iter: I) -> Self {
+    let mut args = Self::default();
+    for opt in iter {
+      match opt {
+        super::opt::TsCreate::RetentionTime(r) => args.retention_time = r,
+        super::opt::TsCreate::ChunkSize(c) => args.chunk_size = c,
+        super::opt::TsCreate::ChunkType(t) => args.chunk_type = t,
+        super::opt::TsCreate::DuplicatePolicy(d) => args.duplicate_policy = d,
+        super::opt::TsCreate::SourceKey(s) => args.source_key = s,
+        super::opt::TsCreate::Labels(l) => args.labels = l,
+      }
+    }
+    args
+  }
+}
+
+impl FromIterator<super::opt::TsCreate> for TimeSeriesMeta {
+  #[inline]
+  fn from_iter<I: IntoIterator<Item = super::opt::TsCreate>>(iter: I) -> Self {
+    let args: TimeSeriesMetaArgs = iter.into_iter().collect();
+    args.into()
+  }
 }
 
 impl TimeSeriesMeta {

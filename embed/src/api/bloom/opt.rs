@@ -46,10 +46,10 @@ pub struct BloomFilterInsert {
   pub auto_create: bool,
 }
 
-impl BloomFilterInsert {
-  pub fn from_options(options: impl IntoIterator<Item = BfInsert>) -> Self {
+impl FromIterator<BfInsert> for BloomFilterInsert {
+  fn from_iter<I: IntoIterator<Item = BfInsert>>(iter: I) -> Self {
     let mut opt = Self::default();
-    for o in options {
+    for o in iter {
       match o {
         BfInsert::Capacity(c) => opt.capacity = c,
         BfInsert::ErrorRate(e) => opt.error_rate = e,
@@ -59,6 +59,13 @@ impl BloomFilterInsert {
       }
     }
     opt
+  }
+}
+
+impl BloomFilterInsert {
+  #[inline]
+  pub fn from_options(options: impl IntoIterator<Item = BfInsert>) -> Self {
+    options.into_iter().collect()
   }
 }
 
@@ -121,10 +128,10 @@ pub struct CuckooFilterInsert {
   pub nx: bool,
 }
 
-impl CuckooFilterInsert {
-  pub fn from_options(options: impl IntoIterator<Item = CfInsert>) -> Self {
+impl FromIterator<CfInsert> for CuckooFilterInsert {
+  fn from_iter<I: IntoIterator<Item = CfInsert>>(iter: I) -> Self {
     let mut opt = Self::default();
-    for o in options {
+    for o in iter {
       match o {
         CfInsert::Capacity(c) => opt.capacity = c,
         CfInsert::BucketSize(bs) => opt.bucket_size = bs,
@@ -136,6 +143,13 @@ impl CuckooFilterInsert {
       }
     }
     opt
+  }
+}
+
+impl CuckooFilterInsert {
+  #[inline]
+  pub fn from_options(options: impl IntoIterator<Item = CfInsert>) -> Self {
+    options.into_iter().collect()
   }
 }
 

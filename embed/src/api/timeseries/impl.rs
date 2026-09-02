@@ -1,15 +1,15 @@
-use std::{collections::BTreeSet, ops::Bound, str};
+use std::ops::Bound;
 
 use rapidhash::RapidHashMap;
 
 use crate::{
   api::timeseries::{
-    TimeSeriesLabelFilter,
+    TimeSeriesLabelFilter, TsFilter,
     chunk::TSChunk,
     r#const::*,
     gorilla::TSSample,
     group_samples_and_reduce, key,
-    meta::{ChunkType, DuplicatePolicy, TimeSeriesMeta, TimeSeriesMetaArgs},
+    meta::{DuplicatePolicy, TimeSeriesMeta},
     opt::{
       AggregationType, Aggregator, BucketTimestampType, GroupReducerType, IntoTsRange,
       TSDownStreamMeta, TsCreate, TsInfoResult, TsMGet, TsMGetResult, TsMRange, TsMRangeResult,
@@ -102,6 +102,21 @@ where
   Ok(())
 }
 
+struct TsRangeQuery<'a> {
+  start_ts: u64,
+  end_ts: u64,
+  count_limit: Option<usize>,
+  filter_by_ts: &'a TsFilter,
+  filter_by_value: Option<(f64, f64)>,
+  agg_type: Option<AggregationType>,
+  bucket_duration: u64,
+  alignment: u64,
+  is_return_empty: bool,
+  bucket_timestamp_type: BucketTimestampType,
+}
+
+type GroupedSeriesEntry = (Vec<Vec<(u64, f64)>>, Vec<String>);
+
 impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
@@ -117,24 +132,6 @@ where
     key: K,
     opt_li: impl IntoIterator<Item = TsCreate>,
   ) -> Result<()> {
-    let mut retention_time = 0;
-    let mut chunk_size = 0;
-    let mut chunk_type = ChunkType::Compressed;
-    let mut duplicate_policy = DuplicatePolicy::Block;
-    let mut source_key = String::new();
-    let mut labels = Vec::new();
-
-    for opt in opt_li {
-      match opt {
-        TsCreate::RetentionTime(r) => retention_time = r,
-        TsCreate::ChunkSize(c) => chunk_size = c,
-        TsCreate::ChunkType(t) => chunk_type = t,
-        TsCreate::DuplicatePolicy(d) => duplicate_policy = d,
-        TsCreate::SourceKey(s) => source_key = s,
-        TsCreate::Labels(l) => labels = l,
-      }
-    }
-
     let key_bytes = key.as_ref();
     let meta_k = key::meta(&self.kc(), key_bytes);
     let now_ms = current_now_ms();
@@ -144,17 +141,7 @@ where
     }
 
     let meta_ks = self.meta();
-
-    let meta = TimeSeriesMeta::with_options(TimeSeriesMetaArgs {
-      retention_time,
-      chunk_size,
-      chunk_type,
-      duplicate_policy,
-      source_key,
-      labels,
-      expire_at: 0,
-      version: 0,
-    });
+    let meta: TimeSeriesMeta = opt_li.into_iter().collect();
     meta_ks.insert(&meta_k, &meta.encode())?;
     Ok(())
   }
@@ -208,51 +195,15 @@ where
     on_duplicate: Option<DuplicatePolicy>,
     create_opt: impl IntoIterator<Item = TsCreate>,
   ) -> Result<u64> {
-    let mut retention_time = 0;
-    let mut chunk_size = 0;
-    let mut chunk_type = ChunkType::Compressed;
-    let mut duplicate_policy = DuplicatePolicy::Block;
-    let mut source_key = String::new();
-    let mut labels = Vec::new();
-    let mut has_create_opt = false;
-
-    for opt in create_opt {
-      has_create_opt = true;
-      match opt {
-        TsCreate::RetentionTime(r) => retention_time = r,
-        TsCreate::ChunkSize(c) => chunk_size = c,
-        TsCreate::ChunkType(t) => chunk_type = t,
-        TsCreate::DuplicatePolicy(d) => duplicate_policy = d,
-        TsCreate::SourceKey(s) => source_key = s,
-        TsCreate::Labels(l) => labels = l,
-      }
-    }
-
     let key_bytes = key.as_ref();
     let kc = self.kc();
     let meta_k = key::meta(&kc, key_bytes);
-    let _meta_ks = self.meta();
     let data_ks = self.data();
     let now_ms = current_now_ms();
 
     let mut meta = match get_meta_checked::<TimeSeriesMeta, _>(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
-      None => {
-        if has_create_opt {
-          TimeSeriesMeta::with_options(TimeSeriesMetaArgs {
-            retention_time,
-            chunk_size,
-            chunk_type,
-            duplicate_policy,
-            source_key,
-            labels,
-            expire_at: 0,
-            version: 0,
-          })
-        } else {
-          TimeSeriesMeta::new(0, 4096, DuplicatePolicy::Block, Vec::new())
-        }
-      }
+      None => create_opt.into_iter().collect(),
     };
 
     if meta.retention_time > 0 && timestamp < meta.last_time.saturating_sub(meta.retention_time) {
@@ -275,26 +226,25 @@ where
       meta.last_time = timestamp;
     } else {
       let target_item_k = key::chunk(&kc, key_bytes, timestamp);
-      let target_chunk = if let Some(g) = data_ks
+      let (old_k, old_data) = match data_ks
         .range((
           Bound::Included(prefix.as_slice()),
           Bound::Included(target_item_k.as_slice()),
         ))
         .next_back()
       {
-        let entry = g?;
-        let (k, v) = (entry.key(), entry.value());
-        if k.starts_with(&prefix) {
-          Some((k.to_vec(), v.to_vec()))
-        } else {
-          None
+        Some(g) => {
+          let entry = g?;
+          if entry.key().starts_with(&prefix) {
+            (entry.key().to_vec(), entry.value().to_vec())
+          } else {
+            let entry = data_ks
+              .prefix(&prefix)
+              .next()
+              .ok_or_else(|| Error::invalid_data(ERR_TSDB_CORRUPTED_DATA_INDEX))??;
+            (entry.key().to_vec(), entry.value().to_vec())
+          }
         }
-      } else {
-        None
-      };
-
-      let (old_k, old_data) = match target_chunk {
-        Some(pair) => pair,
         None => {
           let entry = data_ks
             .prefix(&prefix)
@@ -312,49 +262,57 @@ where
 
       let mut samples = TSChunk::decode_samples(&old_data)?;
 
-      if let Ok(idx) = samples.binary_search_by_key(&timestamp, |s| s.ts) {
-        match policy.merge_value(samples[idx].v, value) {
-          Some(merged) => {
-            final_value = merged;
-            samples[idx].v = merged;
-          }
-          None => {
-            return Err(Error::invalid_data(ERR_TSDB_DUPLICATE_BLOCK_MODE));
-          }
-        }
-        let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
-        batch.insert_data(&old_k, &new_chunk);
-      } else {
-        let is_latest_chunk = timestamp >= meta.last_time;
-        let last_sample_ts = samples.last().map(|s| s.ts).unwrap_or(chunk_first_ts);
-
-        if is_latest_chunk
-          && samples.len() >= meta.chunk_size as usize
-          && timestamp > last_sample_ts
-        {
-          let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
-          let new_item_k = key::chunk(&kc, key_bytes, timestamp);
-          batch.insert_data(&new_item_k, &new_chunk);
-        } else {
-          let new_chunks = TSChunk::upsert_and_split(
-            &old_data,
-            &[sample],
-            policy,
-            meta.chunk_size as usize,
-            meta.chunk_type,
-          )?;
-
-          batch.rm_weak_data(&old_k);
-
-          for chunk_data in new_chunks {
-            if let Some(first_ts) = TSChunk::get_first_timestamp(&chunk_data) {
-              let new_item_k = key::chunk(&kc, key_bytes, first_ts);
-              batch.insert_data(&new_item_k, &chunk_data);
+      match samples.binary_search_by_key(&timestamp, |s| s.ts) {
+        Ok(idx) => {
+          match policy.merge_value(samples[idx].v, value) {
+            Some(merged) => {
+              final_value = merged;
+              samples[idx].v = merged;
+            }
+            None => {
+              return Err(Error::invalid_data(ERR_TSDB_DUPLICATE_BLOCK_MODE));
             }
           }
+          let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
+          batch.insert_data(&old_k, &new_chunk);
         }
+        Err(insert_idx) => {
+          let is_latest_chunk = timestamp >= meta.last_time;
+          let last_sample_ts = samples.last().map(|s| s.ts).unwrap_or(chunk_first_ts);
 
-        meta.total_samples += 1;
+          if is_latest_chunk
+            && samples.len() >= meta.chunk_size as usize
+            && timestamp > last_sample_ts
+          {
+            let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
+            let new_item_k = key::chunk(&kc, key_bytes, timestamp);
+            batch.insert_data(&new_item_k, &new_chunk);
+          } else {
+            samples.insert(insert_idx, sample);
+            let max_chunk_size = (meta.chunk_size as usize).max(1);
+            if samples.len() <= max_chunk_size {
+              let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
+              let chunk_start_ts = unsafe { samples.get_unchecked(0).ts };
+              if chunk_start_ts != chunk_first_ts {
+                batch.rm_weak_data(&old_k);
+                let new_item_k = key::chunk(&kc, key_bytes, chunk_start_ts);
+                batch.insert_data(&new_item_k, &new_chunk);
+              } else {
+                batch.insert_data(&old_k, &new_chunk);
+              }
+            } else {
+              batch.rm_weak_data(&old_k);
+              for chunk_slice in samples.chunks(max_chunk_size) {
+                let first_ts = chunk_slice[0].ts;
+                let new_chunk = TSChunk::encode_with_type(chunk_slice, meta.chunk_type);
+                let new_item_k = key::chunk(&kc, key_bytes, first_ts);
+                batch.insert_data(&new_item_k, &new_chunk);
+              }
+            }
+          }
+
+          meta.total_samples += 1;
+        }
       }
 
       if meta.first_time == 0 || timestamp < meta.first_time {
@@ -396,21 +354,16 @@ where
   ) -> Result<u64> {
     let ts = timestamp.unwrap_or_else(current_now_ms);
     let latest = self.ts_get(key.as_ref())?;
-    let create_opts: Vec<TsCreate> = create_opt.into_iter().collect();
-    if let Some((latest_ts, old_v)) = latest {
-      if ts < latest_ts {
-        return Err(Error::invalid_data(ERR_TSDB_TIMESTAMP_OLDER_THAN_MAX));
+    let new_val = match latest {
+      Some((latest_ts, old_v)) => {
+        if ts < latest_ts {
+          return Err(Error::invalid_data(ERR_TSDB_TIMESTAMP_OLDER_THAN_MAX));
+        }
+        old_v + value
       }
-      self.ts_add(
-        key,
-        ts,
-        old_v + value,
-        Some(DuplicatePolicy::Last),
-        create_opts,
-      )
-    } else {
-      self.ts_add(key, ts, value, Some(DuplicatePolicy::Last), create_opts)
-    }
+      None => value,
+    };
+    self.ts_add(key, ts, new_val, Some(DuplicatePolicy::Last), create_opt)
   }
 
   #[inline]
@@ -470,7 +423,7 @@ where
   ) -> Result<Vec<(u64, f64)>> {
     let (start_ts, end_ts) = range.into_ts_range();
     let mut count_limit = None;
-    let mut filter_by_ts = BTreeSet::new();
+    let mut filter_by_ts = TsFilter::default();
     let mut filter_by_value = None;
     let mut agg_type = None;
     let mut bucket_duration = 0;
@@ -494,30 +447,67 @@ where
       }
     }
 
-    let mut filtered = self.ts_range_raw(key, start_ts, end_ts)?;
-    if !filter_by_ts.is_empty() || filter_by_value.is_some() {
-      filtered.retain(|&(ts, v)| {
-        if !filter_by_ts.is_empty() && !filter_by_ts.contains(&ts) {
-          return false;
-        }
-        if let Some((min_v, max_v)) = filter_by_value
-          && (v < min_v || v > max_v)
-        {
-          return false;
-        }
-        true
-      });
-    }
+    let query = TsRangeQuery {
+      start_ts,
+      end_ts,
+      count_limit,
+      filter_by_ts: &filter_by_ts,
+      filter_by_value,
+      agg_type,
+      bucket_duration,
+      alignment,
+      is_return_empty,
+      bucket_timestamp_type,
+    };
+    self.ts_range_internal(key.as_ref(), &query)
+  }
 
-    if let Some(t) = agg_type {
-      let agg = Aggregator::new(t, bucket_duration, alignment);
+  #[inline]
+  fn ts_range_internal(
+    &self,
+    key_bytes: &[u8],
+    query: &TsRangeQuery<'_>,
+  ) -> Result<Vec<(u64, f64)>> {
+    self.ts_range_internal_with_meta(key_bytes, None, query)
+  }
+
+  fn ts_range_internal_with_meta(
+    &self,
+    key_bytes: &[u8],
+    meta: Option<&TimeSeriesMeta>,
+    query: &TsRangeQuery<'_>,
+  ) -> Result<Vec<(u64, f64)>> {
+    let (eff_start_ts, eff_end_ts) =
+      match query.filter_by_ts.clamp_range(query.start_ts, query.end_ts) {
+        Some(range) => range,
+        None => return Ok(Vec::new()),
+      };
+
+    let filter_opt = if query.filter_by_ts.is_empty() {
+      None
+    } else {
+      Some(query.filter_by_ts)
+    };
+    let mut filtered = self.ts_range_raw_filtered_with_meta(
+      key_bytes,
+      meta,
+      eff_start_ts,
+      eff_end_ts,
+      filter_opt,
+    )?;
+    query
+      .filter_by_ts
+      .filter_samples(&mut filtered, query.filter_by_value);
+
+    if let Some(t) = query.agg_type {
+      let agg = Aggregator::new(t, query.bucket_duration, query.alignment);
       filtered = agg.split_and_aggregate(
         &filtered,
-        count_limit,
-        is_return_empty,
-        bucket_timestamp_type,
+        query.count_limit,
+        query.is_return_empty,
+        query.bucket_timestamp_type,
       );
-    } else if let Some(limit) = count_limit {
+    } else if let Some(limit) = query.count_limit {
       filtered.truncate(limit);
     }
 
@@ -552,20 +542,48 @@ where
     from_ts: u64,
     to_ts: u64,
   ) -> Result<Vec<(u64, f64)>> {
+    self.ts_range_raw_filtered(key, from_ts, to_ts, None)
+  }
+
+  #[inline]
+  pub(crate) fn ts_range_raw_filtered<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    from_ts: u64,
+    to_ts: u64,
+    filter_by_ts: Option<&TsFilter>,
+  ) -> Result<Vec<(u64, f64)>> {
+    self.ts_range_raw_filtered_with_meta(key.as_ref(), None, from_ts, to_ts, filter_by_ts)
+  }
+
+  pub(crate) fn ts_range_raw_filtered_with_meta(
+    &self,
+    key_bytes: &[u8],
+    meta_arg: Option<&TimeSeriesMeta>,
+    from_ts: u64,
+    to_ts: u64,
+    filter_by_ts: Option<&TsFilter>,
+  ) -> Result<Vec<(u64, f64)>> {
     if from_ts > to_ts {
       return Ok(Vec::new());
     }
 
-    let key_bytes = key.as_ref();
     let kc = self.kc();
     let prefix = key::prefix(&kc, key_bytes);
     let meta_k = key::meta(&kc, key_bytes);
     let data_ks = self.data();
     let now_ms = current_now_ms();
 
-    let meta = get_meta_checked::<TimeSeriesMeta, _>(self, key_bytes, &meta_k, now_ms)?;
+    let fetched_meta;
+    let meta = match meta_arg {
+      Some(m) => Some(m),
+      None => {
+        fetched_meta = get_meta_checked::<TimeSeriesMeta, _>(self, key_bytes, &meta_k, now_ms)?;
+        fetched_meta.as_ref()
+      }
+    };
 
-    let retention_bound = if let Some(ref m) = meta
+    let retention_bound = if let Some(m) = meta
       && m.retention_time > 0
     {
       m.last_time.saturating_sub(m.retention_time)
@@ -576,7 +594,6 @@ where
     let start_ts = from_ts.max(retention_bound);
     let end_ts = to_ts;
     let cap = meta
-      .as_ref()
       .map(|m| (m.total_samples as usize).min(4096))
       .unwrap_or(0);
     let mut samples = Vec::with_capacity(cap);
@@ -613,10 +630,15 @@ where
         if chunk_first_ts > end_ts {
           break;
         }
-        if let Some(chunk_last_ts) = TSChunk::get_last_timestamp(v)
-          && chunk_last_ts < start_ts
-        {
-          continue;
+        if let Some(chunk_last_ts) = TSChunk::get_last_timestamp(v) {
+          if chunk_last_ts < start_ts {
+            continue;
+          }
+          if let Some(f) = filter_by_ts
+            && !f.matches_range(chunk_first_ts, chunk_last_ts)
+          {
+            continue;
+          }
         }
         decoded_buf.clear();
         if TSChunk::decode_samples_into(v, &mut decoded_buf).is_ok() && !decoded_buf.is_empty() {
@@ -635,7 +657,7 @@ where
       }
     }
     if !samples.windows(2).all(|w| w[0].0 <= w[1].0) {
-      samples.sort_by_key(|s| s.0);
+      samples.sort_unstable_by_key(|s| s.0);
     }
     Ok(samples)
   }
@@ -755,21 +777,21 @@ where
   #[inline]
   pub fn ts_mget(&self, opt_li: impl IntoIterator<Item = TsMGet>) -> Result<Vec<TsMGetResult>> {
     let mut with_labels = false;
-    let mut selected_labels: rapidhash::RapidHashSet<String> = rapidhash::RapidHashSet::default();
+    let mut selected_labels = Vec::new();
     let mut filters = Vec::new();
 
     for opt in opt_li {
       match opt {
         TsMGet::WithLabels => with_labels = true,
-        TsMGet::SelectedLabels(labels) => {
-          selected_labels = labels.into_iter().collect();
-        }
+        TsMGet::SelectedLabels(labels) => selected_labels = labels,
         TsMGet::Filters(f) => filters = f,
       }
     }
 
     let kc = self.kc();
     let meta_ks = self.meta();
+    let data_ks = self.data();
+    let now_ms = current_now_ms();
     let filter = TimeSeriesLabelFilter::parse(&filters);
     let prefix = key::meta_prefix(&kc);
 
@@ -779,10 +801,27 @@ where
       let (k, v) = (entry.key(), entry.value());
       if k.starts_with(&prefix)
         && let Some(meta) = TimeSeriesMeta::decode(v)
+        && !meta.is_expired(now_ms)
         && filter.matches(&meta.labels)
       {
-        let name = str::from_utf8(&k[prefix.len()..]).unwrap_or("").to_string();
-        let latest_sample = self.ts_get(&k[prefix.len()..])?;
+        let name_bytes = &k[prefix.len()..];
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
+
+        let latest_sample = if meta.total_samples > 0 {
+          let data_prefix = key::prefix(&kc, name_bytes);
+          if let Some(chunk_entry) = data_ks.prefix(&data_prefix).next_back() {
+            let chunk = chunk_entry?;
+            if chunk.key().starts_with(&data_prefix) {
+              TSChunk::get_latest_sample(chunk.value()).ok().flatten()
+            } else {
+              None
+            }
+          } else {
+            None
+          }
+        } else {
+          None
+        };
 
         let labels = if with_labels {
           meta.labels
@@ -825,7 +864,7 @@ where
     let mut selected_labels = Vec::new();
     let mut filters = Vec::new();
     let mut count_limit = None;
-    let mut filter_by_ts = BTreeSet::new();
+    let mut filter_by_ts = TsFilter::default();
     let mut filter_by_value = None;
     let mut agg_type = None;
     let mut bucket_duration = 0;
@@ -858,89 +897,100 @@ where
       }
     }
 
-    let mut mget_opts = Vec::new();
-    if with_labels {
-      mget_opts.push(TsMGet::WithLabels);
-    }
-    if !selected_labels.is_empty() {
-      mget_opts.push(TsMGet::SelectedLabels(selected_labels));
-    }
-    if !filters.is_empty() {
-      mget_opts.push(TsMGet::Filters(filters));
-    }
+    let kc = self.kc();
+    let meta_ks = self.meta();
+    let now_ms = current_now_ms();
+    let filter = TimeSeriesLabelFilter::parse(&filters);
+    let prefix = key::meta_prefix(&kc);
 
-    let mget_res = self.ts_mget(mget_opts)?;
+    let query = TsRangeQuery {
+      start_ts,
+      end_ts,
+      count_limit,
+      filter_by_ts: &filter_by_ts,
+      filter_by_value,
+      agg_type,
+      bucket_duration,
+      alignment,
+      is_return_empty,
+      bucket_timestamp_type,
+    };
+
     let mut series_results = Vec::new();
 
-    let mut range_opts = Vec::new();
-    if let Some(c) = count_limit {
-      range_opts.push(TsRange::Count(c));
-    }
-    if !filter_by_ts.is_empty() {
-      range_opts.push(TsRange::FilterByTs(filter_by_ts));
-    }
-    if let Some((min, max)) = filter_by_value {
-      range_opts.push(TsRange::FilterByValue(min, max));
-    }
-    if let Some(t) = agg_type {
-      range_opts.push(TsRange::Aggregation(t, bucket_duration));
-      range_opts.push(TsRange::Alignment(alignment));
-    }
-    if is_return_empty {
-      range_opts.push(TsRange::Empty);
-    }
-    range_opts.push(TsRange::BucketTimestamp(bucket_timestamp_type));
+    for g in meta_ks.prefix(&prefix) {
+      let entry = g?;
+      let (k, v) = (entry.key(), entry.value());
+      if k.starts_with(&prefix)
+        && let Some(meta) = TimeSeriesMeta::decode(v)
+        && !meta.is_expired(now_ms)
+        && filter.matches(&meta.labels)
+      {
+        let name_bytes = &k[prefix.len()..];
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
 
-    for item in mget_res {
-      let samples = self.ts_range(&item.name, (start_ts, end_ts), range_opts.clone())?;
-      series_results.push((item.name, item.labels, samples));
-    }
+        let labels = if with_labels {
+          meta.labels.clone()
+        } else if let Some(ref gl) = group_by_label {
+          let mut res_labels = Vec::new();
+          if let Some((_, v)) = meta.labels.iter().find(|(lk, _)| lk == gl) {
+            res_labels.push((gl.clone(), v.clone()));
+          }
+          for sel_k in &selected_labels {
+            if sel_k != gl {
+              let val = meta
+                .labels
+                .iter()
+                .find(|(lk, _)| lk == sel_k)
+                .map(|(_, lv)| lv.as_str())
+                .unwrap_or("");
+              res_labels.push((sel_k.clone(), val.to_string()));
+            }
+          }
+          res_labels
+        } else if !selected_labels.is_empty() {
+          selected_labels
+            .iter()
+            .map(|sel_k| {
+              let val = meta
+                .labels
+                .iter()
+                .find(|(k, _)| k == sel_k)
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+              (sel_k.clone(), val.to_string())
+            })
+            .collect()
+        } else {
+          Vec::new()
+        };
 
-    type GroupedSeriesEntry = (Vec<(String, String)>, Vec<Vec<(u64, f64)>>, Vec<String>);
+        let samples = self.ts_range_internal_with_meta(name_bytes, Some(&meta), &query)?;
+        series_results.push((name, labels, samples));
+      }
+    }
 
     if let Some(ref group_label) = group_by_label
       && reducer != GroupReducerType::None
     {
       let mut groups: RapidHashMap<String, GroupedSeriesEntry> = RapidHashMap::default();
-      let kc = self.kc();
-      let meta_ks = self.meta();
 
       for (name, labels, samples) in series_results {
         let group_val = labels
           .iter()
           .find(|(k, _)| k == group_label)
           .map(|(_, v)| v.clone())
-          .or_else(|| {
-            let meta_k = key::meta(&kc, name.as_bytes());
-            meta_ks
-              .get(&meta_k)
-              .ok()
-              .flatten()
-              .and_then(|b| TimeSeriesMeta::decode(&b))
-              .and_then(|m| {
-                m.labels
-                  .iter()
-                  .find(|(k, _)| k == group_label)
-                  .map(|(_, v)| v.clone())
-              })
-          })
           .unwrap_or_default();
 
-        let entry = groups.entry(group_val.clone()).or_insert_with(|| {
-          (
-            vec![(group_label.clone(), group_val)],
-            Vec::new(),
-            Vec::new(),
-          )
-        });
-        entry.1.push(samples);
-        entry.2.push(name);
+        let entry = groups.entry(group_val).or_default();
+        entry.0.push(samples);
+        entry.1.push(name);
       }
 
       let mut final_res = Vec::new();
-      for (group_val, (mut labels, all_samples, source_keys)) in groups {
-        let all_sample_vecs: Vec<Vec<(u64, f64)>> = all_samples;
-        let reduced = group_samples_and_reduce(&all_sample_vecs, reducer);
+      for (group_val, (all_samples, source_keys)) in groups {
+        let reduced = group_samples_and_reduce(&all_samples, reducer);
+        let mut labels = vec![(group_label.clone(), group_val.clone())];
         if with_labels {
           labels.push(("__reducer__".to_string(), reducer.as_str().to_string()));
           labels.push(("__source__".to_string(), source_keys.join(",")));
@@ -952,6 +1002,7 @@ where
           source_keys,
         });
       }
+      final_res.sort_unstable_by(|a, b| a.name.cmp(&b.name));
       return Ok(final_res);
     }
 
@@ -1038,6 +1089,7 @@ where
     let filter = TimeSeriesLabelFilter::parse(filters);
     let prefix = key::meta_prefix(&self.kc());
     let meta_ks = self.meta();
+    let now_ms = current_now_ms();
 
     let mut keys = Vec::new();
     for g in meta_ks.prefix(&prefix) {
@@ -1045,13 +1097,14 @@ where
       let (k, v) = (entry.key(), entry.value());
       if k.starts_with(&prefix)
         && let Some(meta) = TimeSeriesMeta::decode(v)
+        && !meta.is_expired(now_ms)
         && filter.matches(&meta.labels)
       {
-        let name = str::from_utf8(&k[prefix.len()..]).unwrap_or("").to_string();
+        let name = String::from_utf8_lossy(&k[prefix.len()..]).into_owned();
         keys.push(name);
       }
     }
-    keys.sort();
+    keys.sort_unstable();
     Ok(keys)
   }
 
@@ -1131,7 +1184,10 @@ where
     let src_meta_k = key::meta(&kc, src_bytes);
     let dst_meta_k = key::meta(&kc, dst_bytes);
 
-    if !meta_ks.contains_key(&src_meta_k)? || !meta_ks.contains_key(&dst_meta_k)? {
+    let dst_meta_bytes = meta_ks
+      .get(&dst_meta_k)?
+      .ok_or_else(|| Error::invalid_data(ERR_TSDB_NOT_TSDB_KEY))?;
+    if !meta_ks.contains_key(&src_meta_k)? {
       return Err(Error::invalid_data(ERR_TSDB_NOT_TSDB_KEY));
     }
 
@@ -1143,8 +1199,7 @@ where
     let mut batch = self.batch_with_capacity(2);
     batch.rm_meta(&ds_meta_k);
 
-    if let Some(b) = meta_ks.get(&dst_meta_k)?
-      && let Some(mut dst_meta) = TimeSeriesMeta::decode(&b)
+    if let Some(mut dst_meta) = TimeSeriesMeta::decode(&dst_meta_bytes)
       && dst_meta.source_key.as_bytes() == src_bytes
     {
       dst_meta.source_key.clear();

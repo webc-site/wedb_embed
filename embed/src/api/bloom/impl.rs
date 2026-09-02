@@ -774,16 +774,7 @@ where
     items: &[I],
     opt_li: impl IntoIterator<Item = BfInsert>,
   ) -> Result<Vec<BloomFilterAddResult>> {
-    let mut opt = BloomFilterInsert::default();
-    for o in opt_li {
-      match o {
-        BfInsert::Capacity(c) => opt.capacity = c,
-        BfInsert::ErrorRate(e) => opt.error_rate = e,
-        BfInsert::Expansion(exp) => opt.expansion = exp,
-        BfInsert::NoCreate => opt.auto_create = false,
-        BfInsert::NonScaling => opt.expansion = 0,
-      }
-    }
+    let opt: BloomFilterInsert = opt_li.into_iter().collect();
     self.bf_insert_internal(key, items, &opt)
   }
 
@@ -1112,21 +1103,8 @@ where
     items: &[I],
     opt_li: impl IntoIterator<Item = CfInsert>,
   ) -> Result<Vec<bool>> {
-    let mut opt = CuckooFilterInsert {
-      nx: true,
-      ..Default::default()
-    };
-    for o in opt_li {
-      match o {
-        CfInsert::Capacity(c) => opt.capacity = c,
-        CfInsert::BucketSize(bs) => opt.bucket_size = bs,
-        CfInsert::MaxIterations(mi) => opt.max_iterations = mi,
-        CfInsert::Expansion(exp) => opt.expansion = exp,
-        CfInsert::PageSize(ps) => opt.page_size = ps,
-        CfInsert::NoCreate => opt.auto_create = false,
-        CfInsert::Nx => opt.nx = true,
-      }
-    }
+    let mut opt: CuckooFilterInsert = opt_li.into_iter().collect();
+    opt.nx = true;
     self.cf_insert_internal(key, items, &opt)
   }
 
@@ -1137,18 +1115,7 @@ where
     items: &[I],
     opt_li: impl IntoIterator<Item = CfInsert>,
   ) -> Result<Vec<bool>> {
-    let mut opt = CuckooFilterInsert::default();
-    for o in opt_li {
-      match o {
-        CfInsert::Capacity(c) => opt.capacity = c,
-        CfInsert::BucketSize(bs) => opt.bucket_size = bs,
-        CfInsert::MaxIterations(mi) => opt.max_iterations = mi,
-        CfInsert::Expansion(exp) => opt.expansion = exp,
-        CfInsert::PageSize(ps) => opt.page_size = ps,
-        CfInsert::NoCreate => opt.auto_create = false,
-        CfInsert::Nx => opt.nx = true,
-      }
-    }
+    let opt: CuckooFilterInsert = opt_li.into_iter().collect();
     self.cf_insert_internal(key, items, &opt)
   }
 

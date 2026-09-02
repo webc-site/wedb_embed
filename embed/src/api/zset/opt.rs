@@ -4,7 +4,8 @@ use crate::error::{Error, Result};
 
 /// ZADD command option flags (aligned with Apache Kvrocks ZSetFlags).
 /// ZADD 选项标志（对标 Apache Kvrocks ZSetFlags）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::EnumString, strum::FromRepr)]
+#[strum(ascii_case_insensitive)]
 pub enum ZAdd {
   Nx,
   Xx,
@@ -16,7 +17,10 @@ pub enum ZAdd {
 
 /// Aggregation function method (aligned with Apache Kvrocks AggregateMethod).
 /// 聚合函数类型（对标 Apache Kvrocks AggregateMethod）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum Aggregate {
   #[default]
   Sum,
@@ -27,13 +31,7 @@ pub enum Aggregate {
 impl Aggregate {
   #[inline]
   pub fn parse(s: &str) -> Self {
-    if s.eq_ignore_ascii_case("MIN") {
-      Self::Min
-    } else if s.eq_ignore_ascii_case("MAX") {
-      Self::Max
-    } else {
-      Self::Sum
-    }
+    s.parse().unwrap_or_default()
   }
 
   #[inline]

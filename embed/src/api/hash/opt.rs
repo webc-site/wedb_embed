@@ -1,6 +1,9 @@
 /// Domain operation (aligned with Apache Kvrocks HashFieldExpireCondition).
 /// HEXPIRE / HPEXPIRE 条件选项（对标 Apache Kvrocks HashFieldExpireCondition）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum HExpire {
   #[default]
   None,
@@ -12,7 +15,10 @@ pub enum HExpire {
 
 /// Domain operation (aligned with Apache Kvrocks HashFieldSetCondition).
 /// 字段设置条件（对标 Apache Kvrocks HashFieldSetCondition）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum HashFieldSetCondition {
   #[default]
   None,
@@ -22,7 +28,10 @@ pub enum HashFieldSetCondition {
 
 /// Domain operation (aligned with Apache Kvrocks HashSetExOpt::TTLAction / HashGetEx::TTLAction).
 /// TTL 动作类型（对标 Apache Kvrocks HashSetExOpt::TTLAction / HashGetEx::TTLAction）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum TTLAction {
   #[default]
   Discard,
@@ -175,7 +184,11 @@ impl HashGetEx {
 
 /// Hash length calculation mode (aligned with Kvrocks HashLengthMode).
 /// 哈希长度计算模式（对标 Apache Kvrocks HashLengthMode）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
+#[repr(u8)]
 pub enum HashLengthMode {
   #[default]
   Accurate = 0,

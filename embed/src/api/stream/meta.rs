@@ -1,4 +1,8 @@
-use std::{fmt, str};
+use std::{
+  fmt,
+  ops::{Deref, DerefMut},
+  str,
+};
 
 use crate::{
   error::{Error, Result},
@@ -310,7 +314,7 @@ impl NextStreamEntryIdStrategy {
 
 /// Domain operation (aligned with Apache Kvrocks StreamSubkeyType).
 /// 流子键类型枚举（对标 Apache Kvrocks StreamSubkeyType）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::FromRepr)]
 #[repr(u8)]
 pub enum StreamSubkeyType {
   StreamEntry = 0,
@@ -331,6 +335,21 @@ pub struct StreamMeta {
   pub last_entry_id: StreamId,
   pub entries_added: u64,
   pub group_number: u64,
+}
+
+impl Deref for StreamMeta {
+  type Target = KeyMeta;
+  #[inline(always)]
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl DerefMut for StreamMeta {
+  #[inline(always)]
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
 }
 
 impl StreamMeta {

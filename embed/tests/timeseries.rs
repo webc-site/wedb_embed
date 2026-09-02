@@ -4,7 +4,7 @@ use wedb_embed::{
   Fjall, WeDb,
   timeseries::{
     AggregationType, Aggregator, BucketTimestampType, ChunkType, DuplicatePolicy, GroupReducerType,
-    TSChunk, TSSample, TimeSeriesLabelFilter, TsCreate, TsMGet, TsMRange, TsRange,
+    TSChunk, TSSample, TimeSeriesLabelFilter, TsCreate, TsFilter, TsMGet, TsMRange, TsRange,
     group_samples_and_reduce,
   },
 };
@@ -267,6 +267,25 @@ fn test_timeseries_chunk_and_label_filter_details() -> Void {
     ("region".to_string(), "us-east".to_string())
   ]));
   assert!(!filter.matches(&[("sensor".to_string(), "pressure".to_string())]));
+
+  // 2.1 标签存在性过滤 (k!= 与 k=) 与空值边界测试
+  let mut exist_filter = TimeSeriesLabelFilter::new();
+  exist_filter.add_filter("env!="); // 必须存在标签 env
+  exist_filter.add_filter("deprecated="); // 不得存在标签 deprecated
+  assert!(exist_filter.matches(&[("env".to_string(), "".to_string())])); // 合法空值依然满足必须存在
+  assert!(exist_filter.matches(&[("env".to_string(), "prod".to_string())]));
+  assert!(!exist_filter.matches(&[("region".to_string(), "us".to_string())])); // 缺失 env
+  assert!(!exist_filter.matches(&[
+    ("env".to_string(), "prod".to_string()),
+    ("deprecated".to_string(), "true".to_string())
+  ])); // 存在 forbidden 的 deprecated 标签
+
+  // 2.2 同标签复合过滤 (In 与 NotIn 联用)
+  let mut compound_label_filter = TimeSeriesLabelFilter::new();
+  compound_label_filter.add_filter("sensor=(temp,humidity)");
+  compound_label_filter.add_filter("sensor!=humidity");
+  assert!(compound_label_filter.matches(&[("sensor".to_string(), "temp".to_string())]));
+  assert!(!compound_label_filter.matches(&[("sensor".to_string(), "humidity".to_string())]));
 
   // 3. group_samples_and_reduce
   let s1 = vec![(100, 10.0), (200, 20.0)];
@@ -1066,6 +1085,208 @@ fn test_timeseries_alp_compression_and_queries() -> Void {
   let opt_agg = [TsRange::Aggregation(AggregationType::Avg, 100)];
   let agg_res = db.ts_range("sensor:temp:alp", (1000, 2000), opt_agg)?;
   assert!(!agg_res.is_empty());
+
+  Ok(())
+}
+
+#[test]
+fn test_timeseries_filter_by_ts_optimized() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 测试 TsFilter 数据结构的基础特性与不变量
+  let raw_ts = vec![5000, 1000, 3000, 1000, 4000, 2000, 3000];
+  let filter = TsFilter::new(raw_ts);
+  assert_eq!(filter.len(), 5);
+  assert_eq!(filter.as_slice(), &[1000, 2000, 3000, 4000, 5000]);
+  assert!(filter.contains(1000));
+  assert!(filter.contains(3000));
+  assert!(!filter.contains(2500));
+  assert!(!filter.contains(6000));
+
+  // 2. 测试 matches_range 区间命中（Chunk剪枝）与异常区间守卫
+  assert!(filter.matches_range(500, 1500)); // 包含 1000
+  assert!(filter.matches_range(2000, 2000)); // 包含 2000
+  assert!(!filter.matches_range(1500, 1800)); // 无命中
+  assert!(!filter.matches_range(6000, 7000)); // 均在右侧，无命中
+  assert!(!filter.matches_range(100, 500)); // 均在左侧，无命中
+  assert!(!filter.matches_range(3000, 2000)); // 倒置区间快速排斥
+
+  // 2.1 测试 clamp_range 精确有效极值收缩与提前截断
+  assert_eq!(filter.clamp_range(0, 10000), Some((1000, 5000)));
+  assert_eq!(filter.clamp_range(1500, 3500), Some((2000, 3000)));
+  assert_eq!(filter.clamp_range(2000, 2000), Some((2000, 2000)));
+  assert_eq!(filter.clamp_range(2100, 2900), None); // 区间内无点，直接截断
+  assert_eq!(filter.clamp_range(6000, 8000), None);
+  assert_eq!(filter.clamp_range(100, 500), None);
+  assert_eq!(filter.clamp_range(500, 100), None);
+
+  // 3. 测试 filter_samples 双指针原地高效过滤
+  let mut test_samples = vec![
+    (1000, 10.0),
+    (1500, 15.0),
+    (2000, 20.0),
+    (2500, 25.0),
+    (3000, 30.0),
+    (4000, 40.0),
+    (6000, 60.0),
+  ];
+  filter.filter_samples(&mut test_samples, Some((15.0, 35.0)));
+  // 命中时间戳：1000, 2000, 3000, 4000
+  // 同时满足值 [15.0, 35.0]：2000 (20.0), 3000 (30.0)
+  assert_eq!(test_samples, vec![(2000, 20.0), (3000, 30.0)]);
+
+  // 4. 数据库 TS.RANGE 集成测试
+  db.ts_create("sensor:filter_ts", [])?;
+  for i in 1..=20 {
+    let ts = i * 100;
+    db.ts_add("sensor:filter_ts", ts, ts as f64, None, [])?;
+  }
+
+  // 4.1 乱序与重复输入 TsFilter 过滤打点
+  let query_filter = TsFilter::from([700, 300, 900, 300, 1500, 8888]);
+  let range_res = db.ts_range(
+    "sensor:filter_ts",
+    (0, 3000),
+    [TsRange::FilterByTs(query_filter)],
+  )?;
+  assert_eq!(
+    range_res,
+    vec![(300, 300.0), (700, 700.0), (900, 900.0), (1500, 1500.0)]
+  );
+
+  // 4.2 复合过滤：FilterByTs + FilterByValue
+  let compound_res = db.ts_range(
+    "sensor:filter_ts",
+    (0, 3000),
+    [
+      TsRange::FilterByTs(TsFilter::from(vec![200, 400, 600, 800])),
+      TsRange::FilterByValue(300.0, 700.0),
+    ],
+  )?;
+  assert_eq!(compound_res, vec![(400, 400.0), (600, 600.0)]);
+
+  // 4.3 TS.MRANGE 过滤测试
+  db.ts_create(
+    "sensor:mrange:1",
+    [TsCreate::Labels(vec![("type".into(), "metric".into())])],
+  )?;
+  db.ts_create(
+    "sensor:mrange:2",
+    [TsCreate::Labels(vec![("type".into(), "metric".into())])],
+  )?;
+  for ts in [100, 200, 300, 400] {
+    db.ts_add("sensor:mrange:1", ts, (ts * 2) as f64, None, [])?;
+    db.ts_add("sensor:mrange:2", ts, (ts * 3) as f64, None, [])?;
+  }
+
+  let mrange_res = db.ts_mrange(
+    (0, 1000),
+    [
+      TsMRange::Filters(vec!["type=metric".into()]),
+      TsMRange::FilterByTs(TsFilter::from([200, 300])),
+    ],
+  )?;
+  assert_eq!(mrange_res.len(), 2);
+  for item in mrange_res {
+    assert_eq!(item.samples.len(), 2);
+    assert_eq!(item.samples[0].0, 200);
+    assert_eq!(item.samples[1].0, 300);
+  }
+
+  Ok(())
+}
+
+#[test]
+fn test_timeseries_expiration_and_edge_optimizations() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 验证过期时序键在 ts_mget、ts_mrange、ts_queryindex 中的正确过滤
+  db.ts_create(
+    "sensor:live",
+    [TsCreate::Labels(vec![
+      ("app".into(), "web".into()),
+      ("status".into(), "ok".into()),
+    ])],
+  )?;
+  db.ts_create(
+    "sensor:dead",
+    [TsCreate::Labels(vec![
+      ("app".into(), "web".into()),
+      ("status".into(), "expired".into()),
+    ])],
+  )?;
+
+  db.ts_add("sensor:live", 1000, 10.0, None, [])?;
+  db.ts_add("sensor:dead", 1000, 99.0, None, [])?;
+
+  // 将 sensor:dead 设为已过期 (expire = 0s)
+  assert!(db.expire("sensor:dead", 0)?);
+
+  // 1.1 ts_queryindex 应当排除已过期的 dead
+  let keys = db.ts_queryindex(&["app=web".to_string()])?;
+  assert_eq!(keys, vec!["sensor:live"]);
+
+  // 1.2 ts_mget 应当排除已过期的 dead，且高效不触发额外点查
+  let mget_res = db.ts_mget([TsMGet::Filters(vec!["app=web".to_string()])])?;
+  assert_eq!(mget_res.len(), 1);
+  assert_eq!(mget_res[0].name, "sensor:live");
+  assert_eq!(mget_res[0].sample, Some((1000, 10.0)));
+
+  // 1.3 ts_mrange 应当排除已过期的 dead
+  let mrange_res = db.ts_mrange((0, 2000), [TsMRange::Filters(vec!["app=web".to_string()])])?;
+  assert_eq!(mrange_res.len(), 1);
+  assert_eq!(mrange_res[0].name, "sensor:live");
+
+  // 2. 多分组 GroupBy 确定性排序验证 (按名称升序稳定返回)
+  db.ts_create(
+    "device:c",
+    [TsCreate::Labels(vec![("zone".into(), "c".into())])],
+  )?;
+  db.ts_create(
+    "device:a",
+    [TsCreate::Labels(vec![("zone".into(), "a".into())])],
+  )?;
+  db.ts_create(
+    "device:b",
+    [TsCreate::Labels(vec![("zone".into(), "b".into())])],
+  )?;
+
+  db.ts_add("device:c", 100, 30.0, None, [])?;
+  db.ts_add("device:a", 100, 10.0, None, [])?;
+  db.ts_add("device:b", 100, 20.0, None, [])?;
+
+  let grouped_res = db.ts_mrange(
+    (0, 200),
+    [
+      TsMRange::Filters(vec!["zone!=".into()]),
+      TsMRange::GroupBy("zone".into(), GroupReducerType::Sum),
+    ],
+  )?;
+  assert_eq!(grouped_res.len(), 3);
+  assert_eq!(grouped_res[0].name, "zone=a");
+  assert_eq!(grouped_res[1].name, "zone=b");
+  assert_eq!(grouped_res[2].name, "zone=c");
+
+  // 3. Chunk 乱序插入与向前扩展首时间戳测试
+  db.ts_create("sensor:prepend", [])?;
+  db.ts_add("sensor:prepend", 1000, 10.0, None, [])?;
+  db.ts_add("sensor:prepend", 2000, 20.0, None, [])?;
+  db.ts_add("sensor:prepend", 3000, 30.0, None, [])?;
+  // 向头部插入更早的时间戳 500 (测试 chunk 首时间戳更新与旧 key 正确迁移)
+  db.ts_add("sensor:prepend", 500, 5.0, None, [])?;
+
+  let samples = db.ts_range_one("sensor:prepend", (0, 5000))?;
+  assert_eq!(
+    samples,
+    vec![(500, 5.0), (1000, 10.0), (2000, 20.0), (3000, 30.0)]
+  );
+
+  // 4. 状态机转义与边界测试
+  let mut filter = TimeSeriesLabelFilter::new();
+  assert!(filter.add_filter("host=\"server\\\"1\""));
+  assert_eq!(filter.len(), 1);
 
   Ok(())
 }

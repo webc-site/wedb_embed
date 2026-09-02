@@ -1,14 +1,16 @@
 pub mod chunk;
 pub mod r#const;
+pub mod filter;
 pub mod gorilla;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
 pub mod opt;
-use std::{cmp::Ordering, collections::BinaryHeap, str};
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 pub use chunk::{ChunkHeader, MergeStats, TSChunk};
 pub use r#const::*;
+pub use filter::{LabelMatcher, TimeSeriesLabelFilter, TsFilter};
 pub use gorilla::TSSample;
 pub use key::{
   chunk as compose_ts_chunk, chunk as compose_ts_item,
@@ -21,205 +23,6 @@ pub use opt::{
   TSDownStreamMeta, TsCreate, TsInfoResult, TsMGet, TsMGetResult, TsMRange, TsMRangeResult,
   TsRange,
 };
-use rapidhash::{RapidHashMap, RapidHashSet};
-/// Domain operation (aligned with Apache Kvrocks TSMQueryFilterParser).
-/// 时序标签过滤器（对标 Apache Kvrocks TSMQueryFilterParser）
-#[derive(Debug, Clone, Default)]
-pub struct TimeSeriesLabelFilter {
-  pub equals: RapidHashMap<String, RapidHashSet<String>>,
-  pub not_equals: RapidHashMap<String, RapidHashSet<String>>,
-  pub has_matchers: bool,
-}
-
-impl TimeSeriesLabelFilter {
-  pub fn new() -> Self {
-    Self::default()
-  }
-
-  pub fn parse(filters: &[String]) -> Self {
-    let mut filter = Self::new();
-    for f in filters {
-      filter.add_filter(f);
-    }
-    filter
-  }
-
-  pub fn add_filter(&mut self, expr: &str) -> bool {
-    let trimmed = expr.trim();
-    if trimmed.is_empty() {
-      return false;
-    }
-
-    let (op_pos, is_not_equal) = Self::find_operator(trimmed);
-    if op_pos == usize::MAX {
-      return false;
-    }
-
-    let label = trimmed[..op_pos].trim().to_string();
-    let value_str = if is_not_equal {
-      trimmed[op_pos + 2..].trim()
-    } else {
-      trimmed[op_pos + 1..].trim()
-    };
-
-    if is_not_equal {
-      let mut vals = RapidHashSet::default();
-      if value_str.is_empty() {
-        // k!= 表示必须存在标签 k
-        vals.insert(String::new());
-      } else if value_str.starts_with('(') && value_str.ends_with(')') {
-        for item in Self::split_value_list(&value_str[1..value_str.len() - 1]) {
-          let unquoted = Self::unquote(item);
-          if !unquoted.is_empty() {
-            vals.insert(unquoted.to_string());
-          }
-        }
-      } else {
-        vals.insert(Self::unquote(value_str).to_string());
-      }
-      self.not_equals.entry(label).or_default().extend(vals);
-      self.has_matchers = true;
-      true
-    } else {
-      let mut vals = RapidHashSet::default();
-      if value_str.is_empty() {
-        // k= 表示标签 k 不能存在
-        self.equals.entry(label).or_default();
-      } else if value_str.starts_with('(') && value_str.ends_with(')') {
-        for item in Self::split_value_list(&value_str[1..value_str.len() - 1]) {
-          let unquoted = Self::unquote(item);
-          if !unquoted.is_empty() {
-            vals.insert(unquoted.to_string());
-          }
-        }
-        self.equals.entry(label).or_default().extend(vals);
-      } else {
-        vals.insert(Self::unquote(value_str).to_string());
-        self.equals.entry(label).or_default().extend(vals);
-      }
-      self.has_matchers = true;
-      true
-    }
-  }
-
-  fn find_operator(expr: &str) -> (usize, bool) {
-    let mut quote = None;
-    let bytes = expr.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    while i < len {
-      let b = bytes[i];
-      if b == b'\'' || b == b'"' {
-        if quote == Some(b) {
-          quote = None;
-        } else if quote.is_none() {
-          quote = Some(b);
-        }
-      } else if quote.is_none() {
-        if b == b'!' && i + 1 < len && bytes[i + 1] == b'=' {
-          return (i, true);
-        } else if b == b'=' {
-          return (i, false);
-        }
-      }
-      i += 1;
-    }
-    (usize::MAX, false)
-  }
-
-  fn split_value_list(list: &str) -> Vec<&str> {
-    let mut values = Vec::new();
-    let mut quote = None;
-    let mut depth = 0;
-    let mut start = 0;
-    let bytes = list.as_bytes();
-
-    for (i, &b) in bytes.iter().enumerate() {
-      if b == b'\'' || b == b'"' {
-        if quote == Some(b) {
-          quote = None;
-        } else if quote.is_none() {
-          quote = Some(b);
-        }
-      } else if quote.is_none() {
-        if b == b'(' {
-          depth += 1;
-        } else if b == b')' && depth > 0 {
-          depth -= 1;
-        } else if b == b',' && depth == 0 {
-          let val = list[start..i].trim();
-          if !val.is_empty() {
-            values.push(val);
-          }
-          start = i + 1;
-        }
-      }
-    }
-    if start < list.len() {
-      let val = list[start..].trim();
-      if !val.is_empty() {
-        values.push(val);
-      }
-    }
-    values
-  }
-
-  #[inline]
-  fn unquote(s: &str) -> &str {
-    let s = s.trim();
-    if s.len() >= 2
-      && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
-    {
-      &s[1..s.len() - 1]
-    } else {
-      s
-    }
-  }
-
-  pub fn matches(&self, meta_labels: &[(String, String)]) -> bool {
-    if !self.has_matchers {
-      return true;
-    }
-
-    for (k, allowed_vals) in &self.equals {
-      let actual = meta_labels
-        .iter()
-        .find(|(lk, _)| lk == k)
-        .map(|(_, lv)| lv.as_str());
-      if allowed_vals.is_empty() {
-        if actual.is_some() {
-          return false;
-        }
-      } else {
-        match actual {
-          Some(actual_v) => {
-            if !allowed_vals.contains(actual_v) {
-              return false;
-            }
-          }
-          None => return false,
-        }
-      }
-    }
-
-    for (k, forbidden_vals) in &self.not_equals {
-      let actual = meta_labels
-        .iter()
-        .find(|(lk, _)| lk == k)
-        .map(|(_, lv)| lv.as_str());
-      if forbidden_vals.contains("") && actual.is_none() {
-        return false;
-      }
-      if let Some(actual_v) = actual
-        && forbidden_vals.contains(actual_v)
-      {
-        return false;
-      }
-    }
-
-    true
-  }
-}
 
 /// Domain operation (aligned with Apache Kvrocks GroupSamplesAndReduce).
 /// 多序列聚合归约（对标 Apache Kvrocks GroupSamplesAndReduce）

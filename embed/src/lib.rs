@@ -104,8 +104,8 @@ pub use tdigest::{
 };
 pub use timeseries::{
   AggregationType, Aggregator, BucketTimestampType, ChunkHeader, ChunkType, DuplicatePolicy,
-  GroupReducerType, IntoTsRange, TSChunk, TSDownStreamMeta, TSSample, TsCreate, TsInfoResult,
-  TsMGet, TsMGetResult, TsMRange, TsMRangeResult, TsRange,
+  GroupReducerType, IntoTsRange, TSChunk, TSDownStreamMeta, TSSample, TsCreate, TsFilter,
+  TsInfoResult, TsMGet, TsMGetResult, TsMRange, TsMRangeResult, TsRange,
 };
 pub use wedb::{DATA, Db, DbBatch, Dbs, IntoOptId, META, Namespace, Namespaces, WeDb};
 pub use wedb_resp::{RespValue, find_crlf, parse_i64_fast, parse_resp, parse_resp_slice};
