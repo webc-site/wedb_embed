@@ -1,4 +1,4 @@
-use std::thread;
+use std::{thread, time::Duration};
 
 use aok::Void;
 use tempfile::tempdir;
@@ -799,6 +799,55 @@ fn test_string_kvrocks_msetxx_and_mset_keep_ttl() -> Void {
   } else {
     panic!("expected Idx result");
   }
+
+  Ok(())
+}
+
+#[test]
+fn test_string_kvrocks_extensions_and_empty_value() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 空字符串读写（Kvrocks GetEmptyValue 测试）
+  db.set("empty_k", "", [])?;
+  assert_eq!(db.get("empty_k")?, Some(Vec::new()));
+  assert_eq!(db.strlen("empty_k")?, 0);
+
+  // 2. psetex 与 setex_ttl
+  db.psetex("psetex_k", "v_ms", 10_000)?;
+  assert_eq!(db.get("psetex_k")?, Some(b"v_ms".to_vec()));
+  let pttl = db.pttl("psetex_k")?;
+  assert!(pttl > 8000 && pttl <= 10_000);
+
+  db.setex_ttl("setex_sec_k", "v_sec", 100)?;
+  assert_eq!(db.get("setex_sec_k")?, Some(b"v_sec".to_vec()));
+  let ttl = db.ttl("setex_sec_k")?;
+  assert!(ttl > 80 && ttl <= 100);
+
+  // 3. SETRANGE 空串与非空填充
+  assert_eq!(db.setrange("nonexist_empty", 10, "")?, 0);
+  assert_eq!(db.get("nonexist_empty")?, None);
+
+  assert_eq!(db.setrange("nonexist_pad", 5, "hello")?, 10);
+  let padded = db.get("nonexist_pad")?.unwrap();
+  assert_eq!(&padded[..5], &[0, 0, 0, 0, 0]);
+  assert_eq!(&padded[5..], b"hello");
+
+  // 4. 过期 Hash 覆盖创建字符串自动清理残留元数据
+  db.hset("h_exp", &[("f1", "v1")])?;
+  db.pexpire("h_exp", 1)?;
+  thread::sleep(Duration::from_millis(10));
+  assert!(!db.exists_one("h_exp")?);
+
+  // 通过 append 建立字符串并清理旧 Hash 残留
+  assert_eq!(db.append("h_exp", "new_str")?, 7);
+  assert_eq!(db.get("h_exp")?, Some(b"new_str".to_vec()));
+
+  // 验证后续无法再作为 Hash 读取
+  assert_eq!(
+    db.hlen("h_exp").unwrap_err().to_string(),
+    wedb_embed::ERR_WRONG_TYPE
+  );
 
   Ok(())
 }

@@ -37,6 +37,14 @@ where
   }
 
   #[inline]
+  pub fn with_get<K: AsRef<[u8]>, R>(&self, key: K, f: impl FnOnce(&[u8]) -> R) -> Result<Option<R>> {
+    match get_string_raw(self, key.as_ref())? {
+      Some((raw, _, offset)) => Ok(Some(f(&raw[offset..]))),
+      None => Ok(None),
+    }
+  }
+
+  #[inline]
   pub fn get_with_expire<K: AsRef<[u8]>>(&self, key: K) -> Result<(Option<Vec<u8>>, u64)> {
     match get_string_raw(self, key.as_ref())? {
       Some((raw, exp, offset)) => Ok((Some(raw[offset..].to_vec()), exp)),
@@ -240,6 +248,23 @@ where
   }
 
   #[inline]
+  pub fn setex_ttl<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    &self,
+    key: K,
+    val: V,
+    ttl_sec: u64,
+  ) -> Result<()> {
+    self.set(key, val, [Set::Ex(ttl_sec)])?;
+    Ok(())
+  }
+
+  #[inline]
+  pub fn psetex<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, val: V, ttl_ms: u64) -> Result<()> {
+    self.set(key, val, [Set::Px(ttl_ms)])?;
+    Ok(())
+  }
+
+  #[inline]
   pub fn getex<K: AsRef<[u8]>>(
     &self,
     key: K,
@@ -368,7 +393,14 @@ where
     let target_expire = if keep_ttl { old_expire } else { expire_ms };
 
     let enc_val = encode_string_value(formatted_bytes, target_expire);
-    self.data().insert(&raw_k, &enc_val)?;
+    if old_raw.is_none() && !self.meta().is_empty()? {
+      let mut batch = self.batch();
+      batch.insert_data(&raw_k, &enc_val);
+      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+      batch.commit()?;
+    } else {
+      self.data().insert(&raw_k, &enc_val)?;
+    }
     Ok(new_num)
   }
 
@@ -427,7 +459,14 @@ where
     let mut num_buf = zmij::Buffer::new();
     let formatted_bytes = format_float_bytes(new_num, &mut num_buf);
     let enc_val = encode_string_value(formatted_bytes, target_expire);
-    self.data().insert(&raw_k, &enc_val)?;
+    if old_raw.is_none() && !self.meta().is_empty()? {
+      let mut batch = self.batch();
+      batch.insert_data(&raw_k, &enc_val);
+      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+      batch.commit()?;
+    } else {
+      self.data().insert(&raw_k, &enc_val)?;
+    }
     Ok(new_num)
   }
 
@@ -471,7 +510,14 @@ where
     }
     enc_val.extend_from_slice(val_bytes);
 
-    self.data().insert(&raw_k, &enc_val)?;
+    if old_raw.is_none() && !self.meta().is_empty()? {
+      let mut batch = self.batch();
+      batch.insert_data(&raw_k, &enc_val);
+      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+      batch.commit()?;
+    } else {
+      self.data().insert(&raw_k, &enc_val)?;
+    }
     Ok(new_len)
   }
 
@@ -549,7 +595,14 @@ where
       enc_val.extend_from_slice(&old_payload[required_len..]);
     }
 
-    self.data().insert(&raw_k, &enc_val)?;
+    if old_raw.is_none() && !self.meta().is_empty()? {
+      let mut batch = self.batch();
+      batch.insert_data(&raw_k, &enc_val);
+      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+      batch.commit()?;
+    } else {
+      self.data().insert(&raw_k, &enc_val)?;
+    }
     Ok(new_total_len)
   }
 

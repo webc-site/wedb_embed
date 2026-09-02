@@ -69,7 +69,7 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
       for (i, &val) in slice.iter().enumerate() {
         let enc = val.fast_round_to_int(exp_factor);
         let decoded = F::decode_from_int(enc, 1, frac_exp);
-        if decoded.to_raw_bits() == val.to_raw_bits() && !val.is_impossible() {
+        if decoded.to_raw_bits() == val.to_raw_bits() {
           enc_ptr.add(i).write(enc);
           min_val = min_val.min(enc);
           max_val = max_val.max(enc);

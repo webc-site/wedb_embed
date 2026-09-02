@@ -24,7 +24,7 @@ pub use bloom::{
   CuckooFilterInfo, CuckooFilterInsert,
 };
 pub use engine::{Batch, Engine, Fjall, Partition};
-pub use error::{Error, Result};
+pub use error::{ERR_NO_SUCH_KEY, ERR_WRONG_TYPE, Error, Result};
 pub use geo::{
   DistanceSort, DistanceUnit, GeoHashArea, GeoHashBits, GeoHashNeighbors, GeoHashRadius,
   GeoHashRange, GeoPoint, GeoRadius, GeoSearch, GeoSearchStore, GeoShape, GeoShapeType,
