@@ -1,5 +1,3 @@
-pub use crate::error::ERR_WRONG_TYPE;
-
 pub const ERR_STREAM_NOT_FOUND: &str = "Stream not found";
 pub const ERR_GROUP_NOT_FOUND: &str = "Consumer group not found";
 pub const ERR_GROUP_BUSY: &str = "BUSYGROUP Consumer Group name already exists";

@@ -1,5 +1,3 @@
-pub use crate::error::ERR_WRONG_TYPE;
-
 pub const DEFAULT_SUG_LIMIT: usize = 10;
 pub const HNSW_VECTOR_FIELD_META_LEN: usize = 29;
 

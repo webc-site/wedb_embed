@@ -112,35 +112,35 @@ where
 {
   let kc = db.kc();
   let data_ks = db.data();
-  let s_prefix = key::prefix(&kc, key);
+  let s_prefix = key::prefix_stack(&kc, key);
   for g in data_ks.prefix(&s_prefix) {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&s_prefix) {
+    if k.starts_with(s_prefix.as_slice()) {
       batch.rm_data(k);
     }
   }
-  let g_prefix = key::group_prefix(&kc, key);
+  let g_prefix = key::group_prefix_stack(&kc, key);
   for g in data_ks.prefix(&g_prefix) {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&g_prefix) {
+    if k.starts_with(g_prefix.as_slice()) {
       batch.rm_data(k);
     }
   }
-  let c_prefix = key::consumer_prefix_all(&kc, key);
+  let c_prefix = key::consumer_prefix_all_stack(&kc, key);
   for g in data_ks.prefix(&c_prefix) {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&c_prefix) {
+    if k.starts_with(c_prefix.as_slice()) {
       batch.rm_data(k);
     }
   }
-  let p_prefix = key::pel_prefix_all(&kc, key);
+  let p_prefix = key::pel_prefix_all_stack(&kc, key);
   for g in data_ks.prefix(&p_prefix) {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&p_prefix) {
+    if k.starts_with(p_prefix.as_slice()) {
       batch.rm_data(k);
     }
   }
@@ -184,7 +184,7 @@ where
   }
 
   let kc = db.kc();
-  let prefix = key::prefix(&kc, key);
+  let prefix = key::prefix_stack(&kc, key);
   let data_ks = db.data();
   let mut delete_cnt = 0u64;
   let mut last_deleted_id = StreamId::min();
@@ -195,7 +195,7 @@ where
   while let Some(g) = iter.next() {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if !k.starts_with(&prefix) {
+    if !k.starts_with(prefix.as_slice()) {
       break;
     }
     if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
@@ -393,13 +393,13 @@ where
   }
 
   let kc = db.kc();
-  let prefix = key::prefix(&kc, key_bytes);
+  let prefix = key::prefix_stack(&kc, key_bytes);
   let data_ks = db.data();
   let mut count = 0u64;
   for g in data_ks.prefix(&prefix) {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if !k.starts_with(&prefix) {
+    if !k.starts_with(prefix.as_slice()) {
       break;
     }
     if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
@@ -511,7 +511,7 @@ where
     return Ok(Vec::new());
   }
 
-  let prefix = key::prefix(&kc, key_bytes);
+  let prefix = key::prefix_stack(&kc, key_bytes);
   let max_count = options.count.unwrap_or(usize::MAX);
 
   if !options.reverse {
@@ -525,7 +525,7 @@ where
     )) {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(&prefix) {
+      if !k.starts_with(prefix.as_slice()) {
         break;
       }
       if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
@@ -561,7 +561,7 @@ where
     {
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(&prefix) {
+      if !k.starts_with(prefix.as_slice()) {
         break;
       }
       if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
@@ -620,7 +620,7 @@ where
   }
 
   let kc = db.kc();
-  let prefix = key::prefix(&kc, key_bytes);
+  let prefix = key::prefix_stack(&kc, key_bytes);
   let data_ks = db.data();
   let mut delete_cnt = 0u64;
   let mut last_deleted_id = StreamId::min();
@@ -632,7 +632,7 @@ where
   while let Some(g) = iter.next() {
     let entry = g?;
     let (k, _) = (entry.key(), entry.value());
-    if !k.starts_with(&prefix) {
+    if !k.starts_with(prefix.as_slice()) {
       break;
     }
     if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
@@ -749,12 +749,12 @@ where
       let need_new_last = deleted_ids.contains(&meta.last_entry_id);
 
       if need_new_first || need_new_last {
-        let prefix = key::prefix(&kc, key_bytes);
+        let prefix = key::prefix_stack(&kc, key_bytes);
         if need_new_first {
           for g in data_ks.prefix(&prefix) {
             let entry = g?;
             let (k, _) = (entry.key(), entry.value());
-            if !k.starts_with(&prefix) {
+            if !k.starts_with(prefix.as_slice()) {
               break;
             }
             if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
@@ -770,7 +770,7 @@ where
           for g in data_ks.prefix(&prefix).rev() {
             let entry = g?;
             let (k, _) = (entry.key(), entry.value());
-            if !k.starts_with(&prefix) {
+            if !k.starts_with(prefix.as_slice()) {
               break;
             }
             if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
@@ -1944,13 +1944,13 @@ where
 
   let kc = db.kc();
   let data_ks = db.data();
-  let g_prefix = key::group_prefix(&kc, key_bytes);
+  let g_prefix = key::group_prefix_stack(&kc, key_bytes);
   let mut groups = Vec::new();
 
   for g in data_ks.prefix(&g_prefix) {
     let entry = g?;
     let (k, v) = (entry.key(), entry.value());
-    if !k.starts_with(&g_prefix) {
+    if !k.starts_with(g_prefix.as_slice()) {
       break;
     }
     let group_name = str::from_utf8(&k[g_prefix.len()..])
