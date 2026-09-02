@@ -856,7 +856,7 @@ fn test_set_kvrocks_comprehensive_suite_and_scan_by_member() -> Void {
   db.sadd("rand_set", &["r1", "r2", "r3", "r4"])?;
   let r_one = db.srandmember_one("rand_set")?;
   assert!(r_one.is_some());
-  assert!(["r1", "r2", "r3", "r4"].contains(&std::str::from_utf8(&r_one.unwrap()).unwrap()));
+  assert!([b"r1".as_slice(), b"r2", b"r3", b"r4"].contains(&r_one.unwrap().as_slice()));
 
   // 负数允许重复采样
   let dup_samples = db.srandmember("rand_set", -10)?;
