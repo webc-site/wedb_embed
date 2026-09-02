@@ -115,7 +115,7 @@ records:
     repo: Muvon/pulsora
     issue: 7
     url: https://github.com/Muvon/pulsora/issues/7
-    title: "Feature request: Support ALP encoding for market price floating-point columns"
+    title: "Feature request: Support fastalp encoding for market price floating-point columns"
     status: submitted
     date: 2026-09-03
 
@@ -123,7 +123,7 @@ records:
     repo: jocarrd/graupel
     issue: 7
     url: https://github.com/jocarrd/graupel/issues/7
-    title: "Support ALP (Adaptive Lossless Floating-Point) codec"
+    title: "Support fastalp (Adaptive Lossless Floating-Point) codec"
     status: submitted
     date: 2026-09-03
 
@@ -131,7 +131,7 @@ records:
     repo: jocarrd/graupel
     pr_number: 8
     url: https://github.com/jocarrd/graupel/pull/8
-    title: "feat(codec): add ALP (Adaptive Lossless Floating-Point) compression codec"
+    title: "feat(codec): add fastalp (Adaptive Lossless Floating-Point) compression codec"
     status: submitted
     date: 2026-09-03
 
