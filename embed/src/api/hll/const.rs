@@ -24,13 +24,13 @@ pub const HLL_REGISTER_MAX: u8 = (1 << HLL_REGISTER_BITS) - 1;
 /// Asymptotic constant alpha_infinity = 0.5 / ln(2) (aligned with Kvrocks kHyperLogLogAlpha).
 /// 渐近常数 alpha_infinity = 0.5 / ln(2)（对标 Apache Kvrocks kHyperLogLogAlpha）
 pub const HLL_ALPHA_INF: f64 = 0.721_347_520_444_481_7;
-/// Operation definition.
+/// Register count floating-point constant m = 16384.0.
 /// 寄存器数量浮点常数 m = 16384.0
 pub const HLL_M_F64: f64 = HLL_REGISTERS as f64;
-/// Operation definition.
+/// Reciprocal of register count 1.0 / m.
 /// 寄存器数量倒数 1.0 / m
 pub const HLL_INV_M: f64 = 1.0 / HLL_M_F64;
-/// Returns or computes calculated value.
+/// Precomputed constant alpha * m^2 to eliminate runtime multiplications.
 /// 预计算常量 alpha * m^2（编译期计算，避免运行时重复乘法）
 pub const HLL_ALPHA_M_SQ: f64 = HLL_ALPHA_INF * HLL_M_F64 * HLL_M_F64;
 /// Total segment count (16 segments, aligned with Kvrocks kHyperLogLogSegmentCount).

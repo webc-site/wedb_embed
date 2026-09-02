@@ -125,7 +125,7 @@ impl HyperLogLog {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Extracts count value from specified register (0..63).
   /// 提取指定寄存器的计数值（0..63）
   #[inline]
   pub fn get_register(&self, index: usize) -> u8 {
@@ -135,7 +135,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Sets count value for specified register.
   /// 设置指定寄存器的计数值
   #[inline]
   pub fn set_register(&mut self, index: usize, val: u8) {
@@ -160,7 +160,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Adds element data using RapidHash.
   /// 添加元素数据（RapidHash 极速哈希）
   #[inline]
   pub fn add(&mut self, data: &[u8]) -> bool {
@@ -168,7 +168,7 @@ impl HyperLogLog {
     self.add_hash(h)
   }
 
-  /// Domain operation (aligned with Kvrocks / Redis).
+  /// Adds element data using MurmurHash64A aligned with Kvrocks / Redis.
   /// 添加元素数据（MurmurHash64A 对标 Kvrocks / Redis）
   #[inline]
   pub fn add_murmur(&mut self, data: &[u8]) -> bool {
@@ -176,7 +176,7 @@ impl HyperLogLog {
     self.add_hash(h)
   }
 
-  /// Returns or computes calculated value.
+  /// Adds precomputed 64-bit hash value directly.
   /// 添加已计算好的 64 位哈希值
   #[inline]
   pub fn add_hash(&mut self, hash: u64) -> bool {
@@ -213,7 +213,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Computes current approximate cardinality estimation.
   /// 计算当前近似基数估算值
   #[inline]
   pub fn count(&self) -> u64 {
@@ -225,7 +225,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Merges another HyperLogLog in-place with zero heap allocation.
   /// 就地合并另一个 HyperLogLog（零堆分配极速合并）
   pub fn merge(&mut self, other: &Self) {
     if ptr_eq(self, other) || other.is_empty() {
@@ -252,7 +252,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Merges raw byte slice directly into current HyperLogLog.
   /// 合并原始字节切片（零堆分配极速合并）
   pub fn merge_bytes(&mut self, other: &[u8]) {
     if other.is_empty() {
@@ -268,7 +268,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Returns whether HyperLogLog is completely empty (cardinality 0).
   /// 判断是否全空（估算为 0）
   #[inline]
   pub fn is_empty(&self) -> bool {
@@ -278,7 +278,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Clears all registers to zero.
   /// 清空所有寄存器
   #[inline]
   pub fn clear(&mut self) {
@@ -288,7 +288,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Exports as dense register byte slice.
   /// 导出为 Dense 密集切片
   pub fn to_dense(&self) -> Result<Vec<u8>> {
     match self.encode_type {
@@ -301,7 +301,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Attempts to export as sparse byte slice (returns None if uncompressible).
   /// 尝试导出为 Sparse 稀疏切片（若不可压缩则返回 None）
   pub fn to_sparse(&self) -> Option<Vec<u8>> {
     match self.encode_type {
@@ -310,7 +310,7 @@ impl HyperLogLog {
     }
   }
 
-  /// Operation definition.
+  /// Validates algorithmic correctness and error bounds.
   /// 自检算法正确性与误差边界
   pub fn selftest() -> bool {
     let mut hll = Self::new();

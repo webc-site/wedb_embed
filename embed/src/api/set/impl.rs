@@ -163,7 +163,8 @@ where
 
   #[inline]
   pub fn smembers<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let mut results = Vec::new();
+    let card = self.scard(&key)? as usize;
+    let mut results = Vec::with_capacity(card.min(4096));
     self.siter(key, |m| {
       results.push(m.to_vec());
       true
@@ -254,7 +255,7 @@ where
       _ => return Ok(Vec::new()),
     };
 
-    let mut members = Vec::new();
+    let mut members = Vec::with_capacity((meta.base.size as usize).min(4096));
     self.siter(k_bytes, |m| {
       members.push(m.to_vec());
       true
@@ -475,19 +476,24 @@ where
   }
 
   #[inline]
-  pub fn sinter<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+  fn compute_sinter_set<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<HashSet<Vec<u8>>>> {
     if keys.is_empty() {
-      return Ok(Vec::new());
+      return Ok(None);
     }
     if keys.len() == 1 {
-      return self.smembers(&keys[0]);
+      let mut set = HashSet::new();
+      self.siter(&keys[0], |m| {
+        set.insert(m.to_vec());
+        true
+      })?;
+      return Ok(Some(set));
     }
 
     let mut key_cards: Vec<(&K, u64)> = Vec::with_capacity(keys.len());
     for k in keys {
       let card = self.scard(k)?;
       if card == 0 {
-        return Ok(Vec::new());
+        return Ok(None);
       }
       key_cards.push((k, card));
     }
@@ -503,7 +509,7 @@ where
 
     for &(k, card) in &key_cards[1..] {
       if current.is_empty() {
-        return Ok(Vec::new());
+        return Ok(None);
       }
       if (current.len() as u64).saturating_mul(4) < card {
         current.retain(|m| self.sismember(k, m).unwrap_or(false));
@@ -519,7 +525,15 @@ where
       }
     }
 
-    Ok(current.into_iter().collect())
+    Ok(Some(current))
+  }
+
+  #[inline]
+  pub fn sinter<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+    match self.compute_sinter_set(keys)? {
+      Some(set) => Ok(set.into_iter().collect()),
+      None => Ok(Vec::new()),
+    }
   }
 
   #[inline]
@@ -530,59 +544,14 @@ where
 
   #[inline]
   pub fn sintercard<K: AsRef<[u8]>>(&self, keys: &[K], limit: usize) -> Result<usize> {
-    if keys.is_empty() {
-      return Ok(0);
-    }
-    if keys.len() == 1 {
-      let card = self.scard(&keys[0])? as usize;
-      return Ok(if limit == 0 { card } else { card.min(limit) });
-    }
-
-    let mut key_cards: Vec<(&K, u64)> = Vec::with_capacity(keys.len());
-    for k in keys {
-      let card = self.scard(k)?;
-      if card == 0 {
-        return Ok(0);
-      }
-      key_cards.push((k, card));
-    }
-
-    key_cards.sort_unstable_by_key(|&(_, card)| card);
-
-    let smallest_key = key_cards[0].0;
-    let mut current: HashSet<Vec<u8>> = HashSet::with_capacity(key_cards[0].1 as usize);
-    self.siter(smallest_key, |m| {
-      current.insert(m.to_vec());
-      true
-    })?;
-
-    if current.is_empty() {
-      return Ok(0);
-    }
-
-    for &(k, card) in &key_cards[1..] {
-      if current.is_empty() {
-        return Ok(0);
-      }
-      if (current.len() as u64).saturating_mul(4) < card {
-        current.retain(|m| self.sismember(k, m).unwrap_or(false));
+    match self.compute_sinter_set(keys)? {
+      Some(set) => Ok(if limit == 0 {
+        set.len()
       } else {
-        let mut next_set = HashSet::with_capacity(current.len());
-        self.siter(k, |m| {
-          if current.contains(m) {
-            next_set.insert(m.to_vec());
-          }
-          true
-        })?;
-        current = next_set;
-      }
+        set.len().min(limit)
+      }),
+      None => Ok(0),
     }
-
-    Ok(if limit == 0 {
-      current.len()
-    } else {
-      current.len().min(limit)
-    })
   }
 
   #[inline]
@@ -653,17 +622,13 @@ where
   }
 
   #[inline]
-  pub fn sdiff<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+  fn compute_sdiff_set<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<HashSet<Vec<u8>>>> {
     if keys.is_empty() {
-      return Ok(Vec::new());
+      return Ok(None);
     }
-    if keys.len() == 1 {
-      return self.smembers(&keys[0]);
-    }
-
     let first_card = self.scard(&keys[0])? as usize;
     if first_card == 0 {
-      return Ok(Vec::new());
+      return Ok(None);
     }
 
     let mut current: HashSet<Vec<u8>> = HashSet::with_capacity(first_card);
@@ -674,7 +639,7 @@ where
 
     for k in &keys[1..] {
       if current.is_empty() {
-        return Ok(Vec::new());
+        return Ok(None);
       }
       let card = self.scard(k)?;
       if (current.len() as u64).saturating_mul(4) < card {
@@ -687,7 +652,15 @@ where
       }
     }
 
-    Ok(current.into_iter().collect())
+    Ok(Some(current))
+  }
+
+  #[inline]
+  pub fn sdiff<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+    match self.compute_sdiff_set(keys)? {
+      Some(set) => Ok(set.into_iter().collect()),
+      None => Ok(Vec::new()),
+    }
   }
 
   #[inline]
@@ -698,27 +671,14 @@ where
 
   #[inline]
   pub fn sdiffcard<K: AsRef<[u8]>>(&self, keys: &[K], limit: usize) -> Result<usize> {
-    if keys.is_empty() {
-      return Ok(0);
-    }
-    let first_card = self.scard(&keys[0])? as usize;
-    if first_card == 0 {
-      return Ok(0);
-    }
-    if keys.len() == 1 {
-      return Ok(if limit == 0 {
-        first_card
+    match self.compute_sdiff_set(keys)? {
+      Some(set) => Ok(if limit == 0 {
+        set.len()
       } else {
-        first_card.min(limit)
-      });
+        set.len().min(limit)
+      }),
+      None => Ok(0),
     }
-
-    let diff = self.sdiff(keys)?;
-    Ok(if limit == 0 {
-      diff.len()
-    } else {
-      diff.len().min(limit)
-    })
   }
 
   #[inline]

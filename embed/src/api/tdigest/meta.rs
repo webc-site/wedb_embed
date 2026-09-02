@@ -42,7 +42,7 @@ impl DerefMut for TDigestMeta {
 }
 
 impl TDigestMeta {
-  /// Operation definition.
+  /// Encoded metadata length: 26B KeyMeta + 8B (comp+cap) + 32B (4*u64) + 16B (2*f64) + 16B (2*u64) = 98 bytes.
   /// 26 字节 KeyMeta + 8 字节 (compression+capacity) + 32 字节 (4*u64) + 16 字节 (2*f64) + 16 字节 (2*u64) = 98 字节
   pub const ENCODED_SIZE: usize = KeyMeta::ENCODED_SIZE + 72; // 98
   pub const KVROCKS_ENCODED_SIZE: usize = KeyMeta::KVROCKS_COMPLEX_ENCODED_SIZE + 72; // 97

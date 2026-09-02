@@ -235,7 +235,7 @@ where
     val: V,
     expire_at_ms: u64,
   ) -> Result<()> {
-    self.set(key, val, [Set::ExAt(expire_at_ms / 1000)])?;
+    self.set(key, val, [Set::PxAt(expire_at_ms)])?;
     Ok(())
   }
 
@@ -602,14 +602,36 @@ where
   }
 
   #[inline]
+  pub fn setnx_ex<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    &self,
+    key: K,
+    val: V,
+    expire_at_ms: u64,
+  ) -> Result<bool> {
+    if expire_at_ms > 0 {
+      Ok(
+        self
+          .set(key, val, [Set::Nx, Set::PxAt(expire_at_ms)])?
+          .is_some(),
+      )
+    } else {
+      Ok(self.set(key, val, [Set::Nx])?.is_some())
+    }
+  }
+
+  #[inline]
   pub fn setxx<K: AsRef<[u8]>, V: AsRef<[u8]>>(
     &self,
     key: K,
     val: V,
-    expire_ms: u64,
+    expire_at_ms: u64,
   ) -> Result<bool> {
-    if expire_ms > 0 {
-      Ok(self.set(key, val, [Set::Xx, Set::Px(expire_ms)])?.is_some())
+    if expire_at_ms > 0 {
+      Ok(
+        self
+          .set(key, val, [Set::Xx, Set::PxAt(expire_at_ms)])?
+          .is_some(),
+      )
     } else {
       Ok(self.set(key, val, [Set::Xx])?.is_some())
     }
@@ -649,6 +671,15 @@ where
   }
 
   #[inline]
+  pub fn msetxx<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, kvs: &[(K, V)]) -> Result<bool> {
+    let args = StringMSet {
+      set_type: StringSetType::Xx,
+      ..Default::default()
+    };
+    self.mset_internal(kvs, args)
+  }
+
+  #[inline]
   pub fn mset_with<K: AsRef<[u8]>, V: AsRef<[u8]>>(
     &self,
     kvs: &[(K, V)],
@@ -667,8 +698,14 @@ where
       return Ok(true);
     }
 
-    // 1. 处理 NX 条件判断
-    if args.set_type == StringSetType::Nx {
+    // 1. 处理 NX / XX 条件判断与 KEEPTTL 单遍预提取（单次遍历优化）
+    let mut expires = if args.keep_ttl {
+      Vec::with_capacity(kvs.len())
+    } else {
+      Vec::new()
+    };
+
+    if args.set_type != StringSetType::None || args.keep_ttl {
       let data_ks = self.data();
       let meta_ks = self.meta();
       let meta_is_empty = meta_ks.is_empty()?;
@@ -683,58 +720,50 @@ where
       for (k, _) in kvs {
         let key_bytes = k.as_ref();
         let raw_k = key::raw(&kc, key_bytes);
-        if let Some(raw) = data_ks.get(&raw_k)?
-          && decode_live_string_value(&raw, now_ms).is_some()
-        {
-          return Ok(false);
-        }
-        if let Some(ref mut buf) = check_buf {
-          match check_composite_meta_not_other_type_with_buf::<E>(
-            meta_ks, &kc, key_bytes, b"", now_ms, buf,
-          ) {
-            Ok(()) => {}
-            Err(ref e) if e.is_wrong_type() => return Ok(false),
-            Err(e) => return Err(e),
-          }
-        }
-      }
-    }
+        let raw_opt = data_ks.get(&raw_k)?;
 
-    // 2. 处理 KEEPTTL 条件判断与过期时间预提取
-    let mut expires = Vec::new();
-    if args.keep_ttl {
-      let data_ks = self.data();
-      let meta_ks = self.meta();
-      let meta_is_empty = meta_ks.is_empty()?;
-      let kc = self.kc();
-      let now_ms = current_now_ms();
-      let mut check_buf = if !meta_is_empty {
-        Some(Vec::new())
-      } else {
-        None
-      };
-
-      expires.reserve(kvs.len());
-      for (k, _) in kvs {
-        let key_bytes = k.as_ref();
-        let raw_k = key::raw(&kc, key_bytes);
-        if let Some(raw) = data_ks.get(&raw_k)? {
-          let (expire_at, _) = decode_string_value(&raw);
-          if !is_string_expired(expire_at, now_ms) {
-            expires.push(expire_at);
-            continue;
+        let (is_live, live_expire) = match raw_opt {
+          Some(ref raw) => {
+            let (exp, _) = decode_string_value(raw);
+            if !is_string_expired(exp, now_ms) {
+              (true, exp)
+            } else {
+              (false, 0)
+            }
           }
-        }
-        if let Some(ref mut buf) = check_buf {
-          match check_composite_meta_not_other_type_with_buf::<E>(
-            meta_ks, &kc, key_bytes, b"", now_ms, buf,
-          ) {
-            Ok(()) => expires.push(0),
-            Err(ref e) if e.is_wrong_type() => expires.push(0),
-            Err(e) => return Err(e),
+          None => (false, 0),
+        };
+
+        if is_live {
+          if args.set_type == StringSetType::Nx {
+            return Ok(false);
+          }
+          if args.keep_ttl {
+            expires.push(live_expire);
           }
         } else {
-          expires.push(0);
+          // 键不存在或已过期
+          if args.set_type == StringSetType::Xx {
+            return Ok(false);
+          }
+
+          if let Some(ref mut buf) = check_buf {
+            match check_composite_meta_not_other_type_with_buf::<E>(
+              meta_ks, &kc, key_bytes, b"", now_ms, buf,
+            ) {
+              Ok(()) => {}
+              Err(ref e) if e.is_wrong_type() => {
+                if args.set_type == StringSetType::Nx {
+                  return Ok(false);
+                }
+              }
+              Err(e) => return Err(e),
+            }
+          }
+
+          if args.keep_ttl {
+            expires.push(0);
+          }
         }
       }
     }

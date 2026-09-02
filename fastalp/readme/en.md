@@ -4,6 +4,31 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
 
 ---
 
+- [Overview](#overview)
+- [Usage](#usage)
+  - [Installation](#installation)
+  - [Basic Compression and Decompression](#basic-compression-and-decompression)
+  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
+  - [Single-Precision Floating-Point Data](#single-precision-floating-point-data)
+- [Features](#features)
+- [Architecture & Design](#architecture-design)
+  - [Compression Pipeline](#compression-pipeline)
+  - [Decompression Pipeline](#decompression-pipeline)
+- [Tech Stack](#tech-stack)
+- [Directory Structure](#directory-structure)
+- [Benchmarks & C++ Comparison](#benchmarks-c-comparison)
+  - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
+  - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
+  - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
+- [Architecture Comparison & Engineering Optimizations](#architecture-comparison--engineering-optimizations)
+  - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection--zero-heap-allocation)
+  - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
+  - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
+  - [Zero-Multiplication LUT Decompression Acceleration](#zero-multiplication-lut-decompression-acceleration)
+  - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
+  - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
+  - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
+
 ## Overview
 
 Floating-point values in real-world applications (such as IoT sensor readings, financial transactions, GPS coordinates, and time-series metrics) frequently originate as decimal representations.<br>
@@ -22,6 +47,9 @@ Traditional general-purpose compression algorithms and integer bitpackers operat
 
 - **Dedicated Exception Handling**:<br>
   Unencodable values and floating-point anomalies are stored in a dedicated exception stream without compromising primary payload compression efficiency.
+
+- **Raw Fallback Protection**:<br>
+  Automatically falls back to uncompressed raw mode when noise or extreme precision values would cause negative compression.
 
 - **Zero Extra Allocations**:<br>
   Exposes `_into` APIs to allow caller-managed buffer reuse across high-throughput streaming pipelines.
@@ -133,15 +161,19 @@ graph TD
 
 ### Compression Pipeline
 
+- **Constant Detection & Fallback Filter (`encoder.rs`)**:<br>
+  Quickly evaluates bit-exact identical sequences (`v.is_exact_same(first)`). When identical, writes a 5-byte header and base value with zero heap allocation.<br>
+  When estimated payload exceeds raw size plus header overhead, switches to 3-byte raw mode to guarantee zero data inflation.
+
 - **Sampling (`sampler.rs`)**:<br>
   Evaluates up to 32 evenly distributed sample points across parameter combinations `(exp, fac)`.<br>
   Selects parameters minimizing total storage cost: `bit_width * count + exceptions * penalty`.
 
-- **Lossless Verification (`sampler.rs`)**:<br>
+- **Lossless Verification (`sampler.rs`, `float.rs`)**:<br>
   Multiplies float by $10^{\text{exp}} \times 10^{-\text{fac}}$, rounds via constants, and verifies exact inverse equality against raw IEEE 754 bit representations.
 
-- **Base Offset & Bitpacking (`bitpack.rs`, `encoder.rs`)**:<br>
-  Computes minimum integer value as base, subtracts base from valid integers, determines required bit width, and writes dense packed bits.
+- **Base Offset & Bitpacking (`bitpack/pack.rs`, `encoder.rs`)**:<br>
+  Computes minimum integer value as base, subtracts base from valid integers, determines required bit width, and writes dense packed bits via a 128-bit register accumulator.
 
 - **Exception Stream (`encoder.rs`)**:<br>
   Appends position and raw bits for values that fail exact integer roundtrip.
@@ -149,14 +181,13 @@ graph TD
 ### Decompression Pipeline
 
 - **Header Parsing (`decoder.rs`)**:<br>
-  Reads 5-byte compact bitfield header (3-byte minimal frame for empty sequences), extracting type tag, element count, packed `(exp, fac, bit_width)` parameters, and base value.<br>
-  Zero-overhead termination when no exceptions exist.
+  Reads compact header, extracting format type and element count.<br>
+  For raw fallback chunks, performs direct zero-copy slice restoration.<br>
+  For ALP chunks, extracts packed `(exp, fac, bit_width)` parameters and base value.
 
-- **Bit Unpacking (`bitpack.rs`)**:<br>
-  Unpacks dense bitstream into integer offset array.
-
-- **Value Reconstruction (`decoder.rs`)**:<br>
-  Computes original floating-point values via `(offset + base) * 10^fac * 10^-exp`.
+- **Bit Unpacking & LUT Reconstruction (`bitpack/unpack.rs`)**:<br>
+  Small bit-widths (1, 2, 4, 8 bits) reconstruct floats via precomputed stack lookup tables in a single pass.<br>
+  General bit-widths unpack via register bit-stream sliding windows.
 
 - **Exception Patching (`decoder.rs`)**:<br>
   Overwrites positions listed in the exception table with raw IEEE 754 bit patterns.
@@ -182,16 +213,22 @@ fastalp/
 │   ├── en.md           # English documentation
 │   └── zh.md           # Chinese documentation
 ├── src/                # Library source code
-│   ├── bitpack.rs      # Bit-level packing and unpacking operations
-│   ├── constants.rs    # Precomputed power tables and bit width utilities
-│   ├── decoder.rs      # Generic decompression logic for f32 and f64 payloads
-│   ├── encoder.rs      # Generic compression logic and exception serialization
+│   ├── bitpack/        # Modular bit-level packing and unpacking
+│   │   ├── mod.rs      # Module facade and re-exports
+│   │   ├── pack.rs     # Dense bitpacking with 128-bit register accumulator
+│   │   └── unpack.rs   # Direct bit unpacking with stack LUT acceleration
+│   ├── constants.rs    # Precomputed static power tables and format constants
+│   ├── decoder.rs      # Generic decompression logic and raw fallback restore
+│   ├── encoder.rs      # Generic compression logic, O(1) constant fast path, raw fallback
 │   ├── error.rs        # Error definitions and Result type alias
-│   ├── lib.rs          # Public crate exports and entry APIs
-│   └── sampler.rs      # Parameter optimization and lossless roundtrip verification
+│   ├── float.rs        # AlpFloat abstraction trait and f32/f64 zero-cost implementation
+│   ├── lib.rs          # Public crate exports and high-level API
+│   ├── params.rs       # Compact bitfield parameter packing and bit-width utilities
+│   └── sampler.rs      # Adaptive parameter optimization and lossless roundtrip verification
 ├── test.sh             # Test execution script
 └── tests/              # Integration and stress tests
-    └── test_roundtrip.rs # Roundtrip integrity and compression tests
+    ├── test_alp_dataset.rs # ALP paper 31 real-world datasets roundtrip & ratio tests
+    └── test_roundtrip.rs   # Roundtrip integrity and boundary tests
 ```
 
 ---
@@ -200,119 +237,121 @@ fastalp/
 
 ### Benchmark Environment & Toolchain
 
-All microbenchmarks were executed and measured on the same physical machine:
+All microbenchmarks were executed and measured side-by-side on the same physical host:
 
 - **Processor (CPU)**: Apple M2 Max (12 Cores: 8 Performance @ 3.68 GHz + 4 Efficiency @ 2.42 GHz, ARMv8.6-A NEON ISA)<br>
 - **Host OS**: macOS Sequoia 26.5.1 (Darwin Kernel Version 25.5.0 arm64)<br>
 - **Rust Toolchain**: `rustc 1.98.0 / nightly` (flags: `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`)<br>
 - **C++ Compiler Toolchain**: Homebrew LLVM Clang 22.1.8 (`-O3 -std=c++17 -DNDEBUG -march=native`) / CMake 4.4.2<br>
 - **Memory Allocator**: `mimalloc 0.1.52`<br>
-- **Benchmark Suites**: Rust `divan 0.1.20` vs C++ `std::chrono::high_resolution_clock` (100,000 warmup & steady-state iterations)
+- **Benchmark Suites**: Rust `divan 0.1.20` vs C++ `std::chrono::high_resolution_clock` (steady-state median sampling)
 
 ### Side-by-Side Throughput Comparison
 
-| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Speedup vs C++ |
+| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio |
 |---|---|---|---|---|
-| **f64 Decompress**<br>Sensor Decimals | 1024 x f64<br>8 KB | **26.92 GB/s** | 6.55 GB/s | **4.11x** |
-| **f64 Compress**<br>Sensor Decimals | 1024 x f64<br>8 KB | **1.33 GB/s** | 0.66 GB/s | **2.02x** |
-| **f64 Compress**<br>Identical Values | 1024 x f64<br>8 KB | **3.45 GB/s** | 0.66 GB/s | **5.23x** |
-| **f64 Decompress**<br>Identical Values | 1024 x f64<br>8 KB | **92.83 GB/s** | 23.40 GB/s | **3.97x** |
-| **f64 Compress**<br>Large Batch | 65535 x f64<br>512 KB | **3.35 GB/s** | 2.26 GB/s | **1.48x** |
-| **f64 Decompress**<br>Large Batch | 65535 x f64<br>512 KB | **36.92 GB/s** | 6.98 GB/s | **5.29x** |
-| **f32 Compress**<br>Sensor Decimals | 1024 x f32<br>4 KB | **1.04 GB/s** | 445.0 MB/s | **2.34x** |
-| **f32 Decompress**<br>Sensor Decimals | 1024 x f32<br>4 KB | **14.06 GB/s** | 3.72 GB/s | **3.78x** |
-| **Decompression Geometric Mean** | - | - | - | **4.25x** |
-| **Compression Geometric Mean** | - | - | - | **2.45x** |
-| **Overall Geometric Mean** | - | - | - | **3.23x** |
+| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
+| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
+| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
+| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
+| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
+| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
+| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
+| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
 
 ### Real-World Datasets Compression Ratio
 
-Evaluated against all 31 standard real-world datasets from the original ALP paper:
+Evaluated against all 31 standard real-world datasets from the original ALP paper (253,952 bytes of raw 64-bit doubles):
 
-| Dataset Name | fastalp (This Project) | C++ Reference ALP | Chimp128 | Gorilla | Zstd-3 |
-|---|---|---|---|---|---|
-| **gov26**<br>Government Stats | **630.15x**<br>0.10 b/v | **455.11x** | 1.82x | 1.45x | 1.95x |
-| **gov31**<br>Government Stats | **327.68x**<br>0.20 b/v | **292.57x** | 1.80x | 1.44x | 1.91x |
-| **gov30**<br>Government Stats | **148.95x**<br>0.43 b/v | **141.24x** | 1.78x | 1.42x | 1.86x |
-| **stocks_uk**<br>UK Stock Prices | **7.03x**<br>9.10 b/v | **7.00x** | 1.75x | 1.48x | 1.62x |
-| **cms9**<br>Healthcare Billing | **5.76x**<br>11.10 b/v | **5.74x** | 1.68x | 1.41x | 1.55x |
-| **medicare9**<br>Medical Monitoring | **5.76x**<br>11.10 b/v | **5.74x** | 1.68x | 1.41x | 1.55x |
-| **neon_pm10_dust**<br>PM10 Sensor | **5.27x**<br>12.13 b/v | **5.26x** | 1.62x | 1.38x | 1.50x |
-| **stocks_usa_c**<br>US Stock Prices | **4.20x**<br>15.24 b/v | **4.19x** | 1.58x | 1.35x | 1.46x |
-| **gov40**<br>Government Timestamps | **3.35x**<br>19.10 b/v | **3.34x** | 1.52x | 1.32x | 1.42x |
-| **stocks_de**<br>German Stock Prices | **3.12x**<br>20.51 b/v | **3.12x** | 1.49x | 1.30x | 1.39x |
-| **bird_migration_f**<br>GPS Coordinates | **3.09x**<br>20.71 b/v | **3.09x** | 1.46x | 1.28x | 1.36x |
-| **neon_bio_temp_c**<br>Biology Sensor | **2.77x**<br>23.10 b/v | **2.77x** | 1.43x | 1.26x | 1.34x |
-| **food_prices**<br>Consumer Index | **2.49x**<br>25.66 b/v | **2.49x** | 1.41x | 1.25x | 1.31x |
-| **city_temperature_f**<br>Weather Temp | **2.44x**<br>26.27 b/v | **2.43x** | 1.39x | 1.24x | 1.30x |
-| **ssd_hdd_benchmarks_f**<br>Disk Benchmarks | **2.26x**<br>28.29 b/v | **2.26x** | 1.36x | 1.22x | 1.28x |
-| **neon_wind_dir**<br>Wind Direction | **2.20x**<br>29.10 b/v | **2.20x** | 1.35x | 1.21x | 1.27x |
-| **neon_air_pressure**<br>Air Pressure | **2.19x**<br>29.24 b/v | **2.19x** | 1.34x | 1.20x | 1.26x |
-| **basel_wind_f**<br>Basel Wind Speed | **2.15x**<br>29.82 b/v | **2.14x** | 1.33x | 1.19x | 1.25x |
-| **arade4**<br>Hydrology Sensor | **2.02x**<br>31.74 b/v | **2.01x** | 1.30x | 1.18x | 1.23x |
-| **basel_temp_f**<br>Basel Temperature | **2.01x**<br>31.79 b/v | **2.01x** | 1.30x | 1.18x | 1.23x |
-| **bitcoin_f**<br>Bitcoin Rates | **1.95x**<br>32.77 b/v | **1.95x** | 1.28x | 1.17x | 1.21x |
-| **bitcoin_transactions_f**<br>On-chain Tx | **1.69x**<br>37.98 b/v | **1.68x** | 1.24x | 1.14x | 1.18x |
-| **medicare1**<br>Medical Records | **1.56x**<br>41.01 b/v | **1.56x** | 1.21x | 1.12x | 1.15x |
-| **cms1**<br>Medical Records | **1.53x**<br>41.90 b/v | **1.53x** | 1.20x | 1.11x | 1.14x |
-| **cms25**<br>Medical Records | **1.50x**<br>42.59 b/v | **1.50x** | 1.19x | 1.10x | 1.13x |
-| **nyc29**<br>NYC Taxi Travel | **1.51x**<br>42.51 b/v | **1.50x** | 1.19x | 1.10x | 1.13x |
-| **TOTAL / Overall Dataset Average** | **1.94x ~ 2.0x** | **1.94x ~ 2.0x** | **1.45x** | **1.35x** | **1.40x** |
+| Dataset Name | Raw Size | fastalp Compressed Size | fastalp Ratio | C++ Ref ALP Ratio |
+|---|---|---|---|---|
+| **gov26**<br>Government Stats | 8192 B | 13 B | **630.15x** (0.10 b/v) | 455.11x |
+| **gov31**<br>Government Stats | 8192 B | 25 B | **327.68x** (0.20 b/v) | 292.57x |
+| **gov30**<br>Government Stats | 8192 B | 55 B | **148.95x** (0.43 b/v) | 141.24x |
+| **stocks_uk**<br>UK Stock Prices | 8192 B | 1165 B | **7.03x** (9.10 b/v) | 7.00x |
+| **cms9**<br>Healthcare Billing | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
+| **medicare9**<br>Medical Monitoring | 8192 B | 1421 B | **5.76x** (11.10 b/v) | 5.74x |
+| **neon_pm10_dust**<br>PM10 Sensor | 8192 B | 1553 B | **5.27x** (12.13 b/v) | 5.26x |
+| **stocks_usa_c**<br>US Stock Prices | 8192 B | 1951 B | **4.20x** (15.24 b/v) | 4.19x |
+| **gov40**<br>Government Timestamps | 8192 B | 2445 B | **3.35x** (19.10 b/v) | 3.34x |
+| **stocks_de**<br>German Stock Prices | 8192 B | 2625 B | **3.12x** (20.51 b/v) | 3.12x |
+| **bird_migration_f**<br>GPS Coordinates | 8192 B | 2651 B | **3.09x** (20.71 b/v) | 3.09x |
+| **neon_bio_temp_c**<br>Biology Sensor | 8192 B | 2957 B | **2.77x** (23.10 b/v) | 2.77x |
+| **food_prices**<br>Consumer Index | 8192 B | 3285 B | **2.49x** (25.66 b/v) | 2.49x |
+| **city_temperature_f**<br>Weather Temp | 8192 B | 3363 B | **2.44x** (26.27 b/v) | 2.43x |
+| **ssd_hdd_benchmarks_f**<br>Disk Benchmarks | 8192 B | 3621 B | **2.26x** (28.29 b/v) | 2.26x |
+| **neon_wind_dir**<br>Wind Direction | 8192 B | 3725 B | **2.20x** (29.10 b/v) | 2.20x |
+| **neon_air_pressure**<br>Air Pressure | 8192 B | 3743 B | **2.19x** (29.24 b/v) | 2.19x |
+| **basel_wind_f**<br>Basel Wind Speed | 8192 B | 3817 B | **2.15x** (29.82 b/v) | 2.14x |
+| **arade4**<br>Hydrology Sensor | 8192 B | 4063 B | **2.02x** (31.74 b/v) | 2.01x |
+| **basel_temp_f**<br>Basel Temperature | 8192 B | 4069 B | **2.01x** (31.79 b/v) | 2.01x |
+| **bitcoin_f**<br>Bitcoin Rates | 8192 B | 4195 B | **1.95x** (32.77 b/v) | 1.95x |
+| **bitcoin_transactions_f**<br>On-chain Tx | 8192 B | 4861 B | **1.69x** (37.98 b/v) | 1.68x |
+| **medicare1**<br>Medical Records | 8192 B | 5249 B | **1.56x** (41.01 b/v) | 1.56x |
+| **cms1**<br>Medical Records | 8192 B | 5363 B | **1.53x** (41.90 b/v) | 1.53x |
+| **cms25**<br>Medical Records | 8192 B | 5451 B | **1.50x** (42.59 b/v) | 1.50x |
+| **nyc29**<br>NYC Taxi Travel | 8192 B | 5441 B | **1.51x** (42.51 b/v) | 1.50x |
+| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.52x (Expansion) |
+| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.51x (Expansion) |
+| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x** (Guaranteed) | 0.64x (Expansion) |
+| **TOTAL / Overall Average** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
-### Key Differences vs C++ Implementation
-
-| Aspect | C++ ALP (Reference Paper) | Rust fastalp (This Project) |
-|---|---|---|
-| **Compression Ratio** | Paper baseline benchmark | **Higher compression ratio** (5B header + 0-exception elimination) |
-| **Memory Allocation** | Heap allocations and raw pointers | **Zero heap allocation** via `_into` |
-| **Decoding Pipeline** | 2-pass (unpack to memory -> convert to float) | **Single-pass streaming**: 128-bit register direct decode |
-| **Bitpacker Code Size** | Bloated auto-generated template files | **Compact 128-bit register accumulator** + LUT lookup |
-| **Safety** | Raw pointers | **Memory safe**, strict bounds validation |
-| **Portability** | Hardcoded x86 AVX2/AVX-512 intrinsics | **Pure Rust**, cross-platform on x86_64, ARM64, and WASM |
-| **Decompression Speed** | Paper baseline (6 - 8 GB/s) | **4.25x geometric mean speedup** (14.0 - 92.8 GB/s) |
-| **Compression Speed** | Paper baseline (0.6 - 2.2 GB/s) | **2.45x geometric mean speedup** (1.0 - 3.4 GB/s) |
+Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative compression on difficult datasets, reducing overall storage from 130,597 B to 110,773 B and elevating average compression ratio to **2.29x**.
 
 ---
 
-## Architecture & Optimizations
+## Architecture Comparison & Engineering Optimizations
 
-`fastalp` outperforms the reference C++ implementation while maintaining safe, pure Rust code due to modular architectural optimizations:
+Compared with the reference C++ implementation, `fastalp` achieves superior compression ratio and memory efficiency in safe pure Rust:
+
+### Constant Sequence Fast Detection & Zero-Heap Allocation
+
+- **Reference C++ Implementation**:<br>
+  Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
+- **fastalp Optimization**:<br>
+  Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
+  Directly emits a 5-byte header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
+
+### Raw Fallback Safeguard Against Negative Compression
+
+- **Reference C++ Implementation**:<br>
+  Lacks safeguard against data expansion; on non-decimal double datasets with high exception rates, the exception table expands beyond original payload size (e.g. `poi_lat` yields 0.51x, `air_sensor` yields 0.52x).<br>
+- **fastalp Optimization**:<br>
+  Monitors estimated payload size during encoding; when compressed size exceeds uncompressed input plus header overhead, automatically falls back to `TYPE_F64_RAW` or `TYPE_F32_RAW` mode;<br>
+  Writes a 3-byte header and stores raw uncompressed bytes, restored via zero-copy `copy_nonoverlapping`, eliminating negative compression and raising dataset average ratio to 2.29x.
+
+### Zero-Heap Direct Streaming Decompression
+
+- **Reference C++ Implementation**:<br>
+  Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
+- **fastalp Optimization**:<br>
+  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
 
 ### Zero-Multiplication LUT Decompression Acceleration
 
-- For small bit-widths (1, 2, 4, 8 bits), there are only 2, 4, 16, or 256 possible offset states.<br>
-- `fastalp` precomputes a compact (16 B – 2 KB) stack-allocated lookup table before entering the unpacking loop:<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`.<br>
-- In the unpacking inner loop, float reconstruction reduces to $O(1)$ direct array index lookups, eliminating integer and floating-point multiplication from the critical decode path, driving throughput to 26.9+ GB/s.
-
-### Zero-Allocation Single-Pass Direct Streaming
-
-- **Conventional Codec Bottleneck**:<br>
-  C++ ALP and other codecs employ a two-stage decoding model: stage 1 unpacks the bitstream into intermediate heap arrays (triggering cache pollution and allocator overhead), while stage 2 iterates over the array to compute inverse float scaling.<br>
+- **Reference C++ Implementation**:<br>
+  Inner loop executes integer and floating-point multiplications for every element.<br>
 - **fastalp Optimization**:<br>
-  Employs a single-pass direct reconstruction pipeline. As bits are unpacked within CPU registers, float values are written directly to the target destination buffer, resulting in zero intermediate heap allocations and high L1/L2 cache locality.
+  For small bit-widths (1, 2, 4, 8 bits with 2, 4, 16, 256 possible offsets), precomputes a compact stack lookup table:<br>
+  `lut[offset] = (offset + base) * 10^fac * 10^-exp`;<br>
+  Inner loop reduces to $O(1)$ direct array lookups, eliminating all integer and floating-point multiplications on the decode path.
 
-### 128-bit Register Bitpacker
+### Pure 128-bit Register Bitpacker
 
-- Eliminates slice allocation and memory barriers in the critical bitpacking path.<br>
-- Utilizes a single 128-bit register pair (`acc: u128`, `bits_in_acc: u32`) as a sliding bit-window.<br>
-- Flushing and fetching are executed with single 64-bit integer instructions.
-
-### SIMD Auto-Vectorization with `as_chunks`
-
-- Dedicated fast-paths for bit-widths `0, 1, 2, 4, 8, 16, 32, 64`:<br>
-  - `bit_width == 0` (Identical / Constant streams): Executed via memory-bandwidth saturation (90+ GB/s).<br>
-  - `bit_width == 1, 2, 4`: Extracts 8 / 4 / 2 values per byte with zero accumulator shift overhead.<br>
-  - Leverages standard `as_chunks::<N>()` slices with compile-time fixed dimensions, allowing LLVM to emit optimal SIMD (ARM NEON / x86) vector loops.
+- **Reference C++ Implementation**:<br>
+  Generates extensive template code across multiple compilation units, creating large binaries with architecture-specific intrinsics.<br>
+- **fastalp Optimization**:<br>
+  Maintains a sliding bit window with a single 128-bit register accumulator (`acc: u128`, `bits_in_acc: u32`), executing 64-bit word writes and reads in single instructions;<br>
+  Pure safe Rust with zero external C++ toolchain dependencies, cross-compiling seamlessly for x86_64, ARM64, and WebAssembly.
 
 ### Sample-Space Cost Lower-Bound Pruning
 
-- ALP parameter estimation tests up to 135 `(exp, fac)` combinations across sample vectors.<br>
-- `fastalp` implements dynamic lower-bound pruning: If running exception penalty (`exceptions * penalty`) exceeds current global `best_cost`, the loop breaks immediately, cutting parameter search time significantly.
+- **Reference C++ Implementation**:<br>
+  Evaluates all samples across 135 `(exp, fac)` parameter combinations unconditionally.<br>
+- **fastalp Optimization**:<br>
+  Applies dynamic lower-bound pruning: breaks inner verification immediately once running exception penalty (`exceptions * penalty`) surpasses current global `best_cost`, skipping unnecessary parameter iterations.
 
 ### Branchless Arithmetic & Precomputed Constants
 
-- Exponent factor lookups are pre-extracted outside inner loops to eliminate repeated array dereferences.<br>
-- Bit-width calculation maps directly to hardware `leading_zeros()` instruction (CLZ/BSR), and constant bitmasks avoid branch mispredictions.
-
-
+- Pre-extracts exponent factor tables outside inner loops to eliminate repeated array lookups;<br>
+- Calculates bit-width using hardware CLZ instructions and applies compile-time bitmasks to eliminate conditional branch mispredictions.

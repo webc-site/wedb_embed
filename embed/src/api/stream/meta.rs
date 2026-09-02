@@ -44,7 +44,7 @@ pub fn decode_id(buf: &[u8]) -> StreamId {
   }
 }
 
-/// Parses parameter or binary slice.
+/// Parses stream ID in ms[-seq] string format.
 /// 快速解析 ms[-seq] 格式字符串
 #[inline]
 fn parse_id_parts(s: &str, default_seq: u64) -> Result<StreamId> {
@@ -67,7 +67,7 @@ fn parse_id_parts(s: &str, default_seq: u64) -> Result<StreamId> {
   }
 }
 
-/// Operation definition.
+/// Unique stream entry identifier (ms-seq).
 /// Stream 消息唯一标识 (ms-seq)
 #[derive(
   Debug,
@@ -132,7 +132,7 @@ impl fmt::Display for StreamId {
 }
 
 impl StreamId {
-  /// Domain operation (aligned with Kvrocks IncrementStreamEntryID).
+  /// Increments stream entry ID sequence number aligned with Kvrocks IncrementStreamEntryID.
   /// 对标 Kvrocks IncrementStreamEntryID
   pub fn increment(&mut self) -> Result<()> {
     if self.seq == u64::MAX {
@@ -150,7 +150,7 @@ impl StreamId {
     Ok(())
   }
 
-  /// Domain operation (aligned with Kvrocks ParseStreamEntryID).
+  /// Parses stream entry ID from string aligned with Kvrocks ParseStreamEntryID.
   /// 对标 Kvrocks ParseStreamEntryID
   pub fn parse(s: &str) -> Result<Self> {
     let s = s.trim();
@@ -165,7 +165,7 @@ impl StreamId {
     parse_id_parts(s, 0)
   }
 
-  /// Domain operation (aligned with Kvrocks ParseRangeStart).
+  /// Parses range start ID from string aligned with Kvrocks ParseRangeStart.
   /// 对标 Kvrocks ParseRangeStart
   pub fn parse_range_start(s: &str) -> Result<(Self, bool)> {
     let s = s.trim();
@@ -186,7 +186,7 @@ impl StreamId {
     Ok((id, exclude))
   }
 
-  /// Domain operation (aligned with Kvrocks ParseRangeEnd).
+  /// Parses range end ID from string aligned with Kvrocks ParseRangeEnd.
   /// 对标 Kvrocks ParseRangeEnd
   pub fn parse_range_end(s: &str) -> Result<(Self, bool)> {
     let s = s.trim();
@@ -221,7 +221,7 @@ impl StreamId {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks NextStreamEntryIDGenerationStrategy).
+/// Next StreamEntryID generation strategy aligned with Apache Kvrocks NextStreamEntryIDGenerationStrategy.
 /// 下一个 StreamEntryID 生成策略（对标 Apache Kvrocks NextStreamEntryIDGenerationStrategy）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum NextStreamEntryIdStrategy {
@@ -232,7 +232,7 @@ pub enum NextStreamEntryIdStrategy {
 }
 
 impl NextStreamEntryIdStrategy {
-  /// Domain operation (aligned with Kvrocks ParseNextStreamEntryIDStrategy).
+  /// Parses next stream entry ID generation strategy aligned with Kvrocks ParseNextStreamEntryIDStrategy.
   /// 对标 Kvrocks ParseNextStreamEntryIDStrategy
   pub fn parse(input: &str) -> Result<Self> {
     let input = input.trim();
@@ -263,7 +263,7 @@ impl NextStreamEntryIdStrategy {
     Ok(Self::FullySpecified(StreamId::new(ms, 0)))
   }
 
-  /// Domain operation (aligned with Kvrocks GenerateID).
+  /// Generates next valid stream entry ID aligned with Kvrocks GenerateID.
   /// 对标 Kvrocks GenerateID
   pub fn generate_id(&self, last_id: StreamId, now_ms: u64) -> Result<StreamId> {
     match *self {
@@ -312,7 +312,7 @@ impl NextStreamEntryIdStrategy {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamSubkeyType).
+/// Stream subkey type enumeration aligned with Apache Kvrocks StreamSubkeyType.
 /// 流子键类型枚举（对标 Apache Kvrocks StreamSubkeyType）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::FromRepr)]
 #[repr(u8)]
@@ -579,7 +579,7 @@ impl StreamConsumerMeta {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamPelEntry).
+/// Consumer group pending entry list item (PEL Entry) aligned with Apache Kvrocks StreamPelEntry.
 /// 消费者组 Pending 列表条目（PEL Entry，对标 Apache Kvrocks StreamPelEntry）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamPelEntry {
@@ -634,7 +634,7 @@ impl StreamPelEntry {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamNACK).
+/// Stream pending acknowledgement details (NACK) aligned with Apache Kvrocks StreamNACK.
 /// Stream NACK 待确认详情（对标 Apache Kvrocks StreamNACK）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamNack {
@@ -642,7 +642,7 @@ pub struct StreamNack {
   pub pel_entry: StreamPelEntry,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamInfo).
+/// Stream information snapshot aligned with Apache Kvrocks StreamInfo.
 /// 流信息结构体（对标 Apache Kvrocks StreamInfo）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamInfo {
@@ -657,7 +657,7 @@ pub struct StreamInfo {
   pub entries: Vec<(StreamId, Vec<(String, String)>)>,
 }
 
-/// Returns or computes calculated value.
+/// Retrieves pending entries summary result aligned with Apache Kvrocks StreamGetPendingEntryResult.
 /// 获取 Pending 摘要统计结果（对标 Apache Kvrocks StreamGetPendingEntryResult）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamGetPendingEntryResult {
@@ -667,7 +667,7 @@ pub struct StreamGetPendingEntryResult {
   pub consumer_infos: Vec<(String, u64)>,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamClaimResult).
+/// XCLAIM operation result aligned with Apache Kvrocks StreamClaimResult.
 /// XCLAIM 结果（对标 Apache Kvrocks StreamClaimResult）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamClaimResult {
@@ -675,7 +675,7 @@ pub struct StreamClaimResult {
   pub entries: Vec<(StreamId, Vec<(String, String)>)>,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamAutoClaimResult).
+/// XAUTOCLAIM operation result aligned with Apache Kvrocks StreamAutoClaimResult.
 /// XAUTOCLAIM 结果（对标 Apache Kvrocks StreamAutoClaimResult）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamAutoClaimResult {
@@ -684,7 +684,7 @@ pub struct StreamAutoClaimResult {
   pub deleted_ids: Vec<StreamId>,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamReadResult).
+/// Stream read entries result aligned with Apache Kvrocks StreamReadResult.
 /// Stream 读取结果（对标 Apache Kvrocks StreamReadResult）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamReadResult {

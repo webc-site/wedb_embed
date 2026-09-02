@@ -124,7 +124,7 @@ impl BlockSplitBloomFilter {
     true
   }
 
-  /// Domain operation (aligned with Kvrocks InsertHash).
+  /// Inserts hash into block-split bloom bitmap aligned with Kvrocks InsertHash.
   /// 将哈希值插入到块切分布隆位图中（对标 Kvrocks InsertHash）
   #[inline]
   pub fn insert_hash(data: &mut [u8], hash: u64) -> bool {
@@ -160,7 +160,7 @@ impl BlockSplitBloomFilter {
   }
 }
 
-/// Operation definition.
+/// Cuckoo kickout step rollback entry.
 /// 布谷鸟踢出单步修改回滚单元
 #[derive(Debug, Clone, Copy)]
 struct PageSlotUndo {
@@ -170,7 +170,7 @@ struct PageSlotUndo {
   old_fp: u8,
 }
 
-/// Operation definition.
+/// Cuckoo filter page data container with zero-copy read and copy-on-write.
 /// 布谷鸟分页数据单元（支持只读零拷贝与按需写时克隆）
 enum CuckooPageData {
   Clean(Box<[u8]>),
@@ -638,7 +638,7 @@ where
   Ok(false)
 }
 
-/// Returns or computes calculated value.
+/// Internal helper validating and retrieving Bloom filter metadata with type and TTL checks.
 /// 内部辅助：校验并获取 Bloom 元数据（含 WRONGTYPE 与 TTL 状态判定）
 #[inline]
 fn get_bf_meta_checked<E: Engine>(
@@ -653,7 +653,7 @@ where
   get_meta_checked::<BloomChainMeta, _>(db, k_bytes, meta_k, now_ms)
 }
 
-/// Returns or computes calculated value.
+/// Internal helper validating and retrieving Cuckoo filter metadata with type and TTL checks.
 /// 内部辅助：校验并获取 Cuckoo 元数据（含 WRONGTYPE 与 TTL 状态判定）
 #[inline]
 fn get_cf_meta_checked<E: Engine>(
@@ -668,7 +668,7 @@ where
   get_meta_checked::<CuckooChainMeta, _>(db, k_bytes, meta_k, now_ms)
 }
 
-/// Operation definition.
+/// Bloom and Cuckoo filter operations interface (Bloom / Cuckoo Filters).
 /// 布隆与布谷鸟过滤器结构操作接口 (Bloom / Cuckoo Filters)
 impl<E: Engine> Db<E>
 where

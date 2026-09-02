@@ -1,4 +1,7 @@
-use crate::constants::{AlpFloat, EARLY_EXIT_BIT_WIDTH, SAMPLES_COUNT};
+use crate::{
+  constants::{EARLY_EXIT_BIT_WIDTH, SAMPLES_COUNT},
+  float::AlpFloat,
+};
 
 /// Sampling and optimal factor selection result.
 /// 采样与最优系数选择结果
@@ -40,6 +43,21 @@ pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int>
   val.try_encode_fast(exp_factor, fac_int, frac_exp)
 }
 
+/// Fast single-pass search for identical/constant values.
+/// 全等/常数浮点数序列的极速指数与基准值探测（零堆分配、O(1) 搜索）
+#[inline]
+pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
+  for exp in 0..=F::MAX_EXPONENT {
+    let frac_exp = F::frac_exp(exp);
+    let exp_factor = F::exp_factor(exp, 0);
+    let fac_int = F::fac_int(0);
+    if let Some(base) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
+      return Some((exp, base));
+    }
+  }
+  None
+}
+
 /// Generic sampling derivation for optimal (exp, fac) combination.
 /// 通用采样推导最优 (exp, fac) 组合
 pub fn find_best_params<F: AlpFloat>(data: &[F]) -> BestParams {
@@ -62,7 +80,7 @@ pub fn find_best_params<F: AlpFloat>(data: &[F]) -> BestParams {
 
   // 常数/同值序列极速探测：如果采样全等，直接寻找首个有效 exp 并返回
   let first = active_samples[0];
-  if active_samples.iter().all(|&v| v == first) {
+  if active_samples.iter().all(|&v| v.is_exact_same(first)) {
     for exp in 0..=F::MAX_EXPONENT {
       let frac_exp = F::frac_exp(exp);
       let exp_factor = F::exp_factor(exp, 0);

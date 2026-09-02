@@ -2,12 +2,12 @@ use std::cmp::Ordering;
 
 use rapidhash::RapidHashMap as HashMap;
 
-/// Operation definition.
+/// Default limit on retrieved autocomplete suggestion count.
 /// 默认建议项检索限制数量
 pub use super::r#const::DEFAULT_SUG_LIMIT;
 use crate::search::{opt::SuggestionItem, tokenizer::levenshtein_distance};
 
-/// Domain operation (aligned with RediSearch FT.SUGADD, FT.SUGGET, FT.SUGDEL, FT.SUGLEN).
+/// Autocomplete suggestion dictionary aligned with RediSearch FT.SUG* commands.
 /// 自动补全建议字典（对标 RediSearch FT.SUGADD, FT.SUGGET, FT.SUGDEL, FT.SUGLEN）
 #[derive(Debug, Clone, Default)]
 pub struct SuggestionDict {
@@ -20,7 +20,7 @@ impl SuggestionDict {
     Self::default()
   }
 
-  /// Operation definition.
+  /// Adds a suggestion string with weight and optional payload.
   /// 添加建议项
   pub fn sug_add(
     &mut self,
@@ -44,7 +44,7 @@ impl SuggestionDict {
     self.entries.len()
   }
 
-  /// Operation definition.
+  /// Retrieves suggestions matching prefix or fuzzy edit distance sorted by score.
   /// 检索建议项（快速前缀与编辑距离过滤 + 依据真实权重降序截断排序）
   pub fn sug_get(
     &self,
@@ -109,14 +109,14 @@ impl SuggestionDict {
       .collect()
   }
 
-  /// Operation definition.
+  /// Deletes a suggestion string from dictionary.
   /// 删除建议项
   #[inline]
   pub fn sug_del(&mut self, string: &str) -> bool {
     self.entries.remove(string).is_some()
   }
 
-  /// Operation definition.
+  /// Returns total number of suggestions in dictionary.
   /// 返回建议字典长度
   #[inline]
   pub fn sug_len(&self) -> usize {

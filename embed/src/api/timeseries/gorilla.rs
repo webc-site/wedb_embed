@@ -5,7 +5,7 @@ use std::{
 
 use crate::error::{Error, Result};
 
-/// Domain operation (aligned with Apache Kvrocks TSSample).
+/// Time series sample data point aligned with Apache Kvrocks TSSample.
 /// 时序采样点（对标 Apache Kvrocks TSSample）
 #[derive(Debug, Clone, Copy, PartialEq, Default, bitcode::Encode, bitcode::Decode)]
 #[repr(C)]
@@ -46,7 +46,7 @@ impl Ord for TSSample {
   }
 }
 
-/// Operation definition.
+/// High-performance bitstream writer with branchless buffer management.
 /// 高性能比特流写入器
 #[derive(Debug, Default, Clone)]
 pub struct BitWriter {
@@ -128,7 +128,7 @@ impl BitWriter {
   }
 }
 
-/// Operation definition.
+/// High-performance zero-copy bitstream reader.
 /// 高性能比特流读取器（零拷贝切片遍历）
 #[derive(Debug, Clone)]
 pub struct BitReader<'a> {
@@ -196,7 +196,7 @@ impl<'a> BitReader<'a> {
   }
 }
 
-/// Operation definition.
+/// Variable-length bitstream compression for timestamps using Delta-of-Delta.
 /// 时间戳 Delta-of-Delta 变长比特流压缩
 pub fn compress_timestamps(timestamps: &[u64]) -> Vec<u8> {
   if timestamps.is_empty() {
@@ -269,7 +269,7 @@ fn read_dod(reader: &mut BitReader<'_>) -> Option<i64> {
   }
 }
 
-/// Operation definition.
+/// Variable-length bitstream decompression for Delta-of-Delta timestamps.
 /// 时间戳 Delta-of-Delta 变长比特流解压（直接写入目标缓冲区）
 pub fn decompress_timestamps_into(data: &[u8], count: usize, out: &mut Vec<u64>) -> Result<()> {
   if count == 0 || data.is_empty() {
@@ -305,7 +305,7 @@ pub fn decompress_timestamps_into(data: &[u8], count: usize, out: &mut Vec<u64>)
   Ok(())
 }
 
-/// Operation definition.
+/// Fast extraction of last timestamp from compressed bitstream with zero heap allocation.
 /// 快速提取压缩时间戳流的末尾时间戳（零堆分配）
 pub fn decompress_last_timestamp(data: &[u8], count: usize) -> Option<u64> {
   if count == 0 || data.is_empty() {

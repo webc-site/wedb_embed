@@ -1,6 +1,6 @@
 [package]
 name = "fastalp"
-version = "0.1.17"
+version = "0.1.21"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/webc-site/wedb_embed.git"
@@ -23,8 +23,11 @@ thiserror = "2.0.20"
 [dev-dependencies]
 anyhow = "1.0.104"
 aok = "0.1.18"
+ctor = "1.0.13"
 divan = "0.1.21"
 fastrand = "2.5.0"
+log = "0.4.34"
+log_init = "0.1.39"
 mimalloc = "0.1.52"
 
 [[bench]]

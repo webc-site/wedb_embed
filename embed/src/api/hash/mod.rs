@@ -30,28 +30,28 @@ use crate::{
   meta::{parse_redis_float, parse_redis_integer},
 };
 
-/// Domain operation (aligned with Kvrocks CeilDiv1000).
-/// 向上取整除以 1000（对标 Kvrocks CeilDiv1000）
+/// Divides by 1000 with ceiling rounding aligned with Kvrocks CeilDiv1000.
+/// 向上取整除以 1000
 #[inline(always)]
 pub(crate) const fn ceil_div_1000(val: u64) -> u64 {
   val.div_ceil(1000)
 }
 
-/// Parses parameter or binary slice.
+/// Parses a Redis integer from byte slice with strict whitespace validation.
 /// 解析 Redis 整数（严格校验空白符与合法性）
 #[inline]
 pub(crate) fn parse_hash_integer(v: &[u8]) -> Result<i64> {
   parse_redis_integer(v, ERR_HASH_VALUE_NOT_INTEGER)
 }
 
-/// Parses parameter or binary slice.
+/// Parses a Redis float from byte slice with strict whitespace validation.
 /// 解析 Redis 浮点数（严格校验空白符与浮点合法性）
 #[inline]
 pub(crate) fn parse_hash_float(v: &[u8]) -> Result<f64> {
   parse_redis_float(v, ERR_HASH_VALUE_NOT_FLOAT)
 }
 
-/// Operation definition.
+/// Cached field state and underlying raw byte buffer.
 /// 缓存的字段状态与原始物理切片
 #[derive(Clone)]
 pub(crate) struct CachedFieldState {

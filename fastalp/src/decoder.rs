@@ -1,10 +1,13 @@
+use std::ptr::copy_nonoverlapping;
+
 use crate::{
   bitpack::{bitunpack_into, packed_byte_size},
   constants::{
-    AlpFloat, EXC_COUNT_LEN, HDR_COUNT_START, HDR_PARAMS_START, HDR_TYPE_IDX, HEADER_LEN,
-    MIN_HEADER_LEN, unpack_params,
+    EXC_COUNT_LEN, HDR_COUNT_START, HDR_PARAMS_START, HDR_TYPE_IDX, HEADER_LEN, MIN_HEADER_LEN,
   },
   error::{Error, Result},
+  float::AlpFloat,
+  params::unpack_params,
 };
 
 /// Generic floating-point decompression into `dst` buffer.
@@ -17,13 +20,37 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
     });
   }
 
-  if src[HDR_TYPE_IDX] != F::TYPE_BYTE {
-    return Err(Error::InvalidHeader);
-  }
-
+  let type_byte = src[HDR_TYPE_IDX];
   let count = u16::from_le_bytes([src[HDR_COUNT_START], src[HDR_COUNT_START + 1]]) as usize;
   if count == 0 {
     return Ok(());
+  }
+
+  // 极速 RAW 原始数据解包路径：直接内存零拷贝恢复
+  if type_byte == F::TYPE_RAW_BYTE {
+    let raw_bytes_needed = count * size_of::<F>();
+    if src.len() < MIN_HEADER_LEN + raw_bytes_needed {
+      return Err(Error::UnexpectedEof {
+        needed: MIN_HEADER_LEN + raw_bytes_needed,
+        available: src.len(),
+      });
+    }
+    let old_len = dst.len();
+    dst.reserve(count);
+    // SAFETY: 上方已检验可用字节充足，直接将连续的原始浮点内存数据拷贝入 dst
+    unsafe {
+      copy_nonoverlapping(
+        src.as_ptr().add(MIN_HEADER_LEN),
+        dst.as_mut_ptr().add(old_len).cast::<u8>(),
+        raw_bytes_needed,
+      );
+      dst.set_len(old_len + count);
+    }
+    return Ok(());
+  }
+
+  if type_byte != F::TYPE_BYTE {
+    return Err(Error::InvalidHeader);
   }
 
   if src.len() < HEADER_LEN {

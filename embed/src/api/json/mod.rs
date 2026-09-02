@@ -20,6 +20,7 @@ pub use key::{
 pub use meta::{JsonMeta, JsonStorageFormat, encode_json_value};
 pub use opt::{JsonArrIndex, JsonGet, JsonNumberOp, JsonSet};
 pub use path::{
-  FilterExpr, FilterOp, PathSegment, SliceIndex, delete_path_values, eval_slice, format_json,
-  get_path_values, json_merge_patch, mutate_path_values, parse_json_path,
+  FilterExpr, FilterOp, PathSegment, SliceIndex, delete_path_values, eval_slice,
+  extract_simple_field, format_json, get_path_values, json_merge_patch, mutate_path_values,
+  parse_json_path,
 };

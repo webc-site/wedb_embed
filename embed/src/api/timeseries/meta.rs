@@ -53,7 +53,7 @@ impl ChunkType {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy).
+/// Sample duplicate timestamp policy aligned with Apache Kvrocks TimeSeriesMetadata.
 /// 样本重复策略（对标 Apache Kvrocks TimeSeriesMetadata::DuplicatePolicy）
 #[derive(
   Debug,
@@ -104,7 +104,7 @@ impl DuplicatePolicy {
     }
   }
 
-  /// Operation definition.
+  /// Merges duplicate timestamp values (returns None on Block policy).
   /// 合并重复时间戳样本值（Block 策略返回 None）
   #[inline]
   pub fn merge_value(&self, old_val: f64, new_val: f64) -> Option<f64> {
@@ -128,7 +128,7 @@ pub struct TimeSeriesMeta {
   pub chunk_size: u64,
   pub chunk_type: ChunkType,
   pub duplicate_policy: DuplicatePolicy,
-  pub source_key: String,
+  pub source_key: Vec<u8>,
   pub total_samples: u64,
   pub first_time: u64,
   pub last_time: u64,
@@ -150,7 +150,7 @@ impl DerefMut for TimeSeriesMeta {
   }
 }
 
-/// Operation definition.
+/// Time series metadata creation options.
 /// 时序表元数据创建选项
 #[derive(Debug, Clone)]
 pub struct TimeSeriesMetaArgs {
@@ -158,7 +158,7 @@ pub struct TimeSeriesMetaArgs {
   pub chunk_size: u64,
   pub chunk_type: ChunkType,
   pub duplicate_policy: DuplicatePolicy,
-  pub source_key: String,
+  pub source_key: Vec<u8>,
   pub labels: Vec<(String, String)>,
   pub expire_at: u64,
   pub version: u64,
@@ -172,7 +172,7 @@ impl Default for TimeSeriesMetaArgs {
       chunk_size: 0,
       chunk_type: ChunkType::Compressed,
       duplicate_policy: DuplicatePolicy::Block,
-      source_key: String::new(),
+      source_key: Vec::new(),
       labels: Vec::new(),
       expire_at: 0,
       version: 0,
@@ -227,7 +227,7 @@ impl TimeSeriesMeta {
       chunk_size,
       chunk_type: ChunkType::Uncompressed,
       duplicate_policy,
-      source_key: String::new(),
+      source_key: Vec::new(),
       labels,
       expire_at: 0,
       version: 0,
@@ -248,7 +248,7 @@ impl TimeSeriesMeta {
       chunk_size,
       chunk_type: ChunkType::Uncompressed,
       duplicate_policy,
-      source_key: String::new(),
+      source_key: Vec::new(),
       labels,
       expire_at,
       version,
@@ -308,7 +308,7 @@ impl TimeSeriesMeta {
     buf.push(self.chunk_type as u8); // 1 byte
     buf.push(self.duplicate_policy as u8); // 1 byte
 
-    let src_bytes = self.source_key.as_bytes();
+    let src_bytes = self.source_key.as_slice();
     buf.extend_from_slice(&(src_bytes.len() as u32).to_be_bytes()); // 4 bytes
     buf.extend_from_slice(src_bytes);
 
@@ -355,15 +355,13 @@ impl TimeSeriesMeta {
       (ChunkType::Uncompressed, duplicate_policy)
     };
 
-    let mut source_key = String::new();
+    let mut source_key = Vec::new();
     if offset + 4 <= bytes.len() {
       let src_len = u32::from_be_bytes(bytes[offset..offset + 4].try_into().ok()?) as usize;
       offset += 4;
       if offset + src_len <= bytes.len() {
         if src_len > 0 {
-          source_key = str::from_utf8(&bytes[offset..offset + src_len])
-            .ok()?
-            .to_owned();
+          source_key = bytes[offset..offset + src_len].to_vec();
           offset += src_len;
         }
       } else {
@@ -441,6 +439,125 @@ impl TimeSeriesMeta {
       last_time,
       labels,
     })
+  }
+
+  /// Zero-allocation label matching directly on raw serialized metadata bytes.
+  /// 直接在二进制元数据切片上扫描并比对标签，绝对零堆内存分配
+  pub fn matches_labels_raw(bytes: &[u8], filter: &super::filter::TimeSeriesLabelFilter) -> bool {
+    if filter.is_empty() {
+      return true;
+    }
+    if bytes.len() < KeyMeta::ENCODED_SIZE + 8 + 8 + 1 {
+      return false;
+    }
+    let mut offset = KeyMeta::ENCODED_SIZE + 8 + 8;
+    if offset + 2 <= bytes.len() {
+      offset += 2;
+    } else {
+      offset += 1;
+    }
+
+    if offset + 4 > bytes.len() {
+      return false;
+    }
+    let src_len = match bytes[offset..offset + 4].try_into() {
+      Ok(b) => u32::from_be_bytes(b) as usize,
+      Err(_) => return false,
+    };
+    offset += 4 + src_len;
+    // skip total_samples (8) + first_time (8) + last_time (8) = 24 bytes
+    offset += 24;
+
+    if offset + 4 > bytes.len() {
+      return false;
+    }
+    let label_count = match bytes[offset..offset + 4].try_into() {
+      Ok(b) => u32::from_be_bytes(b) as usize,
+      Err(_) => return false,
+    };
+    offset += 4;
+
+    let mut stack_labels = [("", ""); 32];
+    let count = label_count.min(32);
+    let mut read_count = 0;
+    for slot in stack_labels.iter_mut().take(count) {
+      if offset + 4 > bytes.len() {
+        break;
+      }
+      let klen = match bytes[offset..offset + 4].try_into() {
+        Ok(b) => u32::from_be_bytes(b) as usize,
+        Err(_) => break,
+      };
+      offset += 4;
+      if offset + klen > bytes.len() {
+        break;
+      }
+      let Ok(k) = str::from_utf8(&bytes[offset..offset + klen]) else {
+        break;
+      };
+      offset += klen;
+
+      if offset + 4 > bytes.len() {
+        break;
+      }
+      let vlen = match bytes[offset..offset + 4].try_into() {
+        Ok(b) => u32::from_be_bytes(b) as usize,
+        Err(_) => break,
+      };
+      offset += 4;
+      if offset + vlen > bytes.len() {
+        break;
+      }
+      let Ok(v) = str::from_utf8(&bytes[offset..offset + vlen]) else {
+        break;
+      };
+      offset += vlen;
+
+      *slot = (k, v);
+      read_count += 1;
+    }
+
+    if label_count <= 32 {
+      filter.matches_borrowed(&stack_labels[..read_count])
+    } else {
+      let mut heap_labels = stack_labels[..read_count].to_vec();
+      for _ in 32..label_count {
+        if offset + 4 > bytes.len() {
+          break;
+        }
+        let klen = match bytes[offset..offset + 4].try_into() {
+          Ok(b) => u32::from_be_bytes(b) as usize,
+          Err(_) => break,
+        };
+        offset += 4;
+        if offset + klen > bytes.len() {
+          break;
+        }
+        let Ok(k) = str::from_utf8(&bytes[offset..offset + klen]) else {
+          break;
+        };
+        offset += klen;
+
+        if offset + 4 > bytes.len() {
+          break;
+        }
+        let vlen = match bytes[offset..offset + 4].try_into() {
+          Ok(b) => u32::from_be_bytes(b) as usize,
+          Err(_) => break,
+        };
+        offset += 4;
+        if offset + vlen > bytes.len() {
+          break;
+        }
+        let Ok(v) = str::from_utf8(&bytes[offset..offset + vlen]) else {
+          break;
+        };
+        offset += vlen;
+
+        heap_labels.push((k, v));
+      }
+      filter.matches_borrowed(&heap_labels)
+    }
   }
 }
 

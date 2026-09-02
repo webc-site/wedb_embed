@@ -3,7 +3,7 @@ use rapidhash::RapidHashMap as HashMap;
 
 use super::meta::{IndexField, IndexOnDataType, SearchIndexSchema};
 
-/// Operation definition.
+/// FT.CREATE command options.
 /// FT.CREATE 命令选项
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtCreate {
@@ -71,7 +71,7 @@ impl From<FtCreate> for SearchIndexSchema {
   }
 }
 
-/// Operation definition.
+/// FT.SEARCH command options.
 /// FT.SEARCH 命令选项
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FtSearch {
@@ -99,14 +99,14 @@ pub struct FtSearch {
   pub timeout: Option<u64>,
 }
 
-/// Operation definition.
+/// FT.DROPINDEX command options.
 /// FT.DROPINDEX 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FtDropIndex {
   pub dd: bool, // Delete Documents
 }
 
-/// Operation definition.
+/// FT.INFO index schema definition.
 /// FT.INFO 索引定义
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtIndexDefinition {
@@ -117,7 +117,7 @@ pub struct FtIndexDefinition {
   pub language: Option<String>,
 }
 
-/// Operation definition.
+/// FT.INFO field details.
 /// FT.INFO 字段详情
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtFieldInfo {
@@ -127,7 +127,7 @@ pub struct FtFieldInfo {
   pub properties: Vec<(String, String)>,
 }
 
-/// Operation definition.
+/// FT.INFO index details response.
 /// FT.INFO 索引详情响应
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtInfo {
@@ -155,7 +155,7 @@ pub struct FtInfo {
   pub percent_indexed: f64,
 }
 
-/// Operation definition.
+/// FT.CONFIG command.
 /// FT.CONFIG 命令
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FtConfigCommand {
@@ -164,7 +164,7 @@ pub enum FtConfigCommand {
   Help(String),
 }
 
-/// Operation definition.
+/// FT.SUGADD autocomplete suggestion add options.
 /// FT.SUGADD 自动补全添加
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtSugAdd {
@@ -175,7 +175,7 @@ pub struct FtSugAdd {
   pub payload: Option<String>,
 }
 
-/// Operation definition.
+/// FT.SUGGET autocomplete suggestion query options.
 /// FT.SUGGET 自动补全检索
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtSugGet {
@@ -187,7 +187,7 @@ pub struct FtSugGet {
   pub max: Option<usize>,
 }
 
-/// Operation definition.
+/// Autocomplete suggestion item entry.
 /// 建议项条目
 #[derive(Debug, Clone, PartialEq)]
 pub struct SuggestionItem {
@@ -196,7 +196,7 @@ pub struct SuggestionItem {
   pub payload: Option<String>,
 }
 
-/// Operation definition.
+/// Single search hit document.
 /// 单个搜索命中文档
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchDoc {
@@ -221,7 +221,7 @@ pub enum FtReducer {
   ToList(String),
 }
 
-/// Operation definition.
+/// FT.AGGREGATE grouping specification.
 /// FT.AGGREGATE 分组规格
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtGroupBy {
@@ -229,7 +229,7 @@ pub struct FtGroupBy {
   pub reducers: Vec<(FtReducer, Option<String>)>, // (reducer, as_name)
 }
 
-/// Operation definition.
+/// FT.AGGREGATE command options.
 /// FT.AGGREGATE 命令选项
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtAggregate {
@@ -260,14 +260,14 @@ impl Default for FtAggregate {
   }
 }
 
-/// Operation definition.
+/// Single aggregate result row.
 /// 单条聚合记录行
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AggregateRow {
   pub fields: Vec<(String, String)>,
 }
 
-/// Operation definition.
+/// Aggregate result collection.
 /// 聚合结果集合
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AggregateResult {
@@ -275,12 +275,12 @@ pub struct AggregateResult {
   pub rows: Vec<AggregateRow>,
 }
 
-/// Operation definition.
+/// FT._LIST command options.
 /// FT._LIST 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FtList;
 
-/// Operation definition.
+/// FT.ALIASADD command options.
 /// FT.ALIASADD 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtAliasAdd {
@@ -288,14 +288,14 @@ pub struct FtAliasAdd {
   pub index_name: String,
 }
 
-/// Operation definition.
+/// FT.ALIASDEL command options.
 /// FT.ALIASDEL 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtAliasDel {
   pub alias: String,
 }
 
-/// Operation definition.
+/// FT.ALIASUPDATE command options.
 /// FT.ALIASUPDATE 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtAliasUpdate {
@@ -303,7 +303,7 @@ pub struct FtAliasUpdate {
   pub index_name: String,
 }
 
-/// Operation definition.
+/// FT.TAGVALS command options.
 /// FT.TAGVALS 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtTagVals {
@@ -311,7 +311,7 @@ pub struct FtTagVals {
   pub field_name: String,
 }
 
-/// Operation definition.
+/// FT.SUGDEL command options.
 /// FT.SUGDEL 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtSugDel {
@@ -319,14 +319,14 @@ pub struct FtSugDel {
   pub string: String,
 }
 
-/// Operation definition.
+/// FT.SUGLEN command options.
 /// FT.SUGLEN 命令选项
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FtSugLen {
   pub key: String,
 }
 
-/// Operation definition.
+/// Search hit result collection.
 /// 搜索结果集合
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SearchResult {

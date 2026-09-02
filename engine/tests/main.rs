@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io, ops::Bound, sync::Arc, vec};
+use std::{collections::BTreeMap, io, ops::Bound, sync::Arc, vec::IntoIter};
 
 use aok::{OK, Void};
 use log::info;
@@ -126,7 +126,7 @@ impl Partition for MemPartition {
 }
 
 struct MemIter {
-  iter: vec::IntoIter<MemEntry>,
+  iter: IntoIter<MemEntry>,
 }
 
 impl Iterator for MemIter {

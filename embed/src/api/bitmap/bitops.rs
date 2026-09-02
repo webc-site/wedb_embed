@@ -71,7 +71,7 @@ pub fn get_bit_from_bytes(bytes: &[u8], bit_offset: usize) -> u8 {
   }
 }
 
-/// Operation definition.
+/// Sets specific bit in contiguous bytes using MSB ordering for standard Redis compatibility.
 /// 设置连续字节中指定位的值（MSB 顺序，用于标准 Redis 兼容格式）
 #[inline]
 pub fn set_bit_in_bytes(bytes: &mut Vec<u8>, bit_offset: usize, bit: u8) -> u8 {
@@ -89,7 +89,7 @@ pub fn set_bit_in_bytes(bytes: &mut Vec<u8>, bit_offset: usize, bit: u8) -> u8 {
   old
 }
 
-/// Domain operation (aligned with Apache Kvrocks util::msb::RawBitpos).
+/// High-performance MSB bit position search aligned with Apache Kvrocks util::msb::RawBitpos.
 /// 高性能大端序 MSB 位检索（对标 Apache Kvrocks util::msb::RawBitpos）
 #[inline]
 pub fn raw_bitpos(bytes: &[u8], bit: u8) -> Option<usize> {
@@ -119,7 +119,7 @@ pub fn raw_bitpos(bytes: &[u8], bit: u8) -> Option<usize> {
   None
 }
 
-/// Domain operation (aligned with util::lsb).
+/// High-performance LSB bit position search for bitmap segment storage acceleration aligned with util::lsb.
 /// 高性能小端序 LSB 位检索（用于 Kvrocks Bitmap 分段原生存储加速，对标 util::lsb）
 #[inline]
 pub fn raw_bitpos_lsb(bytes: &[u8], bit: u8) -> Option<usize> {
@@ -149,7 +149,7 @@ pub fn raw_bitpos_lsb(bytes: &[u8], bit: u8) -> Option<usize> {
   None
 }
 
-/// Operation definition.
+/// Finds first target bit within [start_bit, stop_bit] in a single byte using LSB order with O(1) branchless bitwise operations.
 /// 在单字节中按 LSB 顺序查找指定区间 [start_bit, stop_bit] 内首个目标位（O(1) 零分支快速位运算）
 #[inline]
 pub const fn find_bit_in_byte_lsb(
@@ -169,7 +169,7 @@ pub const fn find_bit_in_byte_lsb(
   }
 }
 
-/// Operation definition.
+/// Finds first target bit within [start_bit, stop_bit] in a single byte using MSB order with O(1) branchless bitwise operations.
 /// 在单字节中按 MSB 顺序查找指定区间 [start_bit, stop_bit] 内首个目标位（O(1) 零分支快速位运算）
 #[inline]
 pub const fn find_bit_in_byte_msb(
@@ -189,7 +189,7 @@ pub const fn find_bit_in_byte_msb(
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks util::RawPopcount).
+/// High-performance 64-bit native CPU popcount bit counting aligned with Apache Kvrocks util::RawPopcount.
 /// 高性能 64 位原生 CPU POPCNT 位统计（对标 Apache Kvrocks util::RawPopcount）
 #[inline]
 pub fn raw_popcount(bytes: &[u8]) -> u64 {
@@ -207,7 +207,7 @@ pub fn raw_popcount(bytes: &[u8]) -> u64 {
 
 pub use crate::meta::normalize_bitmap_range as normalize_range;
 
-/// Domain operation (aligned with Kvrocks NormalizeToByteRangeWithPaddingMask).
+/// Normalizes bit index into byte range and padding masks aligned with Kvrocks NormalizeToByteRangeWithPaddingMask.
 /// 位图位索引标准化为字节范围与位掩码（对标 Kvrocks NormalizeToByteRangeWithPaddingMask）
 #[inline]
 pub const fn normalize_bit_range_to_byte_mask(
@@ -227,7 +227,7 @@ pub const fn normalize_bit_range_to_byte_mask(
   )
 }
 
-/// Domain operation (aligned with Kvrocks).
+/// Range and mask normalization supporting byte and bit indices aligned with Kvrocks.
 /// 支持字节与位索引的范围与掩码归一化（对标 Kvrocks）
 #[inline]
 pub const fn normalize_to_byte_range_with_padding_mask(
@@ -242,7 +242,7 @@ pub const fn normalize_to_byte_range_with_padding_mask(
   }
 }
 
-/// Domain operation (aligned with Kvrocks ArrayBitfieldBitmap).
+/// Small 9-byte local buffer for cross-segment high-precision bitfield operations aligned with Kvrocks ArrayBitfieldBitmap.
 /// 9 字节局部小缓冲结构，用于跨分段高精度读取和写入 Bitfield（对标 Kvrocks ArrayBitfieldBitmap）
 #[derive(Debug, Clone)]
 pub struct ArrayBitfieldBitmap {
@@ -386,7 +386,7 @@ impl ArrayBitfieldBitmap {
   }
 }
 
-/// Domain operation (aligned with Kvrocks detail::SignedBitfieldPlus).
+/// Signed bitfield addition with overflow handling aligned with Kvrocks detail::SignedBitfieldPlus.
 /// 有符号 BITFIELD 溢出加法运算（对标 Kvrocks detail::SignedBitfieldPlus）
 #[inline]
 pub fn signed_bitfield_plus(
@@ -444,7 +444,7 @@ const fn wrapped_signed_bitfield_plus(value: u64, incr: i64, bits: u8) -> u64 {
   }
 }
 
-/// Domain operation (aligned with Kvrocks detail::UnsignedBitfieldPlus).
+/// Unsigned bitfield addition with overflow handling aligned with Kvrocks detail::UnsignedBitfieldPlus.
 /// 无符号 BITFIELD 溢出加法运算（对标 Kvrocks detail::UnsignedBitfieldPlus）
 #[inline]
 pub fn unsigned_bitfield_plus(
@@ -485,7 +485,7 @@ const fn wrapped_unsigned_bitfield_plus(value: u64, incr: i64, bits: u8) -> u64 
   res & !mask
 }
 
-/// Domain operation (aligned with Kvrocks BitfieldOp).
+/// Executes a single bitfield logical operation aligned with Kvrocks BitfieldOp.
 /// 执行单步 BITFIELD 逻辑运算（对标 Kvrocks BitfieldOp）
 #[inline]
 pub fn bitfield_op_calc(
@@ -549,7 +549,7 @@ pub fn bitfield_op_calc(
   (Some(returned_val), new_value, false)
 }
 
-/// Operation definition.
+/// 64-bit word vectorized bitwise AND operation.
 /// 64 位原生字向量化位与操作
 #[inline]
 pub fn bitwise_and(dst: &mut [u8], src: &[u8]) {
@@ -568,7 +568,7 @@ pub fn bitwise_and(dst: &mut [u8], src: &[u8]) {
   dst[common_len..].fill(0);
 }
 
-/// Operation definition.
+/// 64-bit word vectorized bitwise OR operation.
 /// 64 位原生字向量化位或操作
 #[inline]
 pub fn bitwise_or(dst: &mut [u8], src: &[u8]) {
@@ -586,7 +586,7 @@ pub fn bitwise_or(dst: &mut [u8], src: &[u8]) {
   }
 }
 
-/// Operation definition.
+/// 64-bit word vectorized bitwise XOR operation.
 /// 64 位原生字向量化位异或操作
 #[inline]
 pub fn bitwise_xor(dst: &mut [u8], src: &[u8]) {
@@ -604,7 +604,7 @@ pub fn bitwise_xor(dst: &mut [u8], src: &[u8]) {
   }
 }
 
-/// Operation definition.
+/// 64-bit word vectorized bitwise NOT operation.
 /// 64 位原生字向量化位非操作
 #[inline]
 pub fn bitwise_not(dst: &mut [u8], src: &[u8]) {
@@ -621,7 +621,7 @@ pub fn bitwise_not(dst: &mut [u8], src: &[u8]) {
   }
 }
 
-/// Domain operation (aligned with Kvrocks Bitmap::BitOp).
+/// High-performance 64-bit word slice bitmap operation writing into buffer aligned with Kvrocks Bitmap::BitOp.
 /// 高性能 64 位字切片位图操作（零堆分配写入给定缓冲，对标 Kvrocks Bitmap::BitOp）
 #[inline]
 pub fn bit_op_exec_into(op: BitOp, src_slices: &[&[u8]], out: &mut [u8]) -> Result<usize> {
@@ -681,7 +681,7 @@ pub fn bit_op_exec_into(op: BitOp, src_slices: &[&[u8]], out: &mut [u8]) -> Resu
   Ok(out_len)
 }
 
-/// Operation definition.
+/// High-performance 64-bit word slice bitmap operation for AND / OR / XOR / NOT.
 /// 高性能 64 位字切片位图操作（AND / OR / XOR / NOT）
 pub fn bit_op_exec(op: &str, src_slices: &[&[u8]]) -> Result<Vec<u8>> {
   let bit_op = op.parse::<BitOp>()?;
@@ -692,7 +692,7 @@ pub fn bit_op_exec(op: &str, src_slices: &[&[u8]]) -> Result<Vec<u8>> {
   Ok(out)
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitmapString::BitCount).
+/// String-mode BITCOUNT in MSB order aligned with Apache Kvrocks BitmapString::BitCount.
 /// 字符串模式 BITCOUNT（MSB 顺序，对标 Apache Kvrocks BitmapString::BitCount）
 pub fn string_bitcount(
   val: &[u8],
@@ -736,7 +736,7 @@ pub fn string_bitcount(
   cnt.saturating_sub(mask_cnt)
 }
 
-/// Domain operation (aligned with Apache Kvrocks BitmapString::BitPos).
+/// String-mode BITPOS in MSB order aligned with Apache Kvrocks BitmapString::BitPos.
 /// 字符串模式 BITPOS（MSB 顺序，对标 Apache Kvrocks BitmapString::BitPos）
 pub fn string_bitpos(
   val: &[u8],

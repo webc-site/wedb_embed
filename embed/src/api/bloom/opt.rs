@@ -8,7 +8,7 @@ use crate::{
   hll::rapid_hash,
 };
 
-/// Operation definition.
+/// BF.INSERT command options.
 /// BF.INSERT 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub enum BfInsert {
@@ -19,7 +19,7 @@ pub enum BfInsert {
   NonScaling,
 }
 
-/// Operation definition.
+/// BF.RESERVE command options.
 /// BF.RESERVE 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum BfReserve {
@@ -27,7 +27,7 @@ pub enum BfReserve {
   NonScaling,
 }
 
-/// Domain operation (aligned with Kvrocks BloomFilterAddResult).
+/// Bloom filter single item addition result aligned with Kvrocks BloomFilterAddResult.
 /// 布隆过滤器单项添加结果（对标 Kvrocks BloomFilterAddResult）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum BloomFilterAddResult {
@@ -36,7 +36,7 @@ pub enum BloomFilterAddResult {
   Full,
 }
 
-/// Domain operation (aligned with Kvrocks BloomFilterInsertOpt).
+/// Bloom filter insertion configuration options aligned with Kvrocks BloomFilterInsertOpt.
 /// 布隆过滤器插入配置选项（对标 Kvrocks BloomFilterInsertOpt）
 #[derive(Debug, Clone, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub struct BloomFilterInsert {
@@ -81,7 +81,7 @@ impl Default for BloomFilterInsert {
   }
 }
 
-/// Domain operation (aligned with Kvrocks BloomFilterInfo).
+/// Bloom filter information snapshot aligned with Kvrocks BloomFilterInfo.
 /// 布隆过滤器信息快照（对标 Kvrocks BloomFilterInfo）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct BloomFilterInfo {
@@ -92,7 +92,7 @@ pub struct BloomFilterInfo {
   pub expansion: u16,
 }
 
-/// Operation definition.
+/// CF.INSERT command options.
 /// CF.INSERT 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum CfInsert {
@@ -105,7 +105,7 @@ pub enum CfInsert {
   Nx,
 }
 
-/// Operation definition.
+/// CF.RESERVE command options.
 /// CF.RESERVE 命令选项
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub enum CfReserve {
@@ -115,7 +115,7 @@ pub enum CfReserve {
   PageSize(u32),
 }
 
-/// Domain operation (aligned with Kvrocks CuckooFilterInsertOpt).
+/// Cuckoo filter insertion configuration options aligned with Kvrocks CuckooFilterInsertOpt.
 /// 布谷鸟过滤器插入配置选项（对标 Kvrocks CuckooFilterInsertOpt）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct CuckooFilterInsert {
@@ -168,7 +168,7 @@ impl Default for CuckooFilterInsert {
   }
 }
 
-/// Domain operation (aligned with Kvrocks CuckooFilterInfo).
+/// Cuckoo filter information snapshot aligned with Kvrocks CuckooFilterInfo.
 /// 布谷鸟过滤器信息快照（对标 Kvrocks CuckooFilterInfo）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct CuckooFilterInfo {
@@ -182,7 +182,7 @@ pub struct CuckooFilterInfo {
   pub max_iterations: u16,
 }
 
-/// Domain operation (aligned with Apache Kvrocks CuckooFilterHelper).
+/// Cuckoo filter helper utilities aligned with Apache Kvrocks CuckooFilterHelper.
 /// 布谷鸟过滤器辅助工具（对标 Apache Kvrocks CuckooFilterHelper）
 pub struct CuckooFilterHelper;
 
@@ -202,21 +202,21 @@ impl CuckooFilterHelper {
     rapid_hash(data)
   }
 
-  /// Domain operation (aligned with RedisBloom / Kvrocks GenerateFingerprint: hash % 255 + 1).
+  /// Generates non-zero 1-byte fingerprint aligned with RedisBloom / Kvrocks.
   /// 生成非零 1 字节指纹（对标 RedisBloom / Kvrocks GenerateFingerprint: hash % 255 + 1）
   #[inline]
   pub fn generate_fingerprint(hash: u64) -> u8 {
     ((hash % Self::FINGERPRINT_MODULUS) + 1) as u8
   }
 
-  /// Returns or computes calculated value.
+  /// Symmetrically calculates alternate hash using XOR aligned with Kvrocks GetAltHash.
   /// 对称计算异或候选哈希（对标 Kvrocks GetAltHash: h2 = h1 ^ (fp * 0x5bd1e995)）
   #[inline]
   pub fn get_alt_hash(fingerprint: u8, hash: u64) -> u64 {
     hash ^ ((fingerprint as u64).wrapping_mul(Self::ALT_HASH_MULTIPLIER))
   }
 
-  /// Returns or computes calculated value.
+  /// Computes alternate bucket index from current index and fingerprint aligned with Kvrocks.
   /// 从桶索引和指纹计算备选桶索引（对标 Kvrocks GetAltBucketIndex）
   #[inline]
   pub fn get_alt_bucket_index(bucket_idx: u32, fingerprint: u8, num_buckets: u32) -> u32 {
@@ -224,7 +224,7 @@ impl CuckooFilterHelper {
     (alt_hash % (num_buckets as u64)) as u32
   }
 
-  /// Domain operation (aligned with Kvrocks NormalizeExpansion).
+  /// Normalizes expansion factor to power-of-two aligned with Kvrocks NormalizeExpansion.
   /// 规范化扩容因子为 2 的幂次（对标 Kvrocks NormalizeExpansion）
   #[inline]
   pub fn normalize_expansion(expansion: u16) -> u16 {
@@ -235,7 +235,7 @@ impl CuckooFilterHelper {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Computes required number of buckets from capacity and bucket size aligned with Kvrocks.
   /// 根据容量和桶大小计算所需桶数量（对标 Kvrocks CalculateRequiredBuckets）
   pub fn calculate_required_buckets(capacity: u64, bucket_size: u8) -> Result<u32> {
     if bucket_size == 0 {

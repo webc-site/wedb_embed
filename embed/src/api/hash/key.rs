@@ -28,7 +28,7 @@ pub fn prefix_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
   kc.compose_prefix_stack(KeyTag::HashData.as_slice(), key)
 }
 
-/// Returns or computes calculated value.
+/// Efficient hash field subkey composer with precomputed prefix and buffer reuse.
 /// 哈希字段键高效构建器（预计算前缀，原地复用内存零堆分配）
 #[derive(Debug, Clone)]
 pub struct ItemKeyComposer {

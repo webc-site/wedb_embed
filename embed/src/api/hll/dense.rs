@@ -5,7 +5,7 @@ use crate::hll::algo::{
   HLL_SEGMENT_COUNT, HLL_SEGMENT_REGISTERS, hll_estimate_from_histo,
 };
 
-/// Domain operation (aligned with Apache Kvrocks HllDenseGetRegister).
+/// Extracts 6-bit register value aligned with Apache Kvrocks HllDenseGetRegister.
 /// 提取 6-bit 寄存器值（对标 Apache Kvrocks HllDenseGetRegister）
 #[inline]
 pub fn hll_dense_get_register(registers: &[u8], register_index: usize) -> u8 {
@@ -22,14 +22,14 @@ pub fn hll_dense_get_register(registers: &[u8], register_index: usize) -> u8 {
   (((b0 >> fb) | (b1 << fb8)) & (HLL_REGISTER_MAX as u16)) as u8
 }
 
-/// Operation definition.
+/// Compatibility alias.
 /// 兼容别名
 #[inline]
 pub fn get_register(registers: &[u8], index: usize) -> u8 {
   hll_dense_get_register(registers, index)
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllDenseSetRegister).
+/// Sets 6-bit register value aligned with Apache Kvrocks HllDenseSetRegister.
 /// 设置 6-bit 寄存器值（对标 Apache Kvrocks HllDenseSetRegister）
 #[inline]
 pub fn hll_dense_set_register(registers: &mut [u8], register_index: usize, val: u8) {
@@ -53,14 +53,14 @@ pub fn hll_dense_set_register(registers: &mut [u8], register_index: usize, val: 
   }
 }
 
-/// Operation definition.
+/// Compatibility alias.
 /// 兼容别名
 #[inline]
 pub fn set_register(registers: &mut [u8], index: usize, val: u8) {
   hll_dense_set_register(registers, index, val);
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllDenseRegHisto).
+/// 16-register unrolled histogram calculation aligned with Apache Kvrocks HllDenseRegHisto.
 /// 16 寄存器循环展开的高性能直方图统计（对标 Apache Kvrocks HllDenseRegHisto）
 #[inline]
 pub fn hll_dense_reg_histo(registers: &[u8], reghisto: &mut [usize; 64]) {
@@ -135,7 +135,7 @@ pub fn hll_dense_reg_histo(registers: &[u8], reghisto: &mut [usize; 64]) {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllDenseEstimate).
+/// High-precision cardinality estimation based on dense registers aligned with Apache Kvrocks HllDenseEstimate.
 /// 基于完整密集寄存器的高精度基数估算（零堆分配，对标 Apache Kvrocks HllDenseEstimate）
 #[inline]
 pub fn hll_dense_estimate(registers: &[u8]) -> u64 {
@@ -153,14 +153,14 @@ pub fn hll_dense_estimate(registers: &[u8]) -> u64 {
   hll_estimate_from_histo(&reghisto)
 }
 
-/// Operation definition.
+/// Compatibility alias.
 /// 兼容别名
 #[inline]
 pub fn dense_estimate(registers: &[u8]) -> u64 {
   hll_dense_estimate(registers)
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllDenseEstimate(vector<span<uint8_t>>).
+/// High-performance cardinality estimation across 16 segments aligned with Kvrocks HllDenseEstimate.
 /// 基于 16 个分段（每段 768 字节 / 1024 寄存器）的高性能基数估算（对标 Apache Kvrocks HllDenseEstimate(vector<span<uint8_t>>)）
 #[inline]
 pub fn hll_dense_estimate_segments(segments: &[Option<&[u8]>]) -> u64 {
@@ -217,7 +217,7 @@ fn merge_3_bytes(d: &mut [u8; 3], s: &[u8; 3]) {
   d[2] = (m2 >> 4) | ((m3 & 0x3F) << 2);
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllMerge).
+/// High-performance 12-byte (16 registers) unrolled MAX in-place merge aligned with Apache Kvrocks HllMerge.
 /// 高性能 12 字节（16 寄存器）循环展开 MAX 就地合并（对标 Apache Kvrocks HllMerge）
 #[inline]
 pub fn hll_merge_bytes(dest: &mut [u8], src: &[u8]) {
@@ -257,7 +257,7 @@ pub fn hll_merge_bytes(dest: &mut [u8], src: &[u8]) {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks HllMerge).
+/// Segmented register merge aligned with Apache Kvrocks HllMerge.
 /// 分段寄存器合并（对标 Apache Kvrocks HllMerge）
 #[inline]
 pub fn hll_merge_segments(dest: &mut [Vec<u8>], src: &[Option<&[u8]>]) {

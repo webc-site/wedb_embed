@@ -11,7 +11,7 @@ pub use key::{
 };
 pub use meta::SortedintMeta;
 pub use opt::{IntoSortedintRange, SortedintRange, decode_be_u64, encode_be_u64, parse_range_spec};
-/// Operation definition.
+/// Extracts 64-bit integer ID from subkey slice (8-byte big-endian).
 /// 从存储键字节切片中提取 64 位整数 ID（大端序紧凑保序 8 字节）
 #[inline(always)]
 pub fn extract_id(key_bytes: &[u8], prefix_len: usize) -> Option<u64> {

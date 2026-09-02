@@ -89,7 +89,7 @@ pub enum XAdd {
   NoMkStream,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamAddOpt).
+/// XADD command configuration options aligned with Apache Kvrocks StreamAddOpt.
 /// XADD 配置选项（对标 Apache Kvrocks StreamAddOpt）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamAdd {
@@ -180,7 +180,7 @@ impl From<StreamId> for StreamAdd {
   }
 }
 
-/// Command options enumeration.
+/// XRANGE command options enumeration.
 /// XRANGE 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XRange {
@@ -367,7 +367,7 @@ impl StreamRange {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamLenOpt).
+/// XLEN command options aligned with Apache Kvrocks StreamLenOpt.
 /// XLEN 配置选项（对标 Apache Kvrocks StreamLenOpt）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamLen {
@@ -376,7 +376,7 @@ pub struct StreamLen {
   pub to_first: bool,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamXGroupCreate).
+/// XGROUP CREATE command configuration options aligned with Apache Kvrocks StreamXGroupCreate.
 /// XGROUP CREATE 配置选项（对标 Apache Kvrocks StreamXGroupCreate）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamXGroupCreate {
@@ -415,7 +415,7 @@ impl StreamXGroupCreate {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamClaimOpt).
+/// XCLAIM command configuration options aligned with Apache Kvrocks StreamClaimOpt.
 /// XCLAIM 配置选项（对标 Apache Kvrocks StreamClaimOpt）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamClaim {
@@ -465,7 +465,7 @@ impl StreamClaim {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamAutoClaimOpt).
+/// XAUTOCLAIM command configuration options aligned with Apache Kvrocks StreamAutoClaimOpt.
 /// XAUTOCLAIM 配置选项（对标 Apache Kvrocks StreamAutoClaimOpt）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamAutoClaim {
@@ -518,7 +518,7 @@ impl StreamAutoClaim {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StreamPendingOpt).
+/// XPENDING command configuration options aligned with Apache Kvrocks StreamPendingOpt.
 /// XPENDING 配置选项（对标 Apache Kvrocks StreamPendingOpt）
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub struct StreamPending {
@@ -596,7 +596,7 @@ pub enum XRead {
   NoAck,
 }
 
-/// Command options enumeration.
+/// XGROUP CREATE command options enumeration.
 /// XGROUP CREATE 选项枚举
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XGroupCreate {
@@ -636,7 +636,7 @@ pub enum XPending {
   Count(usize),
 }
 
-/// Operation definition.
+/// XREAD command configuration options.
 /// XREAD 配置选项
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode, Default)]
 pub struct StreamRead {

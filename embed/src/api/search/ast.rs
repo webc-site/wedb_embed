@@ -8,7 +8,7 @@ use crate::search::{
   tokenizer::{tokenize_text, unescape_tag_string},
 };
 
-/// Domain operation (aligned with Apache Kvrocks kqir::Node).
+/// Query abstract syntax tree node aligned with Apache Kvrocks kqir::Node.
 /// 检索引擎查询语法树节点（对标 Apache Kvrocks kqir::Node）
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchQueryNode {
@@ -60,7 +60,7 @@ pub enum SearchQueryNode {
   Not(Box<SearchQueryNode>),
 }
 
-/// Parses parameter or binary slice.
+/// Parses RediSearch query syntax string into AST.
 /// 解析 RediSearch 查询字符串
 #[inline]
 pub fn parse_search_query(query: &str) -> SearchQueryNode {
@@ -68,7 +68,7 @@ pub fn parse_search_query(query: &str) -> SearchQueryNode {
   parse_search_query_with_params(query, &empty_params)
 }
 
-/// Parses parameter or binary slice.
+/// Parses RediSearch query string with parameter substitutions.
 /// 解析带有参数化替换的 RediSearch 查询字符串
 pub fn parse_search_query_with_params(
   query: &str,
@@ -624,7 +624,7 @@ fn parse_num_bound(bound_str: &str, params: &HashMap<String, String>) -> (f64, b
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks FT.EXPLAIN).
+/// Formats query execution plan string aligned with Apache Kvrocks FT.EXPLAIN.
 /// 生成执行计划字符串（对标 Apache Kvrocks FT.EXPLAIN）
 pub fn explain_search_query(node: &SearchQueryNode) -> String {
   let mut out = String::with_capacity(128);
@@ -632,7 +632,7 @@ pub fn explain_search_query(node: &SearchQueryNode) -> String {
   out
 }
 
-/// Domain operation (aligned with Apache Kvrocks FT.EXPLAINCLI).
+/// Formats CLI query execution plan aligned with Apache Kvrocks FT.EXPLAINCLI.
 /// 生成 CLI 格式化执行计划（对标 Apache Kvrocks FT.EXPLAINCLI）
 #[inline]
 pub fn explain_search_query_cli(node: &SearchQueryNode) -> String {

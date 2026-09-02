@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use sonic_rs::Value;
 
-/// Operation definition.
+/// Array slice indexing specification with start, end, and step.
 /// 数组切片索引
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SliceIndex {
@@ -14,7 +14,7 @@ pub enum SliceIndex {
   },
 }
 
-/// Operation definition.
+/// JSONPath filter comparison operator.
 /// JSONPath 过滤操作符
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterOp {
@@ -28,7 +28,7 @@ pub enum FilterOp {
   Ge(f64),
 }
 
-/// Operation definition.
+/// JSONPath filter predicate expression.
 /// JSONPath 过滤表达式 (如 `@.price < 30`, `@.name == 'Alice'`, `@.active`, `!@.active`)
 #[derive(Debug, Clone, PartialEq)]
 pub struct FilterExpr<'a> {
@@ -36,7 +36,7 @@ pub struct FilterExpr<'a> {
   pub op: FilterOp,
 }
 
-/// Operation definition.
+/// JSONPath AST segment with zero-copy Cow borrowed path segments.
 /// JSONPath 语法片段（基于 Cow<'a, str> 零堆分配借用路径）
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathSegment<'a> {

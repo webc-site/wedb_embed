@@ -15,10 +15,10 @@ pub const ERR_ONLY_ALL_SPACE_INDENT_SUPPORTED: &str =
   "Currently only all-space INDENT is supported";
 pub const ERR_ONLY_SPACE_SUPPORTED: &str = "Currently only SPACE ' ' is supported";
 
-/// Operation definition.
+/// JSON root path string constant "$".
 /// JSON 根路径常量
 pub const JSON_ROOT_PATH: &str = "$";
 
-/// Domain operation (aligned with Kvrocks default_max_nesting_depth = 1024).
+/// Default maximum nesting depth for JSON structures aligned with Kvrocks (1024).
 /// JSON 默认最大嵌套深度（对标 Kvrocks default_max_nesting_depth = 1024）
 pub const DEFAULT_MAX_NESTING_DEPTH: usize = 1024;

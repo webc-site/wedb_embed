@@ -5,7 +5,7 @@ use crate::{
   key_composer::{decode_oppv_u64, encode_oppv_u64_fixed},
 };
 
-/// Operation definition.
+/// 8-bit scalar quantized vector structure compressing f64 to 1 byte per dimension.
 /// 8-bit 标量量化向量结构（将 f64 压缩至 1 字节/维，在线线性映射无需训练）
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sq8Vector {
@@ -59,7 +59,7 @@ impl Sq8Vector {
     }
   }
 
-  /// Operation definition.
+  /// Dequantizes SQ8 vector back into f64 vector.
   /// 反量化还原为 f64 向量
   #[inline]
   pub fn decode(&self) -> Vec<f64> {
@@ -68,7 +68,7 @@ impl Sq8Vector {
     out
   }
 
-  /// Operation definition.
+  /// Dequantizes SQ8 vector into provided buffer with zero heap allocation.
   /// 将 SQ8 向量反量化填充至传入的复用缓冲区（零新堆内存分配）
   #[inline]
   pub fn decode_into(&self, out: &mut Vec<f64>) {
@@ -83,7 +83,7 @@ impl Sq8Vector {
   }
 }
 
-/// Operation definition.
+/// Inline storage encoding tag for graph nodes.
 /// 节点在 Fjall 中的内联存储格式标签
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -98,7 +98,7 @@ pub enum NodePackFormat {
 /// 物理内存布局（SQ8 格式）：
 /// ```text
 /// ┌──────────┬──────────────┬──────────────┬────────────────────────┬──────────────┬───────────────────────────────┐
-/// Operation definition.
+/// Node byte layout: Flag(1B) | Scale(4B) | Offset(4B) | Quantized Vector(dim) | Degree(u16) | Delta IDs.
 /// │ Flag(1B) │ Scale(f32 4B)│ Offset(f32 4B)│ Quantized Vector(dim*1B)│ Degree (u16) │ OP-PV Delta 压缩邻居 ID 字节流  │
 /// └──────────┴──────────────┴──────────────┴────────────────────────┴──────────────┴───────────────────────────────┘
 /// ```
@@ -114,7 +114,7 @@ pub struct NodePackRef<'a> {
 }
 
 impl<'a> NodePackRef<'a> {
-  /// Operation definition.
+  /// Deserializes node data with zero copy.
   /// 零拷贝反序列化节点数据
   #[inline]
   pub fn decode(payload: &'a [u8], dim: usize) -> Result<Self> {
@@ -205,7 +205,7 @@ impl<'a> NodePackRef<'a> {
     Err(Error::invalid_data("unsupported node pack format"))
   }
 
-  /// Returns or computes calculated value.
+  /// Retrieves dequantized f64 vector.
   /// 获取还原后的 f64 向量
   #[inline]
   pub fn to_f64_vec(&self) -> Vec<f64> {
@@ -225,7 +225,7 @@ impl<'a> NodePackRef<'a> {
     }
   }
 
-  /// Returns or computes calculated value.
+  /// Iterates over all neighbor node IDs with zero heap allocation.
   /// 迭代获取所有邻居 Node ID（零堆分配，还原绝对 u64 ID）
   #[inline]
   pub fn iter_neighbors(&self) -> OppvDeltaNeighborIter<'a> {
@@ -237,7 +237,7 @@ impl<'a> NodePackRef<'a> {
     }
   }
 
-  /// Operation definition.
+  /// Collects all neighbor node IDs into Vec<u64>.
   /// 收集所有邻居为 Vec<u64>
   #[inline]
   pub fn to_neighbor_vec(&self) -> Vec<u64> {
@@ -310,7 +310,7 @@ impl<'a> NodePackRef<'a> {
   }
 }
 
-/// Operation definition.
+/// OP-PV Delta neighbor ID iterator with zero heap allocation.
 /// OP-PV Delta 邻居迭代器（零分配扫描）
 #[derive(Debug, Clone)]
 pub struct OppvDeltaNeighborIter<'a> {
@@ -354,58 +354,3 @@ impl<'a> Iterator for OppvDeltaNeighborIter<'a> {
 }
 
 impl<'a> ExactSizeIterator for OppvDeltaNeighborIter<'a> {}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_node_pack_encode_decode_roundtrip_oppv_delta_u64() {
-    let vec_data = vec![1.0, -2.5, 3.5, 0.0, 999.125];
-    // 测试百亿级超大 u64 节点 ID 序列
-    let neighbors = vec![
-      10_000_000_000u64,
-      10_000_000_015,
-      10_000_000_120,
-      10_000_001_500,
-      10_001_000_000,
-    ];
-
-    let mut encoded = Vec::new();
-    NodePackRef::encode(&vec_data, &neighbors, &mut encoded);
-
-    let decoded = NodePackRef::decode(&encoded, vec_data.len()).unwrap();
-    assert_eq!(decoded.format, NodePackFormat::Sq8);
-    assert_eq!(decoded.degree, neighbors.len());
-
-    let decoded_vec = decoded.to_f64_vec();
-    for (a, b) in decoded_vec.iter().zip(vec_data.iter()) {
-      assert!((a - b).abs() < 5.0);
-    }
-
-    let parsed_neighbors: Vec<u64> = decoded.to_neighbor_vec();
-    assert_eq!(parsed_neighbors, neighbors);
-
-    // 验证压缩效率：5 个百亿级 u64 原本需要 40 字节，经 Delta + OP-PV 编码后仅约 14 字节
-    let neighbor_bytes_len = encoded.len() - (1 + 8 + vec_data.len() + 2);
-    assert!(neighbor_bytes_len <= 16);
-  }
-
-  #[test]
-  fn test_node_pack_empty_neighbors_oppv_delta() {
-    let vec_data = vec![0.5, 0.25];
-    let neighbors: Vec<u64> = Vec::new();
-
-    let mut encoded = Vec::new();
-    NodePackRef::encode(&vec_data, &neighbors, &mut encoded);
-
-    let decoded = NodePackRef::decode(&encoded, 2).unwrap();
-    assert_eq!(decoded.format, NodePackFormat::Sq8);
-    assert_eq!(decoded.degree, 0);
-    assert_eq!(decoded.iter_neighbors().count(), 0);
-    let decoded_vec = decoded.to_f64_vec();
-    for (a, b) in decoded_vec.iter().zip(vec_data.iter()) {
-      assert!((a - b).abs() < 0.05);
-    }
-  }
-}

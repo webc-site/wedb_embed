@@ -5,11 +5,11 @@ use rapidhash::RapidHashMap;
 use crate::{
   api::timeseries::{
     TimeSeriesLabelFilter, TsFilter,
-    chunk::TSChunk,
+    chunk::{ChunkHeader, TSChunk},
     r#const::*,
     gorilla::TSSample,
     group_samples_and_reduce, key,
-    meta::{DuplicatePolicy, TimeSeriesMeta},
+    meta::{ChunkType, DuplicatePolicy, TimeSeriesMeta},
     opt::{
       AggregationType, Aggregator, BucketTimestampType, GroupReducerType, IntoTsRange,
       TSDownStreamMeta, TsCreate, TsInfoResult, TsMGet, TsMGetResult, TsMRange, TsMRangeResult,
@@ -222,30 +222,23 @@ where
       let item_k = key::chunk(&kc, key_bytes, timestamp);
       batch.insert_data(&item_k, &encoded_chunk);
       meta.total_samples = 1;
+      meta.base.size = 1;
       meta.first_time = timestamp;
       meta.last_time = timestamp;
     } else {
       let target_item_k = key::chunk(&kc, key_bytes, timestamp);
-      let (old_k, old_data) = match data_ks
+      let found_entry = data_ks
         .range((
           Bound::Included(prefix.as_slice()),
           Bound::Included(target_item_k.as_slice()),
         ))
         .next_back()
-      {
-        Some(g) => {
-          let entry = g?;
-          if entry.key().starts_with(&prefix) {
-            (entry.key().to_vec(), entry.value().to_vec())
-          } else {
-            let entry = data_ks
-              .prefix(&prefix)
-              .next()
-              .ok_or_else(|| Error::invalid_data(ERR_TSDB_CORRUPTED_DATA_INDEX))??;
-            (entry.key().to_vec(), entry.value().to_vec())
-          }
+        .transpose()?;
+      let (old_k, old_data) = match found_entry {
+        Some(entry) if entry.key().starts_with(&prefix) => {
+          (entry.key().to_vec(), entry.value().to_vec())
         }
-        None => {
+        _ => {
           let entry = data_ks
             .prefix(&prefix)
             .next()
@@ -260,58 +253,97 @@ where
         0
       };
 
-      let mut samples = TSChunk::decode_samples(&old_data)?;
+      // 极致优化快路径：未压缩 Chunk 单调递增快速原地追加（避免 O(K) 反序列化与重新编码，零中间堆分配）
+      let fast_appended = if meta.chunk_type == ChunkType::Uncompressed
+        && old_data.len() >= ChunkHeader::ENCODED_SIZE
+        && let Some(header) = ChunkHeader::decode(&old_data)
+        && !header.is_compressed
+        && (header.count as usize) < (meta.chunk_size as usize).max(1)
+      {
+        let count = header.count as usize;
+        let last_ts = if count > 0 && old_data.len() >= ChunkHeader::ENCODED_SIZE + count * 16 {
+          let offset = ChunkHeader::ENCODED_SIZE + (count - 1) * 16;
+          u64::from_be_bytes(old_data[offset..offset + 8].try_into().unwrap_or([0u8; 8]))
+        } else {
+          chunk_first_ts
+        };
 
-      match samples.binary_search_by_key(&timestamp, |s| s.ts) {
-        Ok(idx) => {
-          match policy.merge_value(samples[idx].v, value) {
-            Some(merged) => {
-              final_value = merged;
-              samples[idx].v = merged;
-            }
-            None => {
-              return Err(Error::invalid_data(ERR_TSDB_DUPLICATE_BLOCK_MODE));
-            }
-          }
-          let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
-          batch.insert_data(&old_k, &new_chunk);
-        }
-        Err(insert_idx) => {
-          let is_latest_chunk = timestamp >= meta.last_time;
-          let last_sample_ts = samples.last().map(|s| s.ts).unwrap_or(chunk_first_ts);
-
-          if is_latest_chunk
-            && samples.len() >= meta.chunk_size as usize
-            && timestamp > last_sample_ts
-          {
-            let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
-            let new_item_k = key::chunk(&kc, key_bytes, timestamp);
-            batch.insert_data(&new_item_k, &new_chunk);
-          } else {
-            samples.insert(insert_idx, sample);
-            let max_chunk_size = (meta.chunk_size as usize).max(1);
-            if samples.len() <= max_chunk_size {
-              let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
-              let chunk_start_ts = unsafe { samples.get_unchecked(0).ts };
-              if chunk_start_ts != chunk_first_ts {
-                batch.rm_weak_data(&old_k);
-                let new_item_k = key::chunk(&kc, key_bytes, chunk_start_ts);
-                batch.insert_data(&new_item_k, &new_chunk);
-              } else {
-                batch.insert_data(&old_k, &new_chunk);
-              }
-            } else {
-              batch.rm_weak_data(&old_k);
-              for chunk_slice in samples.chunks(max_chunk_size) {
-                let first_ts = chunk_slice[0].ts;
-                let new_chunk = TSChunk::encode_with_type(chunk_slice, meta.chunk_type);
-                let new_item_k = key::chunk(&kc, key_bytes, first_ts);
-                batch.insert_data(&new_item_k, &new_chunk);
-              }
-            }
-          }
-
+        if timestamp > last_ts {
+          let mut new_data = old_data.clone();
+          let new_count = (count + 1) as u32;
+          new_data[4..8].copy_from_slice(&new_count.to_be_bytes());
+          new_data.extend_from_slice(&timestamp.to_be_bytes());
+          new_data.extend_from_slice(&value.to_be_bytes());
+          batch.insert_data(&old_k, &new_data);
           meta.total_samples += 1;
+          true
+        } else {
+          false
+        }
+      } else {
+        false
+      };
+
+      if !fast_appended {
+        let mut samples = TSChunk::decode_samples(&old_data)?;
+
+        match samples.binary_search_by_key(&timestamp, |s| s.ts) {
+          Ok(idx) => {
+            match policy.merge_value(samples[idx].v, value) {
+              Some(merged) => {
+                final_value = merged;
+                samples[idx].v = merged;
+              }
+              None => {
+                return Err(Error::invalid_data(ERR_TSDB_DUPLICATE_BLOCK_MODE));
+              }
+            }
+            let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
+            batch.insert_data(&old_k, &new_chunk);
+          }
+          Err(insert_idx) => {
+            let is_latest_chunk = timestamp >= meta.last_time;
+            let last_sample_ts = samples.last().map(|s| s.ts).unwrap_or(chunk_first_ts);
+
+            if is_latest_chunk
+              && samples.len() >= meta.chunk_size as usize
+              && timestamp > last_sample_ts
+            {
+              let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
+              let new_item_k = key::chunk(&kc, key_bytes, timestamp);
+              batch.insert_data(&new_item_k, &new_chunk);
+              meta.base.size += 1;
+            } else {
+              samples.insert(insert_idx, sample);
+              let max_chunk_size = (meta.chunk_size as usize).max(1);
+              if samples.len() <= max_chunk_size {
+                let new_chunk = TSChunk::encode_with_type(&samples, meta.chunk_type);
+                let chunk_start_ts = unsafe { samples.get_unchecked(0).ts };
+                if chunk_start_ts != chunk_first_ts {
+                  batch.rm_weak_data(&old_k);
+                  let new_item_k = key::chunk(&kc, key_bytes, chunk_start_ts);
+                  batch.insert_data(&new_item_k, &new_chunk);
+                } else {
+                  batch.insert_data(&old_k, &new_chunk);
+                }
+              } else {
+                batch.rm_weak_data(&old_k);
+                let mut added_chunks = 0u64;
+                for chunk_slice in samples.chunks(max_chunk_size) {
+                  let first_ts = chunk_slice[0].ts;
+                  let new_chunk = TSChunk::encode_with_type(chunk_slice, meta.chunk_type);
+                  let new_item_k = key::chunk(&kc, key_bytes, first_ts);
+                  batch.insert_data(&new_item_k, &new_chunk);
+                  added_chunks += 1;
+                }
+                if added_chunks > 1 {
+                  meta.base.size += added_chunks - 1;
+                }
+              }
+            }
+
+            meta.total_samples += 1;
+          }
         }
       }
 
@@ -699,6 +731,7 @@ where
     }
 
     let mut total_deleted = 0;
+    let mut deleted_chunks = 0u64;
     let mut batch = self.batch();
     let mut first_remaining_ts = None;
     let mut last_remaining_ts = None;
@@ -717,6 +750,7 @@ where
             let count = TSChunk::get_count(&new_chunk_data);
             if count == 0 {
               batch.rm_weak_data(k);
+              deleted_chunks += 1;
             } else {
               let new_first_ts = TSChunk::get_first_timestamp(&new_chunk_data).unwrap_or(chunk_ts);
               let new_last_ts =
@@ -754,8 +788,10 @@ where
     updated_meta.total_samples = updated_meta
       .total_samples
       .saturating_sub(total_deleted as u64);
+    updated_meta.base.size = updated_meta.base.size.saturating_sub(deleted_chunks);
 
     if updated_meta.total_samples == 0 {
+      updated_meta.base.size = 0;
       updated_meta.first_time = 0;
       updated_meta.last_time = 0;
     } else {
@@ -800,9 +836,9 @@ where
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
       if k.starts_with(&prefix)
+        && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
-        && filter.matches(&meta.labels)
       {
         let name_bytes = &k[prefix.len()..];
         let name = String::from_utf8_lossy(name_bytes).into_owned();
@@ -922,9 +958,9 @@ where
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
       if k.starts_with(&prefix)
+        && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
-        && filter.matches(&meta.labels)
       {
         let name_bytes = &k[prefix.len()..];
         let name = String::from_utf8_lossy(name_bytes).into_owned();
@@ -1054,10 +1090,7 @@ where
       if let Some(dst_key) = k.strip_prefix(ds_prefix_k.as_slice())
         && let Some(ds_meta) = TSDownStreamMeta::decode(v)
       {
-        downstream_rules.push((
-          String::from_utf8_lossy(dst_key).into_owned(),
-          ds_meta.aggregator,
-        ));
+        downstream_rules.push((dst_key.to_vec(), ds_meta.aggregator));
       }
     }
 
@@ -1074,7 +1107,7 @@ where
       first_timestamp,
       last_timestamp,
       retention_time: meta.retention_time,
-      chunk_count: 0,
+      chunk_count: meta.base.size as usize,
       chunk_size: meta.chunk_size,
       chunk_type: meta.chunk_type,
       duplicate_policy: meta.duplicate_policy,
@@ -1096,9 +1129,9 @@ where
       let entry = g?;
       let (k, v) = (entry.key(), entry.value());
       if k.starts_with(&prefix)
+        && TimeSeriesMeta::matches_labels_raw(v, &filter)
         && let Some(meta) = TimeSeriesMeta::decode(v)
         && !meta.is_expired(now_ms)
-        && filter.matches(&meta.labels)
       {
         let name = String::from_utf8_lossy(&k[prefix.len()..]).into_owned();
         keys.push(name);
@@ -1145,7 +1178,7 @@ where
       return Err(Error::invalid_data(ERR_TSDB_SRC_ALREADY_HAS_RULE));
     }
 
-    if !dst_meta.source_key.is_empty() && dst_meta.source_key.as_bytes() != src_bytes {
+    if !dst_meta.source_key.is_empty() && dst_meta.source_key.as_slice() != src_bytes {
       return Err(Error::invalid_data(ERR_TSDB_DST_ALREADY_HAS_SRC_RULE));
     }
 
@@ -1161,8 +1194,8 @@ where
     let mut batch = self.batch_with_capacity(2);
     batch.insert_meta(&ds_meta_k, &ds.encode());
 
-    if dst_meta.source_key.as_bytes() != src_bytes {
-      dst_meta.source_key = String::from_utf8_lossy(src_bytes).into_owned();
+    if dst_meta.source_key.as_slice() != src_bytes {
+      dst_meta.source_key = src_bytes.to_vec();
       batch.insert_meta(&dst_meta_k, &dst_meta.encode());
     }
 
@@ -1200,7 +1233,7 @@ where
     batch.rm_meta(&ds_meta_k);
 
     if let Some(mut dst_meta) = TimeSeriesMeta::decode(&dst_meta_bytes)
-      && dst_meta.source_key.as_bytes() == src_bytes
+      && dst_meta.source_key.as_slice() == src_bytes
     {
       dst_meta.source_key.clear();
       batch.insert_meta(&dst_meta_k, &dst_meta.encode());

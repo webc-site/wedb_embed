@@ -6,18 +6,18 @@ use rapidhash::RapidHashSet as HashSet;
 /// 默认英文停用词表（对标 Apache Kvrocks 与 RediSearch 默认停用词）
 pub use super::r#const::DEFAULT_STOP_WORDS;
 
-/// Returns or computes calculated value.
+/// Stack-allocated buffer size threshold for Levenshtein distance calculations.
 /// 栈上编辑距离计算最大长度阈值
 const STACK_BUFFER_MAX_LEN: usize = 64;
 
-/// Operation definition.
+/// Text tokenizer with lowercase normalization and punctuation splitting.
 /// 文本分词器（标准小写规范化与标点切分）
 #[inline]
 pub fn tokenize_text(text: &str) -> Vec<String> {
   tokenize_text_with_stopwords(text, None)
 }
 
-/// Operation definition.
+/// Text tokenizer supporting stopword filtering with single-pass state machine.
 /// 文本分词器（支持指定停用词过滤，单次循环高效状态机）
 pub fn tokenize_text_with_stopwords(
   text: &str,
@@ -43,7 +43,7 @@ pub fn tokenize_text_with_stopwords(
   words
 }
 
-/// Operation definition.
+/// Unescapes character escape sequences in extracted tag strings in a single pass.
 /// 转义字符反转义处理（针对已提取出的 tag 字符串单次遍历还原，带无转义快速路径）
 #[inline]
 pub fn unescape_tag_string(s: &str) -> String {
@@ -64,7 +64,7 @@ pub fn unescape_tag_string(s: &str) -> String {
   res
 }
 
-/// Operation definition.
+/// Splits tag field with custom delimiter, escape handling, and case normalization.
 /// 标签字段分割（支持自定义分隔符、转义字符、引号去除及大小写规范化）
 pub fn tokenize_tags(text: &str, separator: char, case_sensitive: bool) -> Vec<String> {
   let mut tags = Vec::new();
@@ -115,7 +115,7 @@ pub fn tokenize_tags(text: &str, separator: char, case_sensitive: bool) -> Vec<S
   tags
 }
 
-/// Operation definition.
+/// Levenshtein edit distance calculation with stack buffer and zero heap allocation.
 /// 字符串编辑距离（Levenshtein Distance，带栈上零堆分配与 ASCII 极速切片加速）
 pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
   if s1 == s2 {

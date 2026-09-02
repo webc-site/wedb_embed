@@ -33,7 +33,7 @@ impl DerefMut for BloomChainMeta {
   }
 }
 
-/// Operation definition.
+/// Computes cumulative capacity across multi-layer geometric filter chains (Bloom / Cuckoo).
 /// 计算等比数列多层 Filter 链的总容量（支持 Bloom / Cuckoo 链）
 #[inline]
 pub fn calculate_geometric_capacity(base_capacity: u64, expansion: u16, n_filters: u16) -> u64 {

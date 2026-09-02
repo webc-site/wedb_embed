@@ -7,24 +7,24 @@ use super::{
 };
 use crate::error::{Error, Result};
 
-/// Domain operation (aligned with Apache Kvrocks / Redis).
+/// Earth mean radius in meters aligned with Apache Kvrocks / Redis (6372797.560856).
 /// 地球平均半径（米）（对标 Apache Kvrocks / Redis）
 pub const EARTH_RADIUS_METERS: f64 = 6372797.560856;
 
-/// Operation definition.
+/// Latitude and longitude bounds according to EPSG:900913 / WGS84 Mercator.
 /// 经纬度限制常量（EPSG:900913 / WGS84 Mercator 规范）
 pub const GEO_LAT_MIN: f64 = -85.05112878;
 pub const GEO_LAT_MAX: f64 = 85.05112878;
 pub const GEO_LON_MIN: f64 = -180.0;
 pub const GEO_LON_MAX: f64 = 180.0;
 
-/// Operation definition.
+/// Maximum Geohash precision step (26-bit lon + 26-bit lat = 52-bit integer).
 /// Geohash 最大精度步长（26 位经度 + 26 位纬度 = 52 位整数）
 pub const GEO_STEP_MAX: u8 = 26;
 pub const MERCATOR_MAX: f64 = 20037726.37;
 pub const D_R: f64 = PI / 180.0;
 
-/// Operation definition.
+/// Base32 character alphabet for Geohash encoding.
 /// Base32 字母表（Redis / Kvrocks 规范）
 pub const BASE32_ALPHABET: &[u8; 32] = b"0123456789bcdefghjkmnpqrstuvwxyz";
 
@@ -44,35 +44,35 @@ pub const BASE32_DECODE_TABLE: [u8; 256] = {
   table
 };
 
-/// Operation definition.
+/// Global longitude range for WGS84 indexing [-180, 180].
 /// 经度全局范围（WGS84 索引范围）
 pub const GEO_LON_RANGE: GeoHashRange = GeoHashRange {
   min: GEO_LON_MIN,
   max: GEO_LON_MAX,
 };
 
-/// Operation definition.
+/// Global latitude range for WGS84 indexing [-85.05112878, 85.05112878].
 /// 纬度全局范围（WGS84 索引范围）
 pub const GEO_LAT_RANGE: GeoHashRange = GeoHashRange {
   min: GEO_LAT_MIN,
   max: GEO_LAT_MAX,
 };
 
-/// Operation definition.
+/// Standard Geohash longitude range.
 /// 标准 Geohash 经度范围
 pub const GEO_LON_RANGE_STANDARD: GeoHashRange = GeoHashRange {
   min: -180.0,
   max: 180.0,
 };
 
-/// Operation definition.
+/// Standard Geohash latitude range.
 /// 标准 Geohash 纬度范围
 pub const GEO_LAT_RANGE_STANDARD: GeoHashRange = GeoHashRange {
   min: -90.0,
   max: 90.0,
 };
 
-/// Domain operation (aligned with Kvrocks ValidateLongLat).
+/// Validates whether longitude and latitude coordinates fall within valid bounds aligned with Kvrocks ValidateLongLat.
 /// 校验经纬度坐标是否在合法范围内（对标 Kvrocks ValidateLongLat）
 #[inline]
 pub fn validate_long_lat(lon: f64, lat: f64) -> Result<()> {
@@ -97,7 +97,7 @@ pub fn validate_long_lat(lon: f64, lat: f64) -> Result<()> {
   Ok(())
 }
 
-/// Domain operation (aligned with Kvrocks Interleave64).
+/// Interleaves 32-bit longitude and latitude bits into a 64-bit integer aligned with Kvrocks Interleave64.
 /// 64 位整数交替编织（经纬度比特交错，对标 Kvrocks Interleave64）
 #[inline(always)]
 pub const fn interleave64(xlo: u32, ylo: u32) -> u64 {
@@ -131,7 +131,7 @@ pub const fn interleave64(xlo: u32, ylo: u32) -> u64 {
   x | (y << 1)
 }
 
-/// Domain operation (aligned with Kvrocks Deinterleave64).
+/// Deinterleaves a 64-bit integer into separate longitude and latitude bits aligned with Kvrocks Deinterleave64.
 /// 64 位整数反交替解织（分离纬度和经度比特，对标 Kvrocks Deinterleave64）
 #[inline(always)]
 pub const fn deinterleave64(interleaved: u64) -> (u32, u32) {
@@ -252,7 +252,7 @@ pub fn geohash_decode_area_to_long_lat(area: &GeoHashArea) -> (f64, f64) {
   (lon, lat)
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashHelper::Align52Bits).
+/// Aligns a Geohash to 52 bits aligned with Kvrocks GeoHashHelper::Align52Bits.
 /// 52 位对齐（对标 Kvrocks GeoHashHelper::Align52Bits）
 #[inline(always)]
 pub const fn align_52bits(hash: GeoHashBits) -> u64 {
@@ -317,7 +317,7 @@ pub fn encode_geohash_string(lon: f64, lat: f64) -> String {
   str::from_utf8(&buf).unwrap_or("").to_string()
 }
 
-/// Domain operation (aligned with Kvrocks Geo::EncodeGeoHash).
+/// Encodes a 52-bit Geohash into an 11-character Base32 string aligned with Kvrocks Geo::EncodeGeoHash.
 /// 将 52 位 Geohash 转换为 11 位 Base32 字符串（对标 Kvrocks Geo::EncodeGeoHash）
 #[inline]
 pub fn geohash_to_base32(hash: u64) -> String {
@@ -358,7 +358,7 @@ pub fn base32_to_coords(s: &str) -> Result<(f64, f64)> {
   Ok(geohash_decode_area_to_long_lat(&area))
 }
 
-/// Domain operation (aligned with Kvrocks GeohashMoveX).
+/// Shifts Geohash block along the X axis aligned with Kvrocks GeohashMoveX.
 /// X 轴移动 Geohash 块（对标 Kvrocks GeohashMoveX）
 #[inline]
 pub fn geohash_move_x(hash: &mut GeoHashBits, d: i8) {
@@ -379,7 +379,7 @@ pub fn geohash_move_x(hash: &mut GeoHashBits, d: i8) {
   hash.bits = x | y;
 }
 
-/// Domain operation (aligned with Kvrocks GeohashMoveY).
+/// Shifts Geohash block along the Y axis aligned with Kvrocks GeohashMoveY.
 /// Y 轴移动 Geohash 块（对标 Kvrocks GeohashMoveY）
 #[inline]
 pub fn geohash_move_y(hash: &mut GeoHashBits, d: i8) {
@@ -400,7 +400,7 @@ pub fn geohash_move_y(hash: &mut GeoHashBits, d: i8) {
   hash.bits = x | y;
 }
 
-/// Returns or computes calculated value.
+/// Calculates Geohash values for all 8 neighboring grid cells aligned with Kvrocks GeohashNeighbors.
 /// 获取 8 邻居区域的 Geohash（对标 Kvrocks GeohashNeighbors）
 pub fn geohash_neighbors(hash: &GeoHashBits) -> GeoHashNeighbors {
   let mut n = GeoHashNeighbors {
@@ -434,7 +434,7 @@ pub fn geohash_neighbors(hash: &GeoHashBits) -> GeoHashNeighbors {
   n
 }
 
-/// Domain operation (aligned with Kvrocks GeoHashHelper::EstimateStepsByRadius).
+/// Estimates Geohash precision step count based on search radius aligned with Kvrocks GeoHashHelper::EstimateStepsByRadius.
 /// 根据半径估算 Geohash 搜索步长（精度比特数，对标 Kvrocks GeoHashHelper::EstimateStepsByRadius）
 #[inline]
 pub fn estimate_steps_by_radius(mut range_meters: f64, lat: f64) -> u8 {
@@ -458,7 +458,7 @@ pub fn estimate_steps_by_radius(mut range_meters: f64, lat: f64) -> u8 {
   step.clamp(1, 26) as u8
 }
 
-/// Returns or computes calculated value.
+/// Computes bounding box for a spatial search shape aligned with Kvrocks GeoHashHelper::BoundingBox.
 /// 计算搜索形状的外接边界盒（对标 Kvrocks GeoHashHelper::BoundingBox）
 pub fn bounding_box(geo_shape: &mut GeoShape) {
   let longitude = geo_shape.center_lon;
@@ -496,7 +496,7 @@ pub fn bounding_box(geo_shape: &mut GeoShape) {
   geo_shape.bounds[3] = latitude + lat_delta;
 }
 
-/// Returns or computes calculated value.
+/// Computes 9-neighbor Geohash search areas covering a shape aligned with Kvrocks GeoHashHelper::GetAreasByShapeWGS84.
 /// 获取形状覆盖的 9 邻居 Geohash 检索区域（对标 Kvrocks GeoHashHelper::GetAreasByShapeWGS84）
 pub fn get_areas_by_shape_wgs84(geo_shape: &mut GeoShape) -> GeoHashRadius {
   bounding_box(geo_shape);
@@ -578,7 +578,7 @@ pub fn get_areas_by_shape_wgs84(geo_shape: &mut GeoShape) -> GeoHashRadius {
   }
 }
 
-/// Returns or computes calculated value.
+/// Computes 52-bit ZSet score range [min, max) for a Geohash box aligned with Kvrocks Geo::scoresOfGeoHashBox.
 /// 计算 Geohash 块对应的 52 位 ZSet 分值区间 [min, max)（对标 Kvrocks Geo::scoresOfGeoHashBox）
 #[inline(always)]
 pub const fn scores_of_geohash_box(hash: GeoHashBits) -> (u64, u64) {
@@ -591,7 +591,7 @@ pub const fn scores_of_geohash_box(hash: GeoHashBits) -> (u64, u64) {
   (min, max)
 }
 
-/// Returns or computes calculated value.
+/// Calculates Haversine great-circle distance in meters between two coordinates aligned with Kvrocks GeoHashHelper::GetDistance.
 /// 计算两个经纬度坐标之间的球面 Haversine 距离（米）（对标 Kvrocks GeoHashHelper::GetDistance）
 #[inline]
 pub fn haversine_distance(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
@@ -612,7 +612,7 @@ pub fn haversine_distance(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
   EARTH_RADIUS_METERS * c
 }
 
-/// Operation definition.
+/// Converts distance in meters to target unit value.
 /// 根据单位转换米数为目标单位数值
 #[inline]
 pub fn convert_meters_to_unit(meters: f64, unit: &str) -> f64 {
@@ -623,7 +623,7 @@ pub fn convert_meters_to_unit(meters: f64, unit: &str) -> f64 {
   }
 }
 
-/// Operation definition.
+/// Converts distance from source unit value to meters.
 /// 根据目标单位转换距离为米数
 #[inline]
 pub fn convert_unit_to_meters(dist: f64, unit: &str) -> f64 {
@@ -712,7 +712,7 @@ impl GeoShape {
     shape
   }
 
-  /// Domain operation (aligned with Kvrocks appendIfWithinShape).
+  /// Checks whether coordinate point falls within current shape aligned with Kvrocks appendIfWithinShape.
   /// 检查经纬度坐标点是否在当前形状范围内（对标 Kvrocks appendIfWithinShape）
   #[inline]
   pub fn contains_point(&self, lon: f64, lat: f64) -> bool {
@@ -731,7 +731,7 @@ impl GeoShape {
     }
   }
 
-  /// Domain operation aligned with RediSearch/Geo .
+  /// Checks whether GeoPoint falls within current shape aligned with RediSearch/Geo.
   /// 检查 GeoPoint 是否在当前形状范围内（对标 RediSearch/Geo 规范）
   #[inline]
   pub fn point_in_radius(&self, pt: &GeoPoint) -> bool {

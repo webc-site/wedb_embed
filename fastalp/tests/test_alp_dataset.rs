@@ -6,6 +6,11 @@ use std::{
 
 use fastalp::{compress, decompress};
 
+#[ctor::ctor(unsafe)]
+fn _log_init() {
+  log_init::init();
+}
+
 fn get_alp_data_dir() -> Option<PathBuf> {
   let paths = [
     PathBuf::from("/Users/z/git/db/ALP/data"),

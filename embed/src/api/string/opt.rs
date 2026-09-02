@@ -1,5 +1,5 @@
-/// Domain operation (aligned with Apache Kvrocks StringPair).
-/// 键值对引用结构（对标 Apache Kvrocks StringPair）
+/// Key-value pair slice reference aligned with Apache Kvrocks StringPair.
+/// 键值对引用结构
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringPair<'a> {
   pub key: &'a [u8],
@@ -23,8 +23,8 @@ impl<'a> StringPair<'a> {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringSetType).
-/// String SET 条件类型（对标 Apache Kvrocks StringSetType）
+/// Conditional set type for string operations aligned with Apache Kvrocks StringSetType.
+/// 字符串设置条件类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StringSetType {
   #[default]
@@ -37,8 +37,8 @@ pub enum StringSetType {
   IfDne,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringSet).
-/// String SET 参数结构体（对标 Apache Kvrocks StringSet）
+/// String set operation options aligned with Apache Kvrocks StringSet.
+/// 字符串设置参数结构体
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StringSet<'a> {
   pub expire: u64,
@@ -49,8 +49,8 @@ pub struct StringSet<'a> {
 }
 
 impl<'a> StringSet<'a> {
-  /// Operation definition.
-  /// 判断是否满足常规极速直写通道条件（无复合条件、无需旧值、无 TTL 继承、无摘要对比）
+  /// Returns whether the options qualify for direct fast-path write optimization without preconditions.
+  /// 判断是否满足常规快速直写通道条件（无复合条件、无需旧值、无 TTL 继承、无摘要对比）
   #[inline]
   pub const fn is_fast_path(&self) -> bool {
     matches!(self.set_type, StringSetType::None)
@@ -60,8 +60,8 @@ impl<'a> StringSet<'a> {
   }
 }
 
-/// Command options enumeration.
-/// String SET 选项枚举（统一 *Opt 后缀）
+/// String SET command options enumeration.
+/// 字符串设置选项枚举
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Set<'a> {
   Ex(u64),
@@ -79,8 +79,8 @@ pub enum Set<'a> {
 }
 
 impl<'a> Set<'a> {
-  /// Parses parameter or binary slice.
-  /// 从选项列表解析为完整的 StringSet
+  /// Parses an iterator of Set options into a structured StringSet parameter object.
+  /// 从选项列表解析为完整的 StringSet 参数对象
   pub fn parse_options(options: impl IntoIterator<Item = Set<'a>>, now_ms: u64) -> StringSet<'a> {
     let mut set_type = StringSetType::None;
     let mut get = false;
@@ -149,7 +149,7 @@ impl<'a> Set<'a> {
 }
 
 /// GETEX command options enumeration.
-/// GETEX 选项枚举（统一 *Opt 后缀）
+/// GETEX 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GetEx {
   Ex(u64),
@@ -160,8 +160,8 @@ pub enum GetEx {
 }
 
 impl GetEx {
-  /// Returns or computes calculated value.
-  /// 计算新的绝对过期时间戳（毫秒）
+  /// Computes absolute expiration timestamp in milliseconds based on current time.
+  /// 根据当前时间计算新的绝对过期时间戳（毫秒）
   #[inline]
   pub const fn compute_expire(&self, now_ms: u64) -> u64 {
     match *self {
@@ -175,7 +175,7 @@ impl GetEx {
 }
 
 /// DELEX command options enumeration.
-/// DELEX 选项枚举（统一 *Opt 后缀）
+/// DELEX 选项枚举
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum DelEx<'a> {
   #[default]
@@ -186,8 +186,8 @@ pub enum DelEx<'a> {
   IfDne(&'a [u8]),
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringMSet).
-/// String MSET 参数结构体（对标 Apache Kvrocks StringMSet）
+/// String MSET operation options aligned with Apache Kvrocks StringMSet.
+/// 字符串批量设置参数结构体
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StringMSet {
   pub expire: u64,
@@ -195,8 +195,8 @@ pub struct StringMSet {
   pub keep_ttl: bool,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSType).
-/// LCS 选项类型（对标 Apache Kvrocks StringLCSType）
+/// Longest Common Subsequence (LCS) output mode aligned with Apache Kvrocks StringLCSType.
+/// 最长公共子序列选项类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StringLCSType {
   #[default]
@@ -205,8 +205,8 @@ pub enum StringLCSType {
   Idx,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSOpt).
-/// LCS 参数结构体（对标 Apache Kvrocks StringLCSOpt）
+/// Longest Common Subsequence (LCS) operation parameters aligned with Apache Kvrocks StringLCSOpt.
+/// 最长公共子序列参数结构体
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringLCS {
   pub lcs_type: StringLCSType,
@@ -259,16 +259,16 @@ impl From<&[Lcs]> for StringLCS {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSRange).
-/// LCS 字符串子区间（对标 Apache Kvrocks StringLCSRange）
+/// Longest Common Subsequence string sub-range aligned with Apache Kvrocks StringLCSRange.
+/// 最长公共子序列字符串子区间
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StringLCSRange {
   pub start: u32,
   pub end: u32,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSMatchedRange).
-/// LCS 匹配区间（对标 Apache Kvrocks StringLCSMatchedRange）
+/// Longest Common Subsequence matched range pair aligned with Apache Kvrocks StringLCSMatchedRange.
+/// 最长公共子序列匹配区间
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StringLCSMatchedRange {
   pub a: StringLCSRange,
@@ -313,16 +313,16 @@ impl StringLCSMatchedRange {
   }
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSIdxResult).
-/// LCS 索引结果（对标 Apache Kvrocks StringLCSIdxResult）
+/// Longest Common Subsequence index result with matched ranges aligned with Apache Kvrocks StringLCSIdxResult.
+/// 最长公共子序列索引结果
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StringLCSIdxResult {
   pub matches: Vec<StringLCSMatchedRange>,
   pub len: u32,
 }
 
-/// Domain operation (aligned with Apache Kvrocks StringLCSResult).
-/// LCS 综合结果（对标 Apache Kvrocks StringLCSResult）
+/// Longest Common Subsequence combined result enumeration aligned with Apache Kvrocks StringLCSResult.
+/// 最长公共子序列综合结果
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringLCSResult {
   Str(String),

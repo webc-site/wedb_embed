@@ -25,7 +25,7 @@ use crate::{
   key_composer::{KeyComposer, KeyTag},
   meta::current_now_ms,
   string::{decode_string_value, encode_string_value, is_string_expired},
-  wedb::Db,
+  wedb::{Db, DbBatch},
 };
 
 struct SegmentCacheStore<'a, E: Engine> {
@@ -625,16 +625,20 @@ where
       .get(&dest_meta_k)?
       .and_then(|b| BitmapMeta::decode(&b));
 
-    if max_bitmap_size == 0 {
-      // 清理目标 bitmap
-      batch.rm_meta(&dest_meta_k);
-      if let Some(old_m) = old_dest_meta {
+    let clean_old_dest_segments = |batch: &mut DbBatch<E>| {
+      if let Some(ref old_m) = old_dest_meta {
         let old_stop_seg = (old_m.base.size.saturating_sub(1) as usize) / BITMAP_SEGMENT_BYTES;
         for seg_idx in 0..=old_stop_seg {
           let seg_k = key::segment(&kc, dest_bytes, seg_idx as u32);
           batch.rm_data(&seg_k);
         }
       }
+    };
+
+    if max_bitmap_size == 0 {
+      // 清理目标 bitmap
+      batch.rm_meta(&dest_meta_k);
+      clean_old_dest_segments(&mut batch);
       batch.commit()?;
       return Ok(0);
     }
@@ -642,13 +646,7 @@ where
     let can_skip_op = op == BitOp::And && src_metas.len() != src_keys.len();
     if can_skip_op {
       // AND 运算中只要任一源键为空，结果即全为 0，但记录目标元数据大小为 max_bitmap_size
-      if let Some(old_m) = old_dest_meta {
-        let old_stop_seg = (old_m.base.size.saturating_sub(1) as usize) / BITMAP_SEGMENT_BYTES;
-        for seg_idx in 0..=old_stop_seg {
-          let seg_k = key::segment(&kc, dest_bytes, seg_idx as u32);
-          batch.rm_data(&seg_k);
-        }
-      }
+      clean_old_dest_segments(&mut batch);
       let dest_meta = BitmapMeta::new_with_version(0, max_bitmap_size);
       batch.insert_meta(&dest_meta_k, &dest_meta.encode());
       batch.commit()?;

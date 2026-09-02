@@ -1,5 +1,5 @@
-/// Domain operation (aligned with Apache Kvrocks HashFieldExpireCondition).
-/// HEXPIRE / HPEXPIRE 条件选项（对标 Apache Kvrocks HashFieldExpireCondition）
+/// HEXPIRE and HPEXPIRE condition options aligned with Apache Kvrocks HashFieldExpireCondition.
+/// 哈希字段过期条件选项
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
 )]
@@ -13,8 +13,8 @@ pub enum HExpire {
   Lt,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashFieldSetCondition).
-/// 字段设置条件（对标 Apache Kvrocks HashFieldSetCondition）
+/// Hash field set condition (FNX/FXX) aligned with Apache Kvrocks HashFieldSetCondition.
+/// 哈希字段设置条件
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
 )]
@@ -26,8 +26,8 @@ pub enum HashFieldSetCondition {
   Fxx,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashSetExOpt::TTLAction / HashGetEx::TTLAction).
-/// TTL 动作类型（对标 Apache Kvrocks HashSetExOpt::TTLAction / HashGetEx::TTLAction）
+/// Field expiration TTL action type aligned with Apache Kvrocks HashSetExOpt::TTLAction / HashGetEx::TTLAction.
+/// 字段过期动作类型
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Default, strum::Display, strum::EnumString, strum::FromRepr,
 )]
@@ -41,7 +41,7 @@ pub enum TTLAction {
 }
 
 /// HSET command options enumeration.
-/// HSET 选项枚举（统一 *Opt 后缀）
+/// HSET 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HSet {
   Ex(u64),
@@ -53,8 +53,8 @@ pub enum HSet {
   Fxx,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashSetExOpt).
-/// HSETEX 选项（对标 Apache Kvrocks HashSetExOpt）
+/// HSETEX operation options aligned with Apache Kvrocks HashSetExOpt.
+/// 哈希字段设置带过期参数结构体
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HashSetEx {
   pub condition: HashFieldSetCondition,
@@ -120,7 +120,7 @@ impl HashSetEx {
 }
 
 /// HGETEX command options enumeration.
-/// HGETEX 选项枚举（统一 *Opt 后缀）
+/// HGETEX 选项枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HGetEx {
   Ex(u64),
@@ -130,8 +130,8 @@ pub enum HGetEx {
   Persist,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashGetEx).
-/// HGETEX 选项（对标 Apache Kvrocks HashGetEx）
+/// HGETEX operation options aligned with Apache Kvrocks HashGetEx.
+/// 哈希字段读取并更新过期参数结构体
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct HashGetEx {
   pub ttl_action: TTLAction,

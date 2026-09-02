@@ -726,3 +726,79 @@ fn test_mset_fast_path_and_performance() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_string_kvrocks_msetxx_and_mset_keep_ttl() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. MSETXX: 当全部键都不存在时，操作失败返回 false
+  let flag0 = db.msetxx(&[("xx_k1", "v1"), ("xx_k2", "v2")])?;
+  assert!(!flag0);
+  assert_eq!(db.get("xx_k1")?, None);
+  assert_eq!(db.get("xx_k2")?, None);
+
+  // 写入部分键
+  db.set_one("xx_k1", "orig_v1")?;
+  // 部分键存在、部分键缺失：依然整体失败
+  let flag1 = db.msetxx(&[("xx_k1", "new_v1"), ("xx_k2", "new_v2")])?;
+  assert!(!flag1);
+  assert_eq!(db.get("xx_k1")?, Some(b"orig_v1".to_vec()));
+  assert_eq!(db.get("xx_k2")?, None);
+
+  // 全部键均存在：MSETXX 成功
+  db.set_one("xx_k2", "orig_v2")?;
+  let flag2 = db.msetxx(&[("xx_k1", "new_v1"), ("xx_k2", "new_v2")])?;
+  assert!(flag2);
+  assert_eq!(db.get("xx_k1")?, Some(b"new_v1".to_vec()));
+  assert_eq!(db.get("xx_k2")?, Some(b"new_v2".to_vec()));
+
+  // 2. SETNX_EX 与 SETXX 带绝对时间戳测试（对标 Kvrocks SetNX / SetXX）
+  let now = wedb_embed::current_now_ms();
+  let expire_10s = now + 10_000;
+  let flag_nx = db.setnx_ex("nx_ttl_key", "nx_val", expire_10s)?;
+  assert!(flag_nx);
+  let (val, exp) = db.get_with_expire("nx_ttl_key")?;
+  assert_eq!(val, Some(b"nx_val".to_vec()));
+  assert_eq!(exp, expire_10s);
+
+  // 再次对已有键调用 setnx_ex 应失败
+  let flag_nx_fail = db.setnx_ex("nx_ttl_key", "other_val", expire_10s)?;
+  assert!(!flag_nx_fail);
+
+  // 3. MSET 带 KEEPTTL 继承原 TTL
+  let pairs = [("nx_ttl_key", "updated_nx_val")];
+  let mset_keep_res = db.mset_with(
+    &pairs,
+    StringMSet {
+      expire: 0,
+      set_type: StringSetType::None,
+      keep_ttl: true,
+    },
+  )?;
+  assert!(mset_keep_res);
+  let (val2, exp2) = db.get_with_expire("nx_ttl_key")?;
+  assert_eq!(val2, Some(b"updated_nx_val".to_vec()));
+  assert_eq!(exp2, expire_10s);
+
+  // 4. LCS 同串快速通道当 min_match_len 大于串长时返回空匹配
+  let lcs_idx = compute_lcs(b"hello", b"hello", [Lcs::Idx, Lcs::MinMatchLen(10)])?;
+  if let StringLCSResult::Idx(idx_res) = lcs_idx {
+    assert_eq!(idx_res.len, 5);
+    assert!(idx_res.matches.is_empty());
+  } else {
+    panic!("expected Idx result");
+  }
+
+  // min_match_len 小于等于串长时返回有效区间
+  let lcs_idx2 = compute_lcs(b"hello", b"hello", [Lcs::Idx, Lcs::MinMatchLen(3)])?;
+  if let StringLCSResult::Idx(idx_res) = lcs_idx2 {
+    assert_eq!(idx_res.len, 5);
+    assert_eq!(idx_res.matches.len(), 1);
+    assert_eq!(idx_res.matches[0].match_len, 5);
+  } else {
+    panic!("expected Idx result");
+  }
+
+  Ok(())
+}

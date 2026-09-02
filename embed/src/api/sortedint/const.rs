@@ -1,4 +1,4 @@
-/// Operation definition.
+/// Fixed 8-byte length for 64-bit unsigned integer in big-endian order.
 /// 64 位无符号整数原生大端序定长字节数（8 字节）
 pub const BE_LEN: usize = 8;
 
