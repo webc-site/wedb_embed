@@ -974,3 +974,151 @@ fn test_zset_binary_key_with_ff_boundary() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_zset_kvrocks_comprehensive_suite_zmpop_and_zscan_by_member() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 1. 单元素写入与点查零内存分配路径验证
+  let ret1 = db.zadd_one("single_z", 10.5, "m1", [])?;
+  assert_eq!(ret1, 1);
+  assert_eq!(db.zcard("single_z")?, 1);
+  assert_eq!(db.zscore("single_z", "m1")?, Some(10.5));
+  assert_eq!(
+    db.zmscore("single_z", &["m1", "m_non"])?,
+    vec![Some(10.5), None]
+  );
+  let mget_res = db.zmget("single_z", &["m1", "m_non"])?;
+  assert_eq!(mget_res.len(), 1);
+  assert_eq!(mget_res.get(b"m1".as_slice()), Some(&10.5));
+
+  // zincrby
+  let new_sc = db.zincrby("single_z", 5.5, "m1")?;
+  assert_eq!(new_sc, 16.0);
+  assert_eq!(db.zscore("single_z", "m1")?, Some(16.0));
+
+  // zrem_one
+  let rem1 = db.zrem_one("single_z", "m1")?;
+  assert_eq!(rem1, 1);
+  assert_eq!(db.zcard("single_z")?, 0);
+  assert_eq!(db.zscore("single_z", "m1")?, None);
+
+  // 2. 多元素与 Tie-breaker 同分测试 (Score 相同按 member 字典序排列)
+  db.zadd(
+    "tie_z",
+    &[(10.0, "c"), (10.0, "a"), (10.0, "b"), (20.0, "d")],
+    [],
+  )?;
+
+  assert_eq!(db.zrank("tie_z", "a")?, Some(0));
+  assert_eq!(db.zrank("tie_z", "b")?, Some(1));
+  assert_eq!(db.zrank("tie_z", "c")?, Some(2));
+  assert_eq!(db.zrank("tie_z", "d")?, Some(3));
+  assert_eq!(db.zrank("tie_z", "non_exist")?, None);
+
+  assert_eq!(db.zrevrank("tie_z", "d")?, Some(0));
+  assert_eq!(db.zrevrank("tie_z", "c")?, Some(1));
+  assert_eq!(db.zrevrank("tie_z", "b")?, Some(2));
+  assert_eq!(db.zrevrank("tie_z", "a")?, Some(3));
+
+  // 3. ZMPOP 多键批量弹出测试 (Redis 7.0 对齐)
+  db.zadd("z_pop_1", &[(1.0, "x1"), (2.0, "x2"), (3.0, "x3")], [])?;
+  db.zadd("z_pop_2", &[(10.0, "y1"), (20.0, "y2")], [])?;
+
+  // 空键首先被跳过，优先弹出第一个非空键
+  let pop_min_res = db.zmpop(&["empty_1", "z_pop_1", "z_pop_2"], true, 2)?;
+  assert!(pop_min_res.is_some());
+  let (pop_k, pop_items) = pop_min_res.unwrap();
+  assert_eq!(pop_k, b"z_pop_1");
+  assert_eq!(pop_items.len(), 2);
+  assert_eq!(pop_items[0], (b"x1".to_vec(), 1.0));
+  assert_eq!(pop_items[1], (b"x2".to_vec(), 2.0));
+  assert_eq!(db.zcard("z_pop_1")?, 1);
+
+  // MAX 弹出
+  let pop_max_res = db.zmpop(&["z_pop_1"], false, 5)?;
+  let (pop_k2, pop_items2) = pop_max_res.unwrap();
+  assert_eq!(pop_k2, b"z_pop_1");
+  assert_eq!(pop_items2, vec![(b"x3".to_vec(), 3.0)]);
+  assert_eq!(db.zcard("z_pop_1")?, 0);
+
+  // 4. ZRANDMEMBER 快速路径与随机采样
+  db.zadd(
+    "z_rand",
+    &[(1.0, "r1"), (2.0, "r2"), (3.0, "r3"), (4.0, "r4")],
+    [],
+  )?;
+  let r_one = db.zrandmember_one("z_rand")?;
+  assert!(r_one.is_some());
+  let (r_member, r_score) = r_one.unwrap();
+  assert!([b"r1".as_slice(), b"r2", b"r3", b"r4"].contains(&r_member.as_slice()));
+  assert!([1.0, 2.0, 3.0, 4.0].contains(&r_score));
+
+  let r_dup = db.zrandmember("z_rand", -10)?;
+  assert_eq!(r_dup.len(), 10);
+
+  // 5. ZSCAN_BY_MEMBER 范围游标分页测试 (对标 Kvrocks ZSet::Scan)
+  db.zadd(
+    "z_scan_page",
+    &[
+      (100.0, "alpha"),
+      (200.0, "beta"),
+      (300.0, "charlie"),
+      (400.0, "delta"),
+      (500.0, "echo"),
+    ],
+    [],
+  )?;
+
+  // 第一页 limit 2
+  let (next_cur, page1) = db.zscan_by_member("z_scan_page", None, None, Some(2))?;
+  assert_eq!(page1.len(), 2);
+  assert_eq!(page1[0].0, b"alpha");
+  assert_eq!(page1[1].0, b"beta");
+  assert_eq!(next_cur.as_deref(), Some(b"beta".as_slice()));
+
+  // 第二页从 "beta" 之后继续
+  let (next_cur2, page2) = db.zscan_by_member("z_scan_page", next_cur.as_deref(), None, Some(2))?;
+  assert_eq!(page2.len(), 2);
+  assert_eq!(page2[0].0, b"charlie");
+  assert_eq!(page2[1].0, b"delta");
+  assert_eq!(next_cur2.as_deref(), Some(b"delta".as_slice()));
+
+  // 第三页
+  let (next_cur3, page3) =
+    db.zscan_by_member("z_scan_page", next_cur2.as_deref(), None, Some(2))?;
+  assert_eq!(page3.len(), 1);
+  assert_eq!(page3[0].0, b"echo");
+  assert_eq!(next_cur3, None);
+
+  // 6. ZINTERCARD 单 Key O(1) 优化与多 Key 截断
+  assert_eq!(db.zintercard(&["z_scan_page"], 0)?, 5);
+  assert_eq!(db.zintercard(&["z_scan_page"], 3)?, 3);
+  assert_eq!(db.zintercard(&["z_scan_page", "non_exist_key"], 0)?, 0);
+
+  // 7. ZDIFF 对齐 Kvrocks 测试用例 (Diff 与 DiffStore)
+  db.zadd(
+    "k1",
+    &[(-100.1, "a"), (-100.1, "b"), (0.0, "c"), (1.234, "d")],
+    [],
+  )?;
+  db.zadd("k2", &[(-150.1, "c")], [])?;
+  db.zadd("k3", &[(-1000.1, "a"), (-100.1, "c"), (8000.9, "e")], [])?;
+
+  let diff_res = db.zdiff(&["k1", "k2", "k3"])?;
+  assert_eq!(diff_res.len(), 2);
+  assert_eq!(diff_res[0], (b"b".to_vec(), -100.1));
+  assert_eq!(diff_res[1], (b"d".to_vec(), 1.234));
+
+  let diffstore_cnt = db.zdiffstore("zdiff_dst", &["k1", "k2"])?;
+  assert_eq!(diffstore_cnt, 3);
+  assert_eq!(db.zcard("zdiff_dst")?, 3);
+
+  // 8. ZREMRANGEBYRANK 全量删除快速路径
+  let rem_full = db.zremrangebyrank("zdiff_dst", (0, -1))?;
+  assert_eq!(rem_full, 3);
+  assert_eq!(db.zcard("zdiff_dst")?, 0);
+
+  Ok(())
+}

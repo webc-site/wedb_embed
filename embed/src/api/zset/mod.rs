@@ -18,6 +18,8 @@ pub use opt::{
 pub type ZSetMemberScore = (Vec<u8>, f64);
 pub type ZSetKeyMemberScore = (Vec<u8>, Vec<u8>, f64);
 pub type ZScanResult = (u64, Vec<ZSetMemberScore>);
+pub type ZSetPopResult = (Vec<u8>, Vec<ZSetMemberScore>);
+pub type ZSetScanByMemberResult = (Option<Vec<u8>>, Vec<ZSetMemberScore>);
 
 use std::ops::Bound;
 

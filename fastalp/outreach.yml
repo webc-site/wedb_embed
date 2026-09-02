@@ -110,3 +110,27 @@ records:
     title: "Compression improvements using lossy techniques"
     status: posted
     date: 2026-09-03
+
+  - type: issue
+    repo: Muvon/pulsora
+    issue: 7
+    url: https://github.com/Muvon/pulsora/issues/7
+    title: "Feature request: Support ALP encoding for market price floating-point columns"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue
+    repo: jocarrd/graupel
+    issue: 7
+    url: https://github.com/jocarrd/graupel/issues/7
+    title: "Support ALP (Adaptive Lossless Floating-Point) codec"
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: jocarrd/graupel
+    pr_number: 8
+    url: https://github.com/jocarrd/graupel/pull/8
+    title: "feat(codec): add ALP (Adaptive Lossless Floating-Point) compression codec"
+    status: submitted
+    date: 2026-09-03

@@ -1,10 +1,13 @@
 use std::{ops::Bound, str};
 
-use rapidhash::{HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as HashSet};
+use rapidhash::{
+  HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as HashSet, v3::rapidhash_v3,
+};
 
 use crate::{
   api::zset::{
-    ZScanResult, ZSetKeyMemberScore, ZSetMemberScore,
+    ZScanResult, ZSetKeyMemberScore, ZSetMemberScore, ZSetPopResult, ZSetScanByMemberResult,
+    key::{compose_zset_key, compose_zset_score_key},
     meta::ZSetMeta,
     opt::{
       Aggregate, IntoRangeLex, IntoRangeRank, IntoRangeScore, RangeLex, RangeScore, ZAdd, ZRange,
@@ -13,7 +16,7 @@ use crate::{
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key::{check_key_not_other_type, clear_prefix_in_batch, get_meta_checked},
-  key_composer::{KeyComposer, KeyTag, SmallKey, matches_glob_bytes},
+  key_composer::{KeyComposer, KeyTag, SmallKey, SubkeyComposer, matches_glob_bytes},
   meta::{
     current_now_ms, decode_sortable_f64, encode_sortable_f64, generate_version,
     normalize_range as meta_normalize_range,
@@ -28,9 +31,9 @@ const SCORE_LEN: usize = 8;
 #[inline(always)]
 fn parse_score_sub(sub: &[u8]) -> Option<(f64, &[u8])> {
   if sub.len() >= SCORE_LEN {
-    let score_bytes: [u8; 8] = sub[..SCORE_LEN].try_into().ok()?;
-    let member = &sub[SCORE_LEN..];
-    Some((decode_sortable_f64(score_bytes), member))
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&sub[..8]);
+    Some((decode_sortable_f64(b), &sub[8..]))
   } else {
     None
   }
@@ -617,7 +620,6 @@ where
 
     let meta_k = compose_zset_meta_key(&kc, k_bytes);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
     let mut batch = self.batch_with_capacity(score_members.len() * 2 + 1);
     let (mut meta, metadata_existed) =
       prepare_zset_meta_for_write(self, k_bytes, &meta_k, now_ms, &mut batch)?;
@@ -625,95 +627,151 @@ where
     let mut added = 0;
     let mut changed = 0;
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let mut m_key = Vec::with_capacity(prefix.len() + 32);
-    let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 32);
-
     let is_single = score_members.len() == 1;
-    let mut seen = if is_single {
-      HashSet::default()
-    } else {
-      HashSet::with_capacity(score_members.len())
-    };
 
-    for (input_score, member) in score_members.iter().rev() {
+    if is_single {
+      let (input_score, member) = &score_members[0];
       let m_bytes = member.as_ref();
-      if !is_single && !seen.insert(m_bytes) {
-        continue;
-      }
-
-      m_key.clear();
-      m_key.extend_from_slice(&prefix);
-      m_key.extend_from_slice(m_bytes);
+      let m_key = compose_zset_key(&kc, k_bytes, m_bytes);
 
       let old_score_bytes = if metadata_existed {
-        data_ks.get(&m_key)?
+        data_ks.get(m_key.as_slice())?
       } else {
         None
       };
 
       if let Some(old_sb) = old_score_bytes {
-        if nx {
+        if !nx {
+          let mut sb = [0u8; 8];
+          if old_sb.len() >= 8 {
+            sb.copy_from_slice(&old_sb[..8]);
+          }
+          let old_score = decode_sortable_f64(sb);
+
+          let final_score = if incr {
+            if (lt && *input_score >= 0.0) || (gt && *input_score <= 0.0) {
+              return Ok(0);
+            }
+            old_score + *input_score
+          } else {
+            *input_score
+          };
+
+          if final_score.is_nan() {
+            return Err(Error::invalid_data(
+              "ERR resulting score is not a number (NaN)",
+            ));
+          }
+
+          if !((gt && final_score <= old_score) || (lt && final_score >= old_score))
+            && final_score != old_score
+          {
+            changed = 1;
+            let old_s_key = compose_zset_score_key(&kc, k_bytes, old_score, m_bytes);
+            batch.rm_weak_data(old_s_key.as_slice());
+
+            let new_enc = encode_sortable_f64(final_score);
+            let new_s_key = compose_zset_score_key(&kc, k_bytes, final_score, m_bytes);
+            batch.insert_data(new_s_key.as_slice(), b"");
+            batch.insert_data(m_key.as_slice(), &new_enc);
+          }
+        }
+      } else if !xx {
+        let final_score = *input_score;
+        added = 1;
+        meta.base.size = meta.base.size.saturating_add(1);
+
+        let new_enc = encode_sortable_f64(final_score);
+        let new_s_key = compose_zset_score_key(&kc, k_bytes, final_score, m_bytes);
+
+        batch.insert_data(new_s_key.as_slice(), b"");
+        batch.insert_data(m_key.as_slice(), &new_enc);
+      }
+    } else {
+      let prefix = compose_zset_prefix(&kc, k_bytes);
+      let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
+      let mut m_key = Vec::with_capacity(prefix.len() + 32);
+      let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 32);
+      let mut seen = HashSet::with_capacity(score_members.len());
+
+      for (input_score, member) in score_members.iter().rev() {
+        let m_bytes = member.as_ref();
+        if !seen.insert(m_bytes) {
           continue;
         }
-        let mut sb = [0u8; 8];
-        if old_sb.len() >= 8 {
-          sb.copy_from_slice(&old_sb[..8]);
-        }
-        let old_score = decode_sortable_f64(sb);
 
-        let final_score = if incr {
-          if (lt && *input_score >= 0.0) || (gt && *input_score <= 0.0) {
-            continue;
-          }
-          old_score + *input_score
+        m_key.clear();
+        m_key.extend_from_slice(&prefix);
+        m_key.extend_from_slice(m_bytes);
+
+        let old_score_bytes = if metadata_existed {
+          data_ks.get(&m_key)?
         } else {
-          *input_score
+          None
         };
 
-        if final_score.is_nan() {
-          return Err(Error::invalid_data(
-            "ERR resulting score is not a number (NaN)",
-          ));
-        }
+        if let Some(old_sb) = old_score_bytes {
+          if nx {
+            continue;
+          }
+          let mut sb = [0u8; 8];
+          if old_sb.len() >= 8 {
+            sb.copy_from_slice(&old_sb[..8]);
+          }
+          let old_score = decode_sortable_f64(sb);
 
-        if (gt && final_score <= old_score) || (lt && final_score >= old_score) {
-          continue;
-        }
+          let final_score = if incr {
+            if (lt && *input_score >= 0.0) || (gt && *input_score <= 0.0) {
+              continue;
+            }
+            old_score + *input_score
+          } else {
+            *input_score
+          };
 
-        if final_score != old_score {
-          changed += 1;
-          s_key.clear();
-          s_key.extend_from_slice(&score_prefix);
-          s_key.extend_from_slice(&sb);
-          s_key.extend_from_slice(m_bytes);
-          batch.rm_data(&s_key);
+          if final_score.is_nan() {
+            return Err(Error::invalid_data(
+              "ERR resulting score is not a number (NaN)",
+            ));
+          }
+
+          if (gt && final_score <= old_score) || (lt && final_score >= old_score) {
+            continue;
+          }
+
+          if final_score != old_score {
+            changed += 1;
+            s_key.clear();
+            s_key.extend_from_slice(&score_prefix);
+            s_key.extend_from_slice(&sb);
+            s_key.extend_from_slice(m_bytes);
+            batch.rm_weak_data(&s_key);
+
+            let new_enc = encode_sortable_f64(final_score);
+            s_key.clear();
+            s_key.extend_from_slice(&score_prefix);
+            s_key.extend_from_slice(&new_enc);
+            s_key.extend_from_slice(m_bytes);
+            batch.insert_data(&s_key, b"");
+            batch.insert_data(&m_key, &new_enc);
+          }
+        } else {
+          if xx {
+            continue;
+          }
+          let final_score = *input_score;
+          added += 1;
+          meta.base.size = meta.base.size.saturating_add(1);
 
           let new_enc = encode_sortable_f64(final_score);
           s_key.clear();
           s_key.extend_from_slice(&score_prefix);
           s_key.extend_from_slice(&new_enc);
           s_key.extend_from_slice(m_bytes);
+
           batch.insert_data(&s_key, b"");
           batch.insert_data(&m_key, &new_enc);
         }
-      } else {
-        if xx {
-          continue;
-        }
-        let final_score = *input_score;
-        added += 1;
-        meta.base.size = meta.base.size.saturating_add(1);
-
-        let new_enc = encode_sortable_f64(final_score);
-        s_key.clear();
-        s_key.extend_from_slice(&score_prefix);
-        s_key.extend_from_slice(&new_enc);
-        s_key.extend_from_slice(m_bytes);
-
-        batch.insert_data(&s_key, b"");
-        batch.insert_data(&m_key, &new_enc);
       }
     }
 
@@ -740,7 +798,6 @@ where
     let meta_k = compose_zset_meta_key(&kc, k_bytes);
     let now_ms = current_now_ms();
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
       Some(m) => m,
@@ -750,35 +807,30 @@ where
     let mut deleted = 0;
     let mut batch = self.batch_with_capacity(members.len() * 2 + 1);
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let mut m_key = Vec::with_capacity(prefix.len() + 32);
-    let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 32);
-
     if members.len() == 1 {
       let m_bytes = members[0].as_ref();
-      m_key.clear();
-      m_key.extend_from_slice(&prefix);
-      m_key.extend_from_slice(m_bytes);
+      let m_key = compose_zset_key(&kc, k_bytes, m_bytes);
 
-      if let Some(sb) = data_ks.get(&m_key)? {
+      if let Some(sb) = data_ks.get(m_key.as_slice())? {
         deleted = 1;
         meta.base.size = meta.base.size.saturating_sub(1);
         let mut b = [0u8; 8];
         if sb.len() >= 8 {
           b.copy_from_slice(&sb[..8]);
         }
+        let score = decode_sortable_f64(b);
+        let s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
 
-        s_key.clear();
-        s_key.extend_from_slice(&score_prefix);
-        s_key.extend_from_slice(&b);
-        s_key.extend_from_slice(m_bytes);
-
-        batch.rm_data(&s_key);
-        batch.rm_data(&m_key);
+        batch.rm_weak_data(s_key.as_slice());
+        batch.rm_weak_data(m_key.as_slice());
       }
     } else {
+      let prefix = compose_zset_prefix(&kc, k_bytes);
+      let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
+      let mut m_key = Vec::with_capacity(prefix.len() + 32);
+      let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 32);
       let mut seen = HashSet::with_capacity(members.len());
+
       for member in members {
         let m_bytes = member.as_ref();
         if !seen.insert(m_bytes) {
@@ -801,8 +853,8 @@ where
           s_key.extend_from_slice(&b);
           s_key.extend_from_slice(m_bytes);
 
-          batch.rm_data(&s_key);
-          batch.rm_data(&m_key);
+          batch.rm_weak_data(&s_key);
+          batch.rm_weak_data(&m_key);
         }
       }
     }
@@ -830,12 +882,9 @@ where
       return Ok(None);
     }
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let mut m_key = Vec::with_capacity(prefix.len() + member.as_ref().len());
-    m_key.extend_from_slice(&prefix);
-    m_key.extend_from_slice(member.as_ref());
+    let m_key = compose_zset_key(&kc, k_bytes, member.as_ref());
 
-    match self.data().get(&m_key)? {
+    match self.data().get(m_key.as_slice())? {
       Some(sb) if sb.len() >= 8 => {
         let mut b = [0u8; 8];
         b.copy_from_slice(&sb[..8]);
@@ -868,15 +917,28 @@ where
       return Ok(scores);
     }
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let mut m_key = Vec::with_capacity(prefix.len() + 32);
     let data_ks = self.data();
 
+    if members.len() == 1 {
+      let m_key = compose_zset_key(&kc, k_bytes, members[0].as_ref());
+      let score = match data_ks.get(m_key.as_slice())? {
+        Some(sb) if sb.len() >= 8 => {
+          let mut b = [0u8; 8];
+          b.copy_from_slice(&sb[..8]);
+          Some(decode_sortable_f64(b))
+        }
+        _ => None,
+      };
+      scores.push(score);
+      return Ok(scores);
+    }
+
+    let prefix = compose_zset_prefix(&kc, k_bytes);
+    let mut composer = SubkeyComposer::from_slice(&prefix);
+
     for m in members {
-      m_key.clear();
-      m_key.extend_from_slice(&prefix);
-      m_key.extend_from_slice(m.as_ref());
-      let score = match data_ks.get(&m_key)? {
+      let m_key = composer.compose_sub(m.as_ref());
+      let score = match data_ks.get(m_key)? {
         Some(sb) if sb.len() >= 8 => {
           let mut b = [0u8; 8];
           b.copy_from_slice(&sb[..8]);
@@ -911,16 +973,28 @@ where
       return Ok(mscores);
     }
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let mut m_key = Vec::with_capacity(prefix.len() + 32);
     let data_ks = self.data();
+
+    if members.len() == 1 {
+      let m_bytes = members[0].as_ref();
+      let m_key = compose_zset_key(&kc, k_bytes, m_bytes);
+      if let Some(sb) = data_ks.get(m_key.as_slice())?
+        && sb.len() >= 8
+      {
+        let mut b = [0u8; 8];
+        b.copy_from_slice(&sb[..8]);
+        mscores.insert(m_bytes.to_vec(), decode_sortable_f64(b));
+      }
+      return Ok(mscores);
+    }
+
+    let prefix = compose_zset_prefix(&kc, k_bytes);
+    let mut composer = SubkeyComposer::from_slice(&prefix);
 
     for m in members {
       let m_bytes = m.as_ref();
-      m_key.clear();
-      m_key.extend_from_slice(&prefix);
-      m_key.extend_from_slice(m_bytes);
-      if let Some(sb) = data_ks.get(&m_key)?
+      let m_key = composer.compose_sub(m_bytes);
+      if let Some(sb) = data_ks.get(m_key)?
         && sb.len() >= 8
       {
         let mut b = [0u8; 8];
@@ -993,23 +1067,15 @@ where
     let (mut meta, metadata_existed) =
       prepare_zset_meta_for_write(self, k_bytes, &meta_k, now_ms, &mut batch)?;
 
-    let prefix = compose_zset_prefix(&kc, k_bytes);
-    let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
     let m_bytes = member.as_ref();
-    let mut m_key = Vec::with_capacity(prefix.len() + m_bytes.len());
-    m_key.extend_from_slice(&prefix);
-    m_key.extend_from_slice(m_bytes);
-
+    let m_key = compose_zset_key(&kc, k_bytes, m_bytes);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let old_score_bytes = if metadata_existed {
-      data_ks.get(&m_key)?
+      data_ks.get(m_key.as_slice())?
     } else {
       None
     };
-
-    let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + m_bytes.len());
 
     let final_score = if let Some(old_sb) = old_score_bytes {
       let mut sb = [0u8; 8];
@@ -1024,19 +1090,13 @@ where
         ));
       }
       if score != old_score {
-        s_key.clear();
-        s_key.extend_from_slice(&score_prefix);
-        s_key.extend_from_slice(&sb);
-        s_key.extend_from_slice(m_bytes);
-        batch.rm_data(&s_key);
+        let old_s_key = compose_zset_score_key(&kc, k_bytes, old_score, m_bytes);
+        batch.rm_weak_data(old_s_key.as_slice());
 
         let new_enc = encode_sortable_f64(score);
-        s_key.clear();
-        s_key.extend_from_slice(&score_prefix);
-        s_key.extend_from_slice(&new_enc);
-        s_key.extend_from_slice(m_bytes);
-        batch.insert_data(&s_key, b"");
-        batch.insert_data(&m_key, &new_enc);
+        let new_s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
+        batch.insert_data(new_s_key.as_slice(), b"");
+        batch.insert_data(m_key.as_slice(), &new_enc);
         batch.insert_meta(&meta_k, &meta.encode());
         batch.commit()?;
       }
@@ -1045,12 +1105,9 @@ where
       let score = increment;
       meta.base.size = meta.base.size.saturating_add(1);
       let new_enc = encode_sortable_f64(score);
-      s_key.clear();
-      s_key.extend_from_slice(&score_prefix);
-      s_key.extend_from_slice(&new_enc);
-      s_key.extend_from_slice(m_bytes);
-      batch.insert_data(&s_key, b"");
-      batch.insert_data(&m_key, &new_enc);
+      let new_s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
+      batch.insert_data(new_s_key.as_slice(), b"");
+      batch.insert_data(m_key.as_slice(), &new_enc);
       batch.insert_meta(&meta_k, &meta.encode());
       batch.commit()?;
       score
@@ -1085,7 +1142,7 @@ where
       if score == target_score && m == m_ref {
         found = true;
         false
-      } else if score > target_score {
+      } else if score > target_score || (score == target_score && m > m_ref) {
         false
       } else {
         rank += 1;
@@ -1126,7 +1183,7 @@ where
       if score == target_score && m == m_ref {
         found = true;
         false
-      } else if score < target_score {
+      } else if score < target_score || (score == target_score && m < m_ref) {
         false
       } else {
         rank += 1;
@@ -1469,7 +1526,6 @@ where
     let mut batch = self.batch_with_capacity(actual_count * 2 + 1);
     let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     for g in data_ks.prefix(&prefix) {
       let entry = g?;
@@ -1536,7 +1592,6 @@ where
     let mut batch = self.batch_with_capacity(num_pop * 2 + 1);
     let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     for g in data_ks.prefix(&prefix).rev() {
       let entry = g?;
@@ -1569,6 +1624,31 @@ where
     Ok(popped)
   }
 
+  /// ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count] (Redis 7.0 multi-key pop).
+  /// ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count] (对标 Redis 7.0 多键批量弹出)
+  #[inline]
+  pub fn zmpop<K: AsRef<[u8]>>(
+    &self,
+    keys: &[K],
+    min: bool,
+    count: usize,
+  ) -> Result<Option<ZSetPopResult>> {
+    if count == 0 {
+      return Ok(None);
+    }
+    for k in keys {
+      let popped = if min {
+        self.zpopmin(k, count)?
+      } else {
+        self.zpopmax(k, count)?
+      };
+      if !popped.is_empty() {
+        return Ok(Some((k.as_ref().to_vec(), popped)));
+      }
+    }
+    Ok(None)
+  }
+
   /// BZPOPMIN key [key ...] (checks keys and pops lowest score member from first non-empty set).
   /// BZPOPMIN key [key ...] (检查多键并弹出第一个非空的最小值)
   #[inline]
@@ -1595,12 +1675,42 @@ where
     Ok(None)
   }
 
+  /// ZRANDMEMBER key (single random element extraction with zero full-scan memory).
+  /// 随机获取单个元素（零全量扫描内存开销，针对单元素随机访问优化）
+  #[inline]
+  pub fn zrandmember_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
+    let card = self.zcard(&key)? as usize;
+    if card == 0 {
+      return Ok(None);
+    }
+    let target = fastrand::usize(0..card);
+    let mut current_idx = 0usize;
+    let mut chosen = None;
+
+    self.ziter_members(key, |m, score| {
+      if current_idx == target {
+        chosen = Some((m.to_vec(), score));
+        return false;
+      }
+      current_idx += 1;
+      true
+    })?;
+
+    Ok(chosen)
+  }
+
   /// ZRANDMEMBER key [count] (random member extraction aligned with Kvrocks).
   /// ZRANDMEMBER key [count] (对标 Apache Kvrocks ExtractRandMemberFromSet)
   #[inline]
   pub fn zrandmember<K: AsRef<[u8]>>(&self, key: K, count: i64) -> Result<Vec<ZSetMemberScore>> {
     if count == 0 {
       return Ok(Vec::new());
+    }
+    if count == 1 || count == -1 {
+      return match self.zrandmember_one(&key)? {
+        Some(item) => Ok(vec![item]),
+        None => Ok(Vec::new()),
+      };
     }
     let all = self.zget_all(key)?;
     let total = all.len();
@@ -1655,12 +1765,21 @@ where
     let count = e - s + 1;
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
     let member_prefix = compose_zset_prefix(&kc, k_bytes);
+
+    if s == 0 && e + 1 >= card {
+      let mut batch = self.batch();
+      clear_prefix_in_batch(self.data(), &prefix, &mut batch)?;
+      clear_prefix_in_batch(self.data(), &member_prefix, &mut batch)?;
+      batch.rm_meta(&meta_k);
+      batch.commit()?;
+      return Ok(card);
+    }
+
     let mut deleted = 0usize;
     let mut current_idx = 0usize;
     let mut batch = self.batch_with_capacity(count * 2 + 1);
     let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     for g in data_ks.prefix(&prefix) {
       let entry = g?;
@@ -1733,7 +1852,6 @@ where
     let mut batch = self.batch();
     let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     for g in data_ks.range((start_ref, end_ref)) {
       let entry = g?;
@@ -1749,8 +1867,8 @@ where
           m_key.clear();
           m_key.extend_from_slice(&member_prefix);
           m_key.extend_from_slice(member);
-          batch.rm_data(k);
-          batch.rm_data(&m_key);
+          batch.rm_weak_data(k);
+          batch.rm_weak_data(&m_key);
           deleted += 1;
         }
       }
@@ -1798,7 +1916,6 @@ where
     let mut batch = self.batch();
     let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 1 + 32);
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     for g in data_ks.range((start_ref, end_ref)) {
       let entry = g?;
@@ -1826,8 +1943,8 @@ where
         s_key.extend_from_slice(&sb);
         s_key.extend_from_slice(member);
 
-        batch.rm_data(&s_key);
-        batch.rm_data(k);
+        batch.rm_weak_data(&s_key);
+        batch.rm_weak_data(k);
         deleted += 1;
       }
     }
@@ -1861,8 +1978,6 @@ where
 
     let z_prefix = compose_zset_prefix(&kc, k_bytes);
     let zs_prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let _data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let mut batch = self.batch();
     clear_prefix_in_batch(self.data(), &z_prefix, &mut batch)?;
@@ -1931,15 +2046,18 @@ where
         return Ok(Vec::new());
       }
       let card = self.zcard(k)?;
+      if card == 0 {
+        continue;
+      }
       if (base_items.len() as u64).saturating_mul(4) < card {
         base_items.retain(|(member, _)| self.zscore(k, member).unwrap_or(None).is_none());
       } else {
-        let mut exclude: HashSet<Vec<u8>> = HashSet::with_capacity(card as usize);
+        let mut exclude: HashSet<u64> = HashSet::with_capacity(card as usize);
         self.ziter(k, |m, _| {
-          exclude.insert(m.to_vec());
+          exclude.insert(rapidhash_v3(m));
           true
         })?;
-        base_items.retain(|(member, _)| !exclude.contains(member));
+        base_items.retain(|(member, _)| !exclude.contains(&rapidhash_v3(member)));
       }
     }
 
@@ -2044,19 +2162,19 @@ where
     }
 
     let (base_k, base_w) = &keys_weights[min_idx];
-    let base_items = self.zget_all(base_k)?;
-    if base_items.is_empty() {
-      return Ok(Vec::new());
-    }
+    let mut current_map: HashMap<Vec<u8>, f64> = HashMap::with_capacity(min_card as usize);
 
-    let mut current_map: HashMap<Vec<u8>, f64> = HashMap::with_capacity(base_items.len());
-
-    for (m, s) in base_items {
+    self.ziter_members(base_k, |m, s| {
       let mut score = s * base_w;
       if score.is_nan() {
         score = 0.0;
       }
-      current_map.insert(m, score);
+      current_map.insert(m.to_vec(), score);
+      true
+    })?;
+
+    if current_map.is_empty() {
+      return Ok(Vec::new());
     }
 
     for (i, (k, weight)) in keys_weights.iter().enumerate() {
@@ -2104,6 +2222,11 @@ where
     if keys.is_empty() {
       return Ok(0);
     }
+    if keys.len() == 1 {
+      let card = self.zcard(&keys[0])? as usize;
+      return Ok(if limit == 0 { card } else { card.min(limit) });
+    }
+
     let mut key_cards: Vec<(&K, u64)> = Vec::with_capacity(keys.len());
     for k in keys {
       let card = self.zcard(k)?;
@@ -2130,7 +2253,7 @@ where
     self.ziter(smallest_key, |member, _| {
       let in_all = other_prefixes.iter().all(|prefix| {
         probe_buf.clear();
-        probe_buf.extend_from_slice(prefix);
+        probe_buf.extend_from_slice(prefix.as_slice());
         probe_buf.extend_from_slice(member);
         data_ks.contains_key(&probe_buf).unwrap_or(false)
       });
@@ -2183,6 +2306,89 @@ where
       current_idx += 1;
       current_idx < end
     })?;
+
+    Ok((next_cursor, results))
+  }
+
+  /// ZSCAN key cursor [MATCH pattern] [COUNT count] (range-based pagination by member).
+  /// ZSCAN key cursor [MATCH pattern] [COUNT count]（基于成员寻址精准范围遍历，零全量慢查，对标 Kvrocks ZSet::Scan）
+  #[inline]
+  pub fn zscan_by_member<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    cursor: Option<&[u8]>,
+    pattern: Option<&[u8]>,
+    count: Option<usize>,
+  ) -> Result<ZSetScanByMemberResult> {
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_zset_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let _meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok((None, Vec::new())),
+    };
+
+    let limit = count.unwrap_or(10).max(1);
+    let is_match_all = match pattern {
+      Some(p) => p == b"*",
+      None => true,
+    };
+    let pat_bytes = pattern.unwrap_or(b"*");
+
+    let data_ks = self.data();
+    let prefix = compose_zset_prefix(&kc, k_bytes);
+    let prefix_bytes = prefix.as_slice();
+    let prefix_len = prefix_bytes.len();
+
+    let mut results = Vec::with_capacity(limit);
+    let mut next_cursor = None;
+
+    if let Some(cursor_bytes) = cursor {
+      let start_k = compose_zset_key(&kc, k_bytes, cursor_bytes);
+      for g in data_ks.range((Bound::Excluded(start_k.as_slice()), Bound::Unbounded)) {
+        let entry = g?;
+        let (k, v) = (entry.key(), entry.value());
+        if !k.starts_with(prefix_bytes) {
+          break;
+        }
+        let member = &k[prefix_len..];
+        if is_match_all || matches_glob_bytes(pat_bytes, member) {
+          let mut sb = [0u8; 8];
+          if v.len() >= 8 {
+            sb.copy_from_slice(&v[..8]);
+          }
+          let score = decode_sortable_f64(sb);
+          results.push((member.to_vec(), score));
+          if results.len() >= limit {
+            next_cursor = Some(member.to_vec());
+            break;
+          }
+        }
+      }
+    } else {
+      for g in data_ks.prefix(prefix_bytes) {
+        let entry = g?;
+        let (k, v) = (entry.key(), entry.value());
+        if !k.starts_with(prefix_bytes) {
+          break;
+        }
+        let member = &k[prefix_len..];
+        if is_match_all || matches_glob_bytes(pat_bytes, member) {
+          let mut sb = [0u8; 8];
+          if v.len() >= 8 {
+            sb.copy_from_slice(&v[..8]);
+          }
+          let score = decode_sortable_f64(sb);
+          results.push((member.to_vec(), score));
+          if results.len() >= limit {
+            next_cursor = Some(member.to_vec());
+            break;
+          }
+        }
+      }
+    }
 
     Ok((next_cursor, results))
   }

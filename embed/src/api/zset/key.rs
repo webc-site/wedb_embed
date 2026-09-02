@@ -55,6 +55,9 @@ pub fn score_prefix_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
   kc.compose_prefix_stack(KeyTag::ZSetScore.as_slice(), key)
 }
 
+pub use member as compose_zset_key;
+pub use score as compose_zset_score_key;
+
 /// Encodes f64 score into order-preserving u64 integer.
 /// 将 f64 浮点分数编码为保序 u64 整数
 pub use crate::meta::{
@@ -74,11 +77,11 @@ impl ItemKeyComposer {
   #[inline]
   pub fn new(kc: &KeyComposer, key: &[u8]) -> Self {
     let mp = prefix_stack(kc, key);
-    let sp = score_prefix(kc, key);
+    let sp = score_prefix_stack(kc, key);
     let score_prefix_len = sp.len();
     Self {
       member_composer: SubkeyComposer::from_slice(&mp),
-      score_buf: sp,
+      score_buf: sp.to_vec(),
       score_prefix_len,
     }
   }
