@@ -82,31 +82,47 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
   let base = F::read_base(&src[cursor..cursor + F::BASE_SIZE]);
   cursor += F::BASE_SIZE;
 
-  let packed_len = packed_byte_size(count, bit_width);
-  if src.len() < cursor + packed_len {
-    return Err(Error::UnexpectedEof {
-      needed: cursor + packed_len,
-      available: src.len(),
-    });
-  }
-
   let start_idx = dst.len();
   let fac_int = F::fac_int(fac);
   let frac_flt = F::frac_exp(exp);
 
-  bitunpack_into(
-    &src[cursor..cursor + packed_len],
-    count,
-    bit_width,
-    base,
-    fac_int,
-    frac_flt,
-    dst,
-  )?;
-  cursor += packed_len;
+  if bit_width == 0 {
+    let val = F::decode_from_int(base, fac_int, frac_flt);
+    dst.reserve(count);
+    // SAFETY: dst 已 reserve(count)，循环快速填充常数值并更新有效长度
+    unsafe {
+      let ptr = dst.as_mut_ptr().add(start_idx);
+      for i in 0..count {
+        *ptr.add(i) = val;
+      }
+      dst.set_len(start_idx + count);
+    }
+    if cursor == src.len() {
+      return Ok(());
+    }
+  } else {
+    let packed_len = packed_byte_size(count, bit_width);
+    if src.len() < cursor + packed_len {
+      return Err(Error::UnexpectedEof {
+        needed: cursor + packed_len,
+        available: src.len(),
+      });
+    }
 
-  if cursor == src.len() {
-    return Ok(());
+    bitunpack_into(
+      &src[cursor..cursor + packed_len],
+      count,
+      bit_width,
+      base,
+      fac_int,
+      frac_flt,
+      dst,
+    )?;
+    cursor += packed_len;
+
+    if cursor == src.len() {
+      return Ok(());
+    }
   }
 
   if src.len() < cursor + EXC_COUNT_LEN {

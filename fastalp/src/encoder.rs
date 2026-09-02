@@ -65,19 +65,37 @@ pub fn compress_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
   // SAFETY: encoded_ints 已分配 slice.len() 个插槽，通过指针直接写入，最后 set_len 安全更新长度
   unsafe {
     let enc_ptr: *mut F::Int = encoded_ints.as_mut_ptr();
-    for (i, &val) in slice.iter().enumerate() {
-      match F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
-        Some(enc) => {
+    if fac_int == 1 {
+      for (i, &val) in slice.iter().enumerate() {
+        let enc = val.fast_round_to_int(exp_factor);
+        let decoded = F::decode_from_int(enc, 1, frac_exp);
+        if decoded.to_raw_bits() == val.to_raw_bits() && !val.is_impossible() {
           enc_ptr.add(i).write(enc);
           min_val = min_val.min(enc);
           max_val = max_val.max(enc);
-        }
-        None => {
+        } else {
           enc_ptr.add(i).write(F::ZERO_INT);
           exceptions.push(Exception {
             pos: i as u16,
             bits: val.to_raw_bits(),
           });
+        }
+      }
+    } else {
+      for (i, &val) in slice.iter().enumerate() {
+        match val.try_encode_fast(exp_factor, fac_int, frac_exp) {
+          Some(enc) => {
+            enc_ptr.add(i).write(enc);
+            min_val = min_val.min(enc);
+            max_val = max_val.max(enc);
+          }
+          None => {
+            enc_ptr.add(i).write(F::ZERO_INT);
+            exceptions.push(Exception {
+              pos: i as u16,
+              bits: val.to_raw_bits(),
+            });
+          }
         }
       }
     }

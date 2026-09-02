@@ -106,3 +106,7 @@ impl Error {
 /// 跨类型操作错误（统一定义，各模块共用）
 pub const ERR_WRONG_TYPE: &str =
   "WRONGTYPE Operation against a key holding the wrong kind of value";
+
+/// Key not found error constant.
+/// 键不存在错误常量
+pub const ERR_NO_SUCH_KEY: &str = "ERR no such key";

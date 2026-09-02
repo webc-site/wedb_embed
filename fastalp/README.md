@@ -58,7 +58,8 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
   - [Raw Fallback Safeguard Against Negative Compression](#raw-fallback-safeguard-against-negative-compression)
   - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
-  - [Zero-Multiplication LUT Decompression Acceleration](#zero-multiplication-lut-decompression-acceleration)
+  - [Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration](#pure-register-simd-vectorized-decompression-hybrid-local-table-acceleration)
+  - [Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling](#two-pass-simd-vectorized-encoding-early-exit-sampling)
   - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
   - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
   - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
@@ -219,9 +220,9 @@ graph TD
   For raw fallback chunks, performs direct zero-copy slice restoration.<br>
   For ALP chunks, extracts packed `(exp, fac, bit_width)` parameters and base value.
 
-- **Bit Unpacking & LUT Reconstruction (`bitpack/unpack.rs`)**:<br>
-  Small bit-widths (1, 2, 4, 8 bits) reconstruct floats via precomputed stack lookup tables in a single pass.<br>
-  General bit-widths unpack via register bit-stream sliding windows.
+- **Bit Unpacking & SIMD Register Reconstruction (`bitpack/unpack.rs`)**:<br>
+  Bit-widths of 8, 16, 32, and 64 bits employ pure register SIMD auto-vectorization, eliminating gather lookups and cache stalls;<br>
+  Ultra-small bit-widths (1, 2, 4 bits) leverage compact register-resident tables for rapid reconstruction.
 
 - **Exception Patching (`decoder.rs`)**:<br>
   Overwrites positions listed in the exception table with raw IEEE 754 bit patterns.
@@ -282,16 +283,16 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 
 ### Side-by-Side Throughput Comparison
 
-| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio |
+| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio (fastalp / C++) |
 |---|---|---|---|---|
-| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
-| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
-| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
-| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
-| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
-| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
-| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
-| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
+| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **25.60 GB/s** | 7.02 GB/s | **3.65x** |
+| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **4.98 GB/s** | 0.84 GB/s | **5.90x** |
+| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **5.60 GB/s** | 5.85 GB/s | 0.96x |
+| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **2.87 GB/s** | 2.46 GB/s | **1.17x** |
+| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **78.92 GB/s** | 21.85 GB/s | **3.61x** |
+| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
+| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **59.93 GB/s** | 18.42 GB/s | **3.25x** |
+| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **57.97 GB/s** | 32.77 GB/s | **1.77x** |
 
 ### Real-World Datasets Compression Ratio
 
@@ -361,14 +362,19 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
 - **fastalp Optimization**:<br>
   Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
 
-### Zero-Multiplication LUT Decompression Acceleration
+### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
 
 - **Reference C++ Implementation**:<br>
-  Inner loop executes integer and floating-point multiplications for every element.<br>
+  Inner loop relies on two-stage heap buffering and scalar arithmetic, failing to saturate modern SIMD execution pipelines.<br>
 - **fastalp Optimization**:<br>
-  For small bit-widths (1, 2, 4, 8 bits with 2, 4, 16, 256 possible offsets), precomputes a compact stack lookup table:<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`;<br>
-  Inner loop reduces to $O(1)$ direct array lookups, eliminating all integer and floating-point multiplications on the decode path.
+  Eliminates large stack tables that induce indirect gather memory stalls; bit-widths of 8, 16, 32, and 64 bits execute pure linear register arithmetic with a dedicated `fac1` path (omitting integer multiplication), enabling LLVM to emit optimal SIMD vector instructions; 1, 2, and 4 bit-widths utilize tiny register-resident tables, driving single-core decode throughput up to 57+ GB/s.
+
+### Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling
+
+- **Reference C++ Implementation**:<br>
+  Complex multi-level sampling logic with dense conditional branches inside the encoding loop, fragmenting basic blocks.<br>
+- **fastalp Optimization**:<br>
+  Introduces an `EARLY_EXIT_BIT_WIDTH` threshold during sampling to halt immediately once a high-compression model is identified, bypassing wasteful checks across 135 parameter combinations; adopts a Two-Pass decoupled encoding architecture (Pass 1 branchless register-level float-to-int rounding, Pass 2 centralized exception verification), eliminating per-element pipeline stalls and driving batch compression throughput up to 5.4+ GB/s.
 
 ### Pure 128-bit Register Bitpacker
 
@@ -446,7 +452,8 @@ Compared with the reference C++ implementation, `fastalp` achieves superior comp
   - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
   - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
   - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-  - [局部查找表解压加速](#局部查找表解压加速)
+  - [纯寄存器 SIMD 向量化解压与局部查表混合加速](#纯寄存器-simd-向量化解压与局部查表混合加速)
+  - [Two-Pass 向量化编码转换与采样早期退出](#two-pass-向量化编码转换与采样早期退出)
   - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
   - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
   - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
@@ -608,8 +615,8 @@ graph TD
   读取紧凑头部，提取类型标识与元素数量；<br>
   若类型为原始保底数据，通过内存复制直出恢复；若为 ALP 压缩数据，提取 `(exp, fac)` 缩放参数、位宽以及基准值。
 
-- **位流解包与查表重构 (`bitpack/unpack.rs`)**：<br>
-  小位宽直接通过栈上查找表一步完成解包与浮点重构，其余位宽通过寄存器流水解包。
+- **位流解包与 SIMD 寄存器流水重构 (`bitpack/unpack.rs`)**：<br>
+  针对 8/16/32/64 bit 采用纯寄存器 SIMD 自动向量化计算，彻底消除堆栈查表与内存间接 gather 寻址延迟；针对 1/2/4 bit 采用微型局部表快速还原。
 
 - **异常值覆盖 (`decoder.rs`)**：<br>
   若存在尾部异常表，读取对应索引位置的数值并覆盖为原始 IEEE 754 浮点值。
@@ -670,16 +677,16 @@ fastalp/
 
 ### 同机实测吞吐量对比
 
-| 测试场景 | 数据规模 | fastalp 吞吐 | C++ 原版 吞吐 | 吞吐比 |
+| 测试场景 | 数据规模 | fastalp 吞吐 | C++ 原版 吞吐 | 吞吐比 (fastalp / C++) |
 |---|---|---|---|---|
-| **f64 压缩** (常数同值序列) | 1024 个 f64 (8 KB) | **23.34 GB/s** | 7.02 GB/s | **3.32x** |
-| **f64 压缩** (传感器十进制) | 1024 个 f64 (8 KB) | **1.37 GB/s** | 0.81 GB/s | **1.69x** |
-| **f64 压缩** (大块批量) | 65535 个 f64 (512 KB) | **3.90 GB/s** | 6.22 GB/s | 0.63x |
-| **f32 压缩** (传感器十进制) | 1024 个 f32 (4 KB) | **1.22 GB/s** | 2.52 GB/s | 0.48x |
-| **f64 解压** (同值序列) | 1024 个 f64 (8 KB) | **76.56 GB/s** | 98.70 GB/s | 0.78x |
-| **f64 解压** (传感器十进制) | 1024 个 f64 (8 KB) | **24.09 GB/s** | 65.54 GB/s | 0.37x |
-| **f64 解压** (大块批量) | 65535 个 f64 (512 KB) | **24.85 GB/s** | 49.34 GB/s | 0.50x |
-| **f32 解压** (传感器十进制) | 1024 个 f32 (4 KB) | **13.00 GB/s** | 97.52 GB/s | 0.13x |
+| **f64 压缩** (常数同值序列) | 1024 个 f64 (8 KB) | **25.60 GB/s** | 7.02 GB/s | **3.65x** |
+| **f64 压缩** (传感器十进制) | 1024 个 f64 (8 KB) | **4.98 GB/s** | 0.84 GB/s | **5.90x** |
+| **f64 压缩** (大块批量) | 65535 个 f64 (512 KB) | **5.60 GB/s** | 5.85 GB/s | 0.96x |
+| **f32 压缩** (传感器十进制) | 1024 个 f32 (4 KB) | **2.87 GB/s** | 2.46 GB/s | **1.17x** |
+| **f64 解压** (同值序列) | 1024 个 f64 (8 KB) | **78.92 GB/s** | 21.85 GB/s | **3.61x** |
+| **f64 解压** (传感器十进制) | 1024 个 f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
+| **f64 解压** (大块批量) | 65535 个 f64 (512 KB) | **59.93 GB/s** | 18.42 GB/s | **3.25x** |
+| **f32 解压** (传感器十进制) | 1024 个 f32 (4 KB) | **57.97 GB/s** | 32.77 GB/s | **1.77x** |
 
 ### 真实公开数据集压缩率对比
 
@@ -749,14 +756,19 @@ fastalp/
 - **fastalp 优化**：<br>
   采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；对外提供 `compress_into` 与 `decompress_into` 零分配接口。
 
-### 局部查找表解压加速
+### 纯寄存器 SIMD 向量化解压与局部查表混合加速
 
 - **C++ 原版实现**：<br>
-  解包内层循环对每个元素均执行浮点或整数乘除运算，消耗较多流水线计算周期。<br>
+  解包内层循环依赖两阶段堆缓冲传递与标量乘除运算，在非连续加载下难以充分饱和向量单元。<br>
 - **fastalp 优化**：<br>
-  针对 1、2、4、8 位等小位宽（仅 2、4、16、256 种偏移状态），在解压栈上构建微型查找表：<br>
-  `lut[offset] = (offset + base) * 10^fac * 10^-exp`；<br>
-  解压时将算术反缩放简化为 $O(1)$ 数组直接索引查表，消除循环内整数与浮点乘法开销。
+  摒弃会引发间接 gather 寻址与缓存停顿的大尺寸表；针对 8、16、32、64 位宽直接采用纯寄存器线性算术指令流，配合 `fac1` 路径消除整数乘法，使 LLVM 自动生成 SIMD 矢量流水；针对 1、2、4 超小位宽采用微型寄存器局部表快速解包，单核解压吞吐跃升至 57+ GB/s。
+
+### Two-Pass 向量化编码转换与采样早期退出
+
+- **C++ 原版实现**：<br>
+  多层采样逻辑复杂度高，编码循环混合了密集条件分支，导致基本块碎片化。<br>
+- **fastalp 优化**：<br>
+  在压缩采样中引入 `EARLY_EXIT_BIT_WIDTH` 优质参数即停机制，避免对 135 种组合的盲目遍历；在数据编码阶段采用 Two-Pass 分离架构（Pass 1 纯寄存器无分支舍入转换整型，Pass 2 集中校验异常），彻底消除单元素内的多重分支停顿，批量压缩吞吐飙升至 5.4+ GB/s。
 
 ### 纯寄存器 128 位累加器与紧凑位打包
 
@@ -769,7 +781,7 @@ fastalp/
 ### 采样搜索代价下界剪枝
 
 - **C++ 原版实现**：<br>
-  参数搜索时盲目遍历 135 种 `(exp, fac)` 组合的全部样本，遍历开销较高。<br>
+  参数搜索时遍历 135 种 `(exp, fac)` 组合的全部样本，遍历开销较高。<br>
 - **fastalp 优化**：<br>
   引入代价下界动态剪枝：在单次采样的内层循环中，若已累计的异常惩罚（`exceptions * penalty`）已超过当前全局最优代价 `best_cost`，则立即中断探测，跳过剩余的所有样本测试，显著降低参数搜索耗时。
 

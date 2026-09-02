@@ -1,8 +1,6 @@
 use crate::{
   bitpack::packed_byte_size,
-  constants::{
-    BITS_PER_BYTE, BITS_U64, BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT, LUT_SIZE_8BIT,
-  },
+  constants::{BITS_PER_BYTE, BITS_U64, BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT},
   error::{Error, Result},
   float::AlpFloat,
   params::bit_mask,
@@ -300,46 +298,62 @@ pub fn bitunpack_into<F: AlpFloat>(
       dst.set_len(old_len + count);
       return Ok(());
     } else if bit_width == BITS_8 {
-      let lut = F::build_lut::<LUT_SIZE_8BIT>(base, fac_int, frac_flt);
-      let (chunks, rem) = src[..count].as_chunks::<CHUNK_8>();
-      for chunk in chunks {
-        *dst_ptr.add(0) = *lut.get_unchecked(chunk[0] as usize);
-        *dst_ptr.add(1) = *lut.get_unchecked(chunk[1] as usize);
-        *dst_ptr.add(2) = *lut.get_unchecked(chunk[2] as usize);
-        *dst_ptr.add(3) = *lut.get_unchecked(chunk[3] as usize);
-        *dst_ptr.add(4) = *lut.get_unchecked(chunk[4] as usize);
-        *dst_ptr.add(5) = *lut.get_unchecked(chunk[5] as usize);
-        *dst_ptr.add(6) = *lut.get_unchecked(chunk[6] as usize);
-        *dst_ptr.add(7) = *lut.get_unchecked(chunk[7] as usize);
-        dst_ptr = dst_ptr.add(CHUNK_8);
-      }
-      for &b in rem {
-        *dst_ptr = *lut.get_unchecked(b as usize);
-        dst_ptr = dst_ptr.add(1);
+      let src_ptr = src.as_ptr();
+      if fac_int == 1 {
+        for i in 0..count {
+          let off = *src_ptr.add(i) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+        }
+      } else {
+        for i in 0..count {
+          let off = *src_ptr.add(i) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+        }
       }
       dst.set_len(old_len + count);
       return Ok(());
     } else if bit_width == BITS_16 {
       let src_ptr = src.as_ptr().cast::<u16>();
-      for i in 0..count {
-        let off = u16::from_le(src_ptr.add(i).read_unaligned()) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+      if fac_int == 1 {
+        for i in 0..count {
+          let off = u16::from_le(src_ptr.add(i).read_unaligned()) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+        }
+      } else {
+        for i in 0..count {
+          let off = u16::from_le(src_ptr.add(i).read_unaligned()) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+        }
       }
       dst.set_len(old_len + count);
       return Ok(());
     } else if bit_width == BITS_32 {
       let src_ptr = src.as_ptr().cast::<u32>();
-      for i in 0..count {
-        let off = u32::from_le(src_ptr.add(i).read_unaligned()) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+      if fac_int == 1 {
+        for i in 0..count {
+          let off = u32::from_le(src_ptr.add(i).read_unaligned()) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+        }
+      } else {
+        for i in 0..count {
+          let off = u32::from_le(src_ptr.add(i).read_unaligned()) as u64;
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+        }
       }
       dst.set_len(old_len + count);
       return Ok(());
     } else if bit_width == BITS_64 {
       let src_ptr = src.as_ptr().cast::<u64>();
-      for i in 0..count {
-        let off = u64::from_le(src_ptr.add(i).read_unaligned());
-        *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+      if fac_int == 1 {
+        for i in 0..count {
+          let off = u64::from_le(src_ptr.add(i).read_unaligned());
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+        }
+      } else {
+        for i in 0..count {
+          let off = u64::from_le(src_ptr.add(i).read_unaligned());
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+        }
       }
       dst.set_len(old_len + count);
       return Ok(());
