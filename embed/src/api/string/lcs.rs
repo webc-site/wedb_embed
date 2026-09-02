@@ -1,4 +1,4 @@
-use std::mem::swap;
+use std::{mem::swap, str};
 
 use super::{
   r#const::{ERR_LCS_INSUFFICIENT_MEMORY, ERR_LCS_TOO_LONG, MAX_STRING_SIZE},
@@ -57,7 +57,7 @@ pub fn compute_lcs_with(s1: &[u8], s2: &[u8], args: StringLCS) -> Result<StringL
         }))
       }
       StringLCSType::None => {
-        let s = match std::str::from_utf8(s1) {
+        let s = match str::from_utf8(s1) {
           Ok(s) => s.to_string(),
           Err(_) => String::from_utf8_lossy(s1).into_owned(),
         };

@@ -843,6 +843,12 @@ fn test_string_kvrocks_extensions_and_empty_value() -> Void {
   assert_eq!(db.append("h_exp", "new_str")?, 7);
   assert_eq!(db.get("h_exp")?, Some(b"new_str".to_vec()));
 
+  // 验证后续无法再作为 Hash 读取
+  assert_eq!(
+    db.hlen("h_exp").unwrap_err().to_string(),
+    wedb_embed::ERR_WRONG_TYPE
+  );
+
   // 5. with_get 端到端零拷贝借用读取
   db.set("borrow_key", "borrow_val", [])?;
   let len = db.with_get("borrow_key", |slice| slice.len())?;

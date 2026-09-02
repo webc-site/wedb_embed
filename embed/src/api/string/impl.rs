@@ -37,7 +37,11 @@ where
   }
 
   #[inline]
-  pub fn with_get<K: AsRef<[u8]>, R>(&self, key: K, f: impl FnOnce(&[u8]) -> R) -> Result<Option<R>> {
+  pub fn with_get<K: AsRef<[u8]>, R>(
+    &self,
+    key: K,
+    f: impl FnOnce(&[u8]) -> R,
+  ) -> Result<Option<R>> {
     match get_string_raw(self, key.as_ref())? {
       Some((raw, _, offset)) => Ok(Some(f(&raw[offset..]))),
       None => Ok(None),
@@ -387,17 +391,22 @@ where
     let target_expire = if keep_ttl { old_expire } else { expire_ms };
 
     let mut dyn_buf = Vec::new();
-    with_encoded_string_value(formatted_bytes, target_expire, &mut dyn_buf, |enc_val| -> Result<()> {
-      if old_raw.is_none() && !self.meta().is_empty()? {
-        let mut batch = self.batch();
-        batch.insert_data(&raw_k, enc_val);
-        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-        batch.commit()?;
-      } else {
-        self.data().insert(&raw_k, enc_val)?;
-      }
-      Ok(())
-    })?;
+    with_encoded_string_value(
+      formatted_bytes,
+      target_expire,
+      &mut dyn_buf,
+      |enc_val| -> Result<()> {
+        if old_raw.is_none() && !self.meta().is_empty()? {
+          let mut batch = self.batch();
+          batch.insert_data(&raw_k, enc_val);
+          cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+          batch.commit()?;
+        } else {
+          self.data().insert(&raw_k, enc_val)?;
+        }
+        Ok(())
+      },
+    )?;
     Ok(new_num)
   }
 
@@ -456,17 +465,22 @@ where
     let mut num_buf = zmij::Buffer::new();
     let formatted_bytes = format_float_bytes(new_num, &mut num_buf);
     let mut dyn_buf = Vec::new();
-    with_encoded_string_value(formatted_bytes, target_expire, &mut dyn_buf, |enc_val| -> Result<()> {
-      if old_raw.is_none() && !self.meta().is_empty()? {
-        let mut batch = self.batch();
-        batch.insert_data(&raw_k, enc_val);
-        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-        batch.commit()?;
-      } else {
-        self.data().insert(&raw_k, enc_val)?;
-      }
-      Ok(())
-    })?;
+    with_encoded_string_value(
+      formatted_bytes,
+      target_expire,
+      &mut dyn_buf,
+      |enc_val| -> Result<()> {
+        if old_raw.is_none() && !self.meta().is_empty()? {
+          let mut batch = self.batch();
+          batch.insert_data(&raw_k, enc_val);
+          cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+          batch.commit()?;
+        } else {
+          self.data().insert(&raw_k, enc_val)?;
+        }
+        Ok(())
+      },
+    )?;
     Ok(new_num)
   }
 
