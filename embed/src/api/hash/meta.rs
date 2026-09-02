@@ -23,7 +23,7 @@ pub enum HashSubkeyEncodingMode {
   FieldExpiration = 1,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashFieldStateKind).
+/// Internal state category of a hash field aligned with Apache Kvrocks HashFieldStateKind.
 /// 哈希字段内部状态类别（对标 Apache Kvrocks HashFieldStateKind）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HashFieldStateKind {
@@ -34,8 +34,8 @@ pub enum HashFieldStateKind {
   ExpiredTTLPhysical,
 }
 
-/// Domain operation (aligned with Apache Kvrocks HashFieldState).
-/// 哈希字段状态（对标 Apache Kvrocks HashFieldState）
+/// Hash field state snapshot aligned with Apache Kvrocks HashFieldState.
+/// 哈希字段状态快照（对标 Apache Kvrocks HashFieldState）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HashFieldState<'a> {
   pub kind: HashFieldStateKind,
@@ -43,7 +43,7 @@ pub struct HashFieldState<'a> {
   pub value: &'a [u8],
 }
 
-/// Domain operation (aligned with Apache Kvrocks HExpireConditionPasses).
+/// Validates whether HEXPIRE condition passes aligned with Apache Kvrocks HExpireConditionPasses.
 /// 校验 HEXPIRE 条件是否满足（对标 Apache Kvrocks HExpireConditionPasses）
 #[inline]
 pub fn hexpire_condition_passes(
@@ -173,7 +173,7 @@ impl HashMeta {
     self.mode == HashSubkeyEncodingMode::FieldExpiration
   }
 
-  /// Domain operation (aligned with Kvrocks ValidateHashFieldExpirationMetadata).
+  /// Validates hash metadata integrity aligned with Kvrocks ValidateHashFieldExpirationMetadata.
   /// 校验元数据一致性（对标 Kvrocks ValidateHashFieldExpirationMetadata）
   #[inline]
   pub fn validate_metadata(&self) -> Result<()> {
@@ -185,7 +185,7 @@ impl HashMeta {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Validates field addition transition from Missing state.
   /// 校验从 Missing 新增字段的合法性
   #[inline]
   pub fn validate_missing_field_transition(&self) -> Result<()> {
@@ -198,7 +198,7 @@ impl HashMeta {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Validates state transition for a persistent field.
   /// 校验 Persistent 字段状态转移的合法性
   #[inline]
   pub fn validate_persistent_field_transition(&self) -> Result<()> {
@@ -211,7 +211,7 @@ impl HashMeta {
     Ok(())
   }
 
-  /// Operation definition.
+  /// Validates state transition for a TTL expiring field.
   /// 校验 TTL 字段状态转移的合法性
   #[inline]
   pub fn validate_ttl_field_transition(&self) -> Result<()> {
@@ -448,7 +448,7 @@ impl HashMeta {
   }
 }
 
-/// Operation definition.
+/// Byte length of field expiration timestamp prefix (8-byte millisecond timestamp).
 /// 字段过期时间前缀长度（8 字节毫秒时间戳，等同于 `HashMeta::FIELD_EXPIRATION_PREFIX_SIZE`）
 pub const FIELD_EXPIRE_PREFIX_LEN: usize = HashMeta::FIELD_EXPIRATION_PREFIX_SIZE;
 
@@ -497,14 +497,14 @@ pub fn decode_live_hash_value(bytes: &[u8], now_ms: u64) -> Option<&[u8]> {
   }
 }
 
-/// Domain operation (aligned with Kvrocks IsFieldExpired).
+/// Checks whether a field is expired given current timestamp aligned with Kvrocks IsFieldExpired.
 /// 检查字段是否过期（对标 Kvrocks IsFieldExpired）
 #[inline(always)]
 pub fn is_field_expired(expire_at: u64, now_ms: u64) -> bool {
   expire_at > 0 && expire_at <= now_ms
 }
 
-/// Domain operation (aligned with Kvrocks IsImmediateExpire).
+/// Checks whether an expiration target is immediately expired aligned with Kvrocks IsImmediateExpire.
 /// 检查是否立即过期（对标 Kvrocks IsImmediateExpire）
 #[inline(always)]
 pub fn is_immediate_expire(expire_at: u64, now_ms: u64) -> bool {
