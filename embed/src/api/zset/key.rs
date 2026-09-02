@@ -58,6 +58,20 @@ pub fn score_prefix_stack(kc: &KeyComposer, key: &[u8]) -> SmallKey {
 pub use member as compose_zset_key;
 pub use score as compose_zset_score_key;
 
+/// Stack-allocated ZSet score index key from already-encoded score bytes without float conversion.
+/// 基于已编码的分数 8 字节切片栈上定长构造 ZSet 分数索引键（零堆分配，避免浮点数二次编解码）
+#[inline]
+pub fn score_from_bytes(
+  kc: &KeyComposer,
+  key: &[u8],
+  score_bytes: &[u8],
+  member_bytes: &[u8],
+) -> SmallKey {
+  kc.compose_subkey2_stack(KeyTag::ZSetScore.as_slice(), key, score_bytes, member_bytes)
+}
+
+pub use score_from_bytes as compose_zset_score_from_bytes_key;
+
 /// Encodes f64 score into order-preserving u64 integer.
 /// 将 f64 浮点分数编码为保序 u64 整数
 pub use crate::meta::{

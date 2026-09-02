@@ -1,4 +1,4 @@
-use std::str;
+use std::cmp::Ordering;
 
 use crate::error::{Error, Result};
 
@@ -95,7 +95,8 @@ impl RangeScore {
 
   #[inline]
   pub fn is_empty(&self) -> bool {
-    self.min > self.max || (self.min == self.max && (self.minex || self.maxex))
+    self.min.total_cmp(&self.max) == Ordering::Greater
+      || (self.min.to_bits() == self.max.to_bits() && (self.minex || self.maxex))
   }
 
   #[inline]
