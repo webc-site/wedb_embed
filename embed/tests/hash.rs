@@ -627,3 +627,65 @@ fn test_hash_iter() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_hash_hrandfield_comprehensive() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 0. 空键返回空
+  assert!(db.hrandfield("non_exist", 5, false)?.is_empty());
+  assert!(db.hrandfield("non_exist", 5, true)?.is_empty());
+
+  let fields = [
+    ("f0", "v0"),
+    ("f1", "v1"),
+    ("f2", "v2"),
+    ("f3", "v3"),
+    ("f4", "v4"),
+  ];
+  db.hset("rand_hash", &fields)?;
+
+  // 1. count == 0 返回空
+  assert!(db.hrandfield("rand_hash", 0, false)?.is_empty());
+  assert!(db.hrandfield("rand_hash", 0, true)?.is_empty());
+
+  // 2. 正数 count < len (无重复采样，且只取键零值读取)
+  let rf_no_val = db.hrandfield("rand_hash", 3, false)?;
+  assert_eq!(rf_no_val.len(), 3);
+  for (f, v) in &rf_no_val {
+    assert!(v.is_none());
+    assert!(fields.iter().any(|(exp_f, _)| exp_f.as_bytes() == f));
+  }
+
+  // 3. 正数 count >= len (全量返回)
+  let rf_all = db.hrandfield("rand_hash", 10, true)?;
+  assert_eq!(rf_all.len(), 5);
+  for (f, v) in &rf_all {
+    let exp = fields
+      .iter()
+      .find(|(exp_f, _)| exp_f.as_bytes() == f)
+      .unwrap();
+    assert_eq!(v.as_deref(), Some(exp.1.as_bytes()));
+  }
+
+  // 4. 负数 count (允许重复采样，总数严格等于 abs(count))
+  let rf_repeat_no_val = db.hrandfield("rand_hash", -8, false)?;
+  assert_eq!(rf_repeat_no_val.len(), 8);
+  for (f, v) in &rf_repeat_no_val {
+    assert!(v.is_none());
+    assert!(fields.iter().any(|(exp_f, _)| exp_f.as_bytes() == f));
+  }
+
+  let rf_repeat_with_val = db.hrandfield("rand_hash", -8, true)?;
+  assert_eq!(rf_repeat_with_val.len(), 8);
+  for (f, v) in &rf_repeat_with_val {
+    let exp = fields
+      .iter()
+      .find(|(exp_f, _)| exp_f.as_bytes() == f)
+      .unwrap();
+    assert_eq!(v.as_deref(), Some(exp.1.as_bytes()));
+  }
+
+  Ok(())
+}

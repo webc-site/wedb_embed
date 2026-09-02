@@ -312,38 +312,42 @@ where
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
     let prefix_len = prefix.len();
 
+    let mut results = Vec::with_capacity(limit.min(1024));
+    let mut pos = 0usize;
+
+    let mut process_entry = |k: &[u8]| -> bool {
+      if let Some(id) = extract_id(k, prefix_len) {
+        if cursor > 0 && id == cursor {
+          return true;
+        }
+        if pos < offset {
+          pos += 1;
+          return true;
+        }
+        results.push(id);
+        if results.len() >= limit {
+          return false;
+        }
+      }
+      true
+    };
+
     if !reversed {
       let start_k = compose_si_item_key(&prefix, cursor);
       let end_k = compose_si_item_key(&prefix, u64::MAX);
-      let mut results = Vec::with_capacity(limit.min(1024));
-      let mut pos = 0usize;
 
       for g in self.data().range((
         Bound::Included(start_k.as_slice()),
         Bound::Included(end_k.as_slice()),
       )) {
         let entry = g?;
-        let (k, _) = (entry.key(), entry.value());
-        if let Some(id) = extract_id(k, prefix_len) {
-          if cursor > 0 && id == cursor {
-            continue;
-          }
-          if pos < offset {
-            pos += 1;
-            continue;
-          }
-          results.push(id);
-          if results.len() >= limit {
-            break;
-          }
+        if !process_entry(entry.key()) {
+          break;
         }
       }
-      Ok(results)
     } else {
       let start_k = compose_si_item_key(&prefix, 0);
       let end_k = compose_si_item_key(&prefix, if cursor == 0 { u64::MAX } else { cursor });
-      let mut results = Vec::with_capacity(limit.min(1024));
-      let mut pos = 0usize;
 
       for g in self
         .data()
@@ -354,23 +358,12 @@ where
         .rev()
       {
         let entry = g?;
-        let (k, _) = (entry.key(), entry.value());
-        if let Some(id) = extract_id(k, prefix_len) {
-          if cursor > 0 && id == cursor {
-            continue;
-          }
-          if pos < offset {
-            pos += 1;
-            continue;
-          }
-          results.push(id);
-          if results.len() >= limit {
-            break;
-          }
+        if !process_entry(entry.key()) {
+          break;
         }
       }
-      Ok(results)
     }
+    Ok(results)
   }
 
   #[inline]

@@ -1061,29 +1061,7 @@ where
 
   #[inline]
   pub fn zrank<K: AsRef<[u8]>, M: AsRef<[u8]>>(&self, key: K, member: M) -> Result<Option<u64>> {
-    let _kc = self.kc();
-    let target_score = match self.zscore(&key, &member)? {
-      Some(score) => score,
-      None => return Ok(None),
-    };
-
-    let m_ref = member.as_ref();
-    let mut rank = 0u64;
-    let mut found = false;
-
-    self.ziter(key, |m, score| {
-      if score == target_score && m == m_ref {
-        found = true;
-        false
-      } else if score > target_score {
-        false
-      } else {
-        rank += 1;
-        true
-      }
-    })?;
-
-    Ok(if found { Some(rank) } else { None })
+    Ok(self.zrank_with_score(key, member)?.map(|(r, _)| r))
   }
 
   /// ZRANK key member [WITHSCORE] (single-pass rank and score retrieval).
@@ -1124,33 +1102,11 @@ where
 
   #[inline]
   pub fn zrevrank<K: AsRef<[u8]>, M: AsRef<[u8]>>(&self, key: K, member: M) -> Result<Option<u64>> {
-    let _kc = self.kc();
-    let target_score = match self.zscore(&key, &member)? {
-      Some(score) => score,
-      None => return Ok(None),
-    };
-
-    let m_ref = member.as_ref();
-    let mut rank = 0u64;
-    let mut found = false;
-
-    self.ziter_rev(key, |m, score| {
-      if score == target_score && m == m_ref {
-        found = true;
-        false
-      } else if score < target_score {
-        false
-      } else {
-        rank += 1;
-        true
-      }
-    })?;
-
-    Ok(if found { Some(rank) } else { None })
+    Ok(self.zrevrank_with_score(key, member)?.map(|(r, _)| r))
   }
 
   /// ZREVRANK key member [WITHSCORE] (reverse rank and score retrieval).
-  /// ZREVRANK key member [WITHSCORE]
+  /// 逆序获取有序集合成员排名与分数
   #[inline]
   pub fn zrevrank_with_score<K: AsRef<[u8]>, M: AsRef<[u8]>>(
     &self,
@@ -1202,28 +1158,21 @@ where
     let mut items = Vec::with_capacity(count);
     let mut current_idx = 0usize;
 
+    let mut process_item = |member: &[u8], score: f64| -> bool {
+      if current_idx >= s {
+        items.push((member.to_vec(), score));
+        if items.len() >= count {
+          return false;
+        }
+      }
+      current_idx += 1;
+      current_idx <= e
+    };
+
     if spec.reversed {
-      self.ziter_rev(key, |member, score| {
-        if current_idx >= s {
-          items.push((member.to_vec(), score));
-          if items.len() >= count {
-            return false;
-          }
-        }
-        current_idx += 1;
-        current_idx <= e
-      })?;
+      self.ziter_rev(key, &mut process_item)?;
     } else {
-      self.ziter(key, |member, score| {
-        if current_idx >= s {
-          items.push((member.to_vec(), score));
-          if items.len() >= count {
-            return false;
-          }
-        }
-        current_idx += 1;
-        current_idx <= e
-      })?;
+      self.ziter(key, &mut process_item)?;
     }
 
     Ok(items)
@@ -1313,27 +1262,9 @@ where
     key: K,
     spec: impl IntoRangeLex,
   ) -> Result<Vec<Vec<u8>>> {
-    let spec = spec.into_range_lex();
-    if spec.count == Some(0) || spec.is_empty() {
-      return Ok(Vec::new());
-    }
-    let mut items = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
-    let mut skipped = 0usize;
-
-    self.ziter_range_bylex(key, &spec, |member, _| {
-      if skipped < spec.offset {
-        skipped += 1;
-        return true;
-      }
-      items.push(member.to_vec());
-      if let Some(limit) = spec.count
-        && items.len() >= limit
-      {
-        return false;
-      }
-      true
-    })?;
-    Ok(items)
+    self
+      .zrangebylex_with_scores(key, spec)
+      .map(|items| items.into_iter().map(|(m, _)| m).collect())
   }
 
   /// ZRANGEBYLEX key min max [LIMIT offset count] with scores (lexicographical range query).
@@ -1375,28 +1306,9 @@ where
     key: K,
     spec: impl IntoRangeLex,
   ) -> Result<Vec<Vec<u8>>> {
-    let spec = spec.into_range_lex();
-    if spec.count == Some(0) || spec.is_empty() {
-      return Ok(Vec::new());
-    }
-    let mut items = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
-    let mut skipped = 0usize;
-
-    self.ziter_range_bylex_rev(key, &spec, |member, _| {
-      if skipped < spec.offset {
-        skipped += 1;
-        return true;
-      }
-      items.push(member.to_vec());
-      if let Some(limit) = spec.count
-        && items.len() >= limit
-      {
-        return false;
-      }
-      true
-    })?;
-
-    Ok(items)
+    self
+      .zrevrangebylex_with_scores(key, spec)
+      .map(|items| items.into_iter().map(|(m, _)| m).collect())
   }
 
   /// ZREVRANGEBYLEX key max min [LIMIT offset count] with scores (reverse lexicographical query).
@@ -1995,7 +1907,7 @@ where
   }
 
   /// ZDIFF numkeys key [key ...] [WITHSCORES] (computes set difference).
-  /// ZDIFF numkeys key [key ...] [WITHSCORES]
+  /// 计算多个有序集合的差集
   #[inline]
   pub fn zdiff<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<ZSetMemberScore>> {
     if keys.is_empty() {
@@ -2035,7 +1947,7 @@ where
   }
 
   /// ZDIFFSTORE destination numkeys key [key ...] (stores set difference).
-  /// ZDIFFSTORE destination numkeys key [key ...]
+  /// 计算多个有序集合的差集并将结果存储到目标键
   #[inline]
   pub fn zdiffstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
     let diff = self.zdiff(keys)?;
@@ -2043,7 +1955,7 @@ where
   }
 
   /// ZUNION numkeys key [key ...] (computes union with weights and aggregation).
-  /// ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>]
+  /// 计算多个有序集合的并集并支持权重与聚合函数
   #[inline]
   pub fn zunion<K: AsRef<[u8]>>(
     &self,
@@ -2094,7 +2006,7 @@ where
   }
 
   /// ZUNIONSTORE destination numkeys key [key ...] (stores union result).
-  /// ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>]
+  /// 计算多个有序集合的并集并将结果存储到目标键
   #[inline]
   pub fn zunionstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(
     &self,
@@ -2107,7 +2019,7 @@ where
   }
 
   /// ZINTER numkeys key [key ...] (computes intersection with weights and aggregation).
-  /// ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>]
+  /// 计算多个有序集合的交集并支持权重与聚合函数
   #[inline]
   pub fn zinter<K: AsRef<[u8]>>(
     &self,
@@ -2173,7 +2085,7 @@ where
   }
 
   /// ZINTERSTORE destination numkeys key [key ...] (stores intersection result).
-  /// ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>]
+  /// 计算多个有序集合的交集并将结果存储到目标键
   #[inline]
   pub fn zinterstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(
     &self,

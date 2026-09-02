@@ -255,7 +255,8 @@ where
   Ok(delete_cnt)
 }
 
-/// XADD key [NOMKSTREAM] [MAXLEN|MINID ...] ID field value [field value ...]
+/// Appends an entry to a stream (XADD).
+/// 向流追加新条目
 pub fn stream_add<E: Engine, K: AsRef<[u8]>, FK: AsRef<[u8]>, FV: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,
@@ -343,7 +344,8 @@ where
   Ok(next_entry_id)
 }
 
-/// XLEN key
+/// Returns the number of entries in a stream (XLEN).
+/// 获取流中条目总数
 pub fn stream_len<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, key: K) -> Result<u64>
 where
   Error: From<E::Error>,
@@ -415,7 +417,8 @@ where
   Ok(count)
 }
 
-/// XRANGE key start end [COUNT count]
+/// Returns stream entries within a range (XRANGE).
+/// 获取指定 ID 范围内的流条目
 pub fn stream_range<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,
@@ -437,7 +440,8 @@ where
   stream_range_with_options(db, key, options)
 }
 
-/// XREVRANGE key end start [COUNT count]
+/// Returns stream entries in reverse order within a range (XREVRANGE).
+/// 逆序获取指定 ID 范围内的流条目
 pub fn stream_revrange<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,
@@ -1142,7 +1146,8 @@ where
   Ok(acknowledged)
 }
 
-/// XCLAIM key group consumer min-idle-time ID [ID ...] [IDLE ms] [TIME ms] [RETRYCOUNT count] [FORCE] [JUSTID] [LASTID id]
+/// Changes the ownership of pending stream messages (XCLAIM).
+/// 转移待处理流消息的所有权
 pub fn stream_claim<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,
@@ -1627,7 +1632,8 @@ where
   Ok(results)
 }
 
-/// XREAD [COUNT count] STREAMS key [key ...] ID [ID ...]
+/// Reads entries from a stream starting from a given ID (XREAD).
+/// 从流中读取指定 ID 之后的新条目
 pub fn stream_read<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,

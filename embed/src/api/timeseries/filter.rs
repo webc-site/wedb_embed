@@ -14,6 +14,7 @@ pub struct TsFilter {
 }
 
 impl TsFilter {
+  /// Creates an empty timestamp filter.
   /// 创建空时间戳过滤器
   #[inline]
   pub fn empty() -> Self {
@@ -22,6 +23,7 @@ impl TsFilter {
     }
   }
 
+  /// Creates a timestamp filter with in-place sorting and deduplication.
   /// 创建时间戳过滤器，自动进行原地排序与去重
   #[inline]
   pub fn new(mut ts: Vec<u64>) -> Self {
@@ -32,6 +34,7 @@ impl TsFilter {
     }
   }
 
+  /// Creates a timestamp filter from a timestamp slice.
   /// 从切片创建时间戳过滤器
   #[inline]
   pub fn from_slice(ts: &[u64]) -> Self {
@@ -43,30 +46,35 @@ impl TsFilter {
     }
   }
 
+  /// Returns whether the filter is empty.
   /// 过滤器是否为空
   #[inline]
   pub fn is_empty(&self) -> bool {
     self.timestamps.is_empty()
   }
 
+  /// Returns the number of deduplicated timestamps.
   /// 包含的去重后时间戳数量
   #[inline]
   pub fn len(&self) -> usize {
     self.timestamps.len()
   }
 
+  /// Exposes the underlying continuous slice.
   /// 暴露底层连续切片
   #[inline]
   pub fn as_slice(&self) -> &[u64] {
     &self.timestamps
   }
 
+  /// Checks whether a given timestamp exists via binary search.
   /// 单点二分判断是否存在指定时间戳
   #[inline]
   pub fn contains(&self, ts: u64) -> bool {
     self.timestamps.binary_search(&ts).is_ok()
   }
 
+  /// Checks whether any target timestamp exists in the closed interval `[start, end]`.
   /// 检查闭区间 `[start, end]` 内是否存在目标时间戳（用于存储引擎 Chunk 极速剪枝）
   #[inline]
   pub fn matches_range(&self, start: u64, end: u64) -> bool {
@@ -133,9 +141,8 @@ impl TsFilter {
     Some((first_ts, last_ts))
   }
 
-  /// 对单调递增的时序样本进行双指针 $O(M + N)$ 极速就地过滤
-  ///
-  /// 单次遍历同时完成时间戳与数值范围过滤，无额外内存分配
+  /// In-place two-pointer filtering of monotonically increasing timeseries samples.
+  /// 对单调递增的时序样本进行双指针就地过滤
   pub fn filter_samples(&self, samples: &mut Vec<(u64, f64)>, filter_by_value: Option<(f64, f64)>) {
     if samples.is_empty() {
       return;
@@ -288,18 +295,21 @@ impl TimeSeriesLabelFilter {
     Self::default()
   }
 
+  /// Returns whether the filter is empty.
   /// 过滤器是否为空
   #[inline]
   pub fn is_empty(&self) -> bool {
     self.matchers.is_empty()
   }
 
+  /// Returns the number of label match rules.
   /// 包含的过滤规则数量
   #[inline]
   pub fn len(&self) -> usize {
     self.matchers.len()
   }
 
+  /// Parses a collection of label filter expressions.
   /// 解析标签过滤表达式集合（支持泛型迭代器，零不必要转换）
   pub fn parse<S: AsRef<str>>(filters: impl IntoIterator<Item = S>) -> Self {
     let mut filter = Self::new();
@@ -309,6 +319,7 @@ impl TimeSeriesLabelFilter {
     filter
   }
 
+  /// Parses sorted and deduplicated value list slice.
   /// 解析有序且去重的值列表切片
   fn parse_values(value_str: &str) -> Box<[String]> {
     let mut vals = Vec::new();
@@ -325,6 +336,7 @@ impl TimeSeriesLabelFilter {
     vals.into_boxed_slice()
   }
 
+  /// Adds a single label filter expression.
   /// 添加单条标签过滤表达式
   pub fn add_filter(&mut self, expr: &str) -> bool {
     let trimmed = expr.trim();
@@ -360,6 +372,7 @@ impl TimeSeriesLabelFilter {
     true
   }
 
+  /// Efficiently locates unquoted operator using finite state machine.
   /// 有限状态机高效查找未被引号包裹的操作符
   fn find_operator(expr: &str) -> (usize, bool) {
     let mut quote = None;
@@ -388,6 +401,7 @@ impl TimeSeriesLabelFilter {
     (usize::MAX, false)
   }
 
+  /// Splits comma-separated value list taking nested parentheses and quotes into account.
   /// 状态机分割逗号分隔的值列表（考虑括号嵌套与引号包裹）
   fn split_value_list(list: &str) -> Vec<&str> {
     let mut values = Vec::new();
@@ -430,6 +444,7 @@ impl TimeSeriesLabelFilter {
     values
   }
 
+  /// Strips matching pairs of leading and trailing quotes.
   /// 消除字符串两端的成对单双引号
   #[inline]
   fn unquote(s: &str) -> &str {
@@ -443,6 +458,7 @@ impl TimeSeriesLabelFilter {
     }
   }
 
+  /// Matches label key-value pairs without heap allocation.
   /// 匹配标签键值对切片（支持泛型键值类型，完全零堆分配）
   pub fn matches<K: AsRef<str>, V: AsRef<str>>(&self, meta_labels: &[(K, V)]) -> bool {
     if self.matchers.is_empty() {
@@ -454,6 +470,26 @@ impl TimeSeriesLabelFilter {
         .iter()
         .find(|(lk, _)| lk.as_ref() == k.as_str())
         .map(|(_, lv)| lv.as_ref());
+      if !matcher.matches(actual) {
+        return false;
+      }
+    }
+
+    true
+  }
+
+  /// 匹配借用标签切片 `[(&str, &str)]`，单次遍历，绝对零堆内存分配
+  #[inline]
+  pub fn matches_borrowed(&self, meta_labels: &[(&str, &str)]) -> bool {
+    if self.matchers.is_empty() {
+      return true;
+    }
+
+    for (k, matcher) in &self.matchers {
+      let actual = meta_labels
+        .iter()
+        .find(|(lk, _)| *lk == k.as_str())
+        .map(|(_, lv)| *lv);
       if !matcher.matches(actual) {
         return false;
       }

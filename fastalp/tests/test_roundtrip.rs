@@ -1,5 +1,10 @@
 use fastalp::{compress, compress_into, decompress, decompress_into};
 
+#[ctor::ctor(unsafe)]
+fn _log_init() {
+  log_init::init();
+}
+
 #[test]
 fn test_empty_and_single() -> aok::Result<()> {
   let empty: [f64; 0] = [];
@@ -224,6 +229,63 @@ fn test_large_vector_stress() -> aok::Result<()> {
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), data.len());
   for (a, b) in decompressed.iter().zip(data.iter()) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+  Ok(())
+}
+
+#[test]
+fn test_negative_zero_preservation() -> aok::Result<()> {
+  let data = [0.0f64, -0.0f64, 0.0f64, -0.0f64];
+  let compressed = compress(&data);
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), 4);
+  for (a, b) in decompressed.iter().zip(data.iter()) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+
+  let data_f32 = [0.0f32, -0.0f32, 0.0f32, -0.0f32];
+  let compressed_f32 = compress(&data_f32);
+  let decompressed_f32: Vec<f32> = decompress(&compressed_f32)?;
+  assert_eq!(decompressed_f32.len(), 4);
+  for (a, b) in decompressed_f32.iter().zip(data_f32.iter()) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+  Ok(())
+}
+
+#[test]
+fn test_raw_fallback_incompressible_data() -> aok::Result<()> {
+  fastrand::seed(8888);
+  let random_bits_data: Vec<f64> = (0..1024)
+    .map(|_| f64::from_bits(fastrand::u64(..)))
+    .collect();
+  let compressed = compress(&random_bits_data);
+  // 断言触发 RAW 模式：首字节为 TYPE_F64_RAW (3)
+  assert_eq!(compressed[0], fastalp::TYPE_F64_RAW);
+  assert_eq!(
+    compressed.len(),
+    fastalp::MIN_HEADER_LEN + random_bits_data.len() * 8
+  );
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), random_bits_data.len());
+  for (a, b) in decompressed.iter().zip(random_bits_data.iter()) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+
+  let random_bits_f32: Vec<f32> = (0..1024)
+    .map(|_| f32::from_bits(fastrand::u32(..)))
+    .collect();
+  let compressed_f32 = compress(&random_bits_f32);
+  // 断言触发 RAW 模式：首字节为 TYPE_F32_RAW (4)
+  assert_eq!(compressed_f32[0], fastalp::TYPE_F32_RAW);
+  assert_eq!(
+    compressed_f32.len(),
+    fastalp::MIN_HEADER_LEN + random_bits_f32.len() * 4
+  );
+  let decompressed_f32: Vec<f32> = decompress(&compressed_f32)?;
+  assert_eq!(decompressed_f32.len(), random_bits_f32.len());
+  for (a, b) in decompressed_f32.iter().zip(random_bits_f32.iter()) {
     assert_eq!(a.to_bits(), b.to_bits());
   }
   Ok(())

@@ -747,3 +747,30 @@ fn test_list_lmove_self_single_elem_and_noop() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_list_lpos_count_zero_and_maxlen() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  db.rpush("lpos_k", &["a", "b", "c", "b", "d", "b", "e"])?;
+
+  // 1. COUNT 0: 返回所有匹配项
+  let all_matches = db.lpos("lpos_k", "b", [LPos::Count(0)])?;
+  assert_eq!(all_matches, vec![1, 3, 5]);
+
+  // 2. COUNT 2: 返回前 2 个匹配项
+  let two_matches = db.lpos("lpos_k", "b", [LPos::Count(2)])?;
+  assert_eq!(two_matches, vec![1, 3]);
+
+  // 3. RANK -1 COUNT 0: 反向遍历返回所有匹配项（按从尾到头发现顺序，索引依然是绝对正向索引）
+  let rev_all = db.lpos("lpos_k", "b", [LPos::Rank(-1), LPos::Count(0)])?;
+  assert_eq!(rev_all, vec![5, 3, 1]);
+
+  // 4. MAXLEN 限制扫描长度
+  let maxlen_matches = db.lpos("lpos_k", "b", [LPos::Count(0), LPos::MaxLen(4)])?;
+  // 仅扫描前 4 个元素 ("a", "b", "c", "b")
+  assert_eq!(maxlen_matches, vec![1, 3]);
+
+  Ok(())
+}

@@ -47,13 +47,17 @@ pub use hll::{
   hll_sparse_reg_histo, hll_sparse_set_register, hll_sparse_to_dense, hll_tau, murmur_hash_64a,
   rapid_hash, set_register,
 };
-pub use json::{JsonArrIndex, JsonGet, JsonMeta, JsonNumberOp, JsonSet, JsonStorageFormat};
+pub use json::{
+  JsonArrIndex, JsonGet, JsonMeta, JsonNumberOp, JsonSet, JsonStorageFormat, delete_path_values,
+  extract_simple_field, get_path_values, mutate_path_values, parse_json_path,
+};
 pub use key_composer::{
   ALL_COMPOSITE_META_TAGS, CATALOG_PREFIX, DEFAULT_NAMESPACE, HASH_SLOTS_MASK, HASH_SLOTS_SIZE,
-  KeyComposer, KeyTag, NS_NEXT_ID_KEY, SmallKey, SubkeyComposer, SystemDomainTag, catalog_db_key,
-  catalog_ns_prefix, compose_slot_key_prefix, compose_slot_key_upper_bound, crc16, decode_oppv_u64,
-  encode_oppv_u64, encode_oppv_u64_fixed, encode_slot_key_prefix_fixed, get_slot_id_from_key,
-  get_tag_from_key, is_default_namespace, matches_glob, matches_glob_bytes, oppv_len_u64,
+  INLINE_CAP, KeyComposer, KeyTag, NS_NEXT_ID_KEY, SmallKey, SubkeyComposer, SystemDomainTag,
+  catalog_db_key, catalog_ns_prefix, compose_slot_key_prefix, compose_slot_key_upper_bound, crc16,
+  decode_oppv_u64, encode_oppv_u64, encode_oppv_u64_fixed, encode_slot_key_prefix_fixed,
+  get_slot_id_from_key, get_tag_from_key, is_default_namespace, matches_glob, matches_glob_bytes,
+  oppv_len_u64,
 };
 pub use list::{LPos, ListMeta};
 pub use meta::{
@@ -65,10 +69,11 @@ pub use search::{
   FtAliasAdd, FtAliasDel, FtAliasUpdate, FtConfigCommand, FtCreate, FtDropIndex, FtFieldInfo,
   FtGroupBy, FtIndexDefinition, FtInfo, FtList, FtReducer, FtSearch, FtSugAdd, FtSugDel, FtSugGet,
   FtSugLen, FtTagVals, HnswGraph, HnswLevelType, HnswNode, IndexField, IndexFieldType,
-  IndexOnDataType, InvertedIndex, MinCandidate, Posting, SearchDoc, SearchIndexManager,
-  SearchIndexSchema, SearchKey, SearchQueryNode, SearchResult, SearchSubkeyType, SuggestionDict,
-  SuggestionItem, VectorAlgorithm, VectorFieldMetadata, VectorType, compute_vector_distance,
-  decode_hnsw_node_meta, decode_hnsw_vector_field_meta, decode_index_meta, decode_index_prefixes,
+  IndexOnDataType, InvertedIndex, MinCandidate, NodePackFormat, NodePackRef, OppvDeltaNeighborIter,
+  Posting, SearchDoc, SearchIndexManager, SearchIndexSchema, SearchKey, SearchQueryNode,
+  SearchResult, SearchSubkeyType, Sq8Vector, SuggestionDict, SuggestionItem, VectorAlgorithm,
+  VectorFieldMetadata, VectorType, compute_vector_distance, decode_hnsw_node_meta,
+  decode_hnsw_vector_field_meta, decode_index_meta, decode_index_prefixes,
   decode_numeric_field_meta, decode_sortable_f64, decode_sortable_f64_u64, decode_sortable_i64,
   decode_tag_field_meta, encode_hnsw_node_meta, encode_hnsw_vector_field_meta, encode_index_meta,
   encode_index_prefixes, encode_numeric_field_meta, encode_sortable_f64, encode_sortable_f64_u64,

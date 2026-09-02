@@ -379,30 +379,30 @@ where
     let data_ks = self.data();
     let _meta_ks = self.meta();
 
+    let mut check_match = |offset: usize| -> Result<bool> {
+      let idx = meta.head.wrapping_add(offset as u64);
+      let item_k = composer.key_for_idx(idx);
+      if let Some(v) = data_ks.get(item_k)?
+        && v.as_ref() == elem_bytes
+      {
+        to_delete_offsets.push(offset);
+        if to_delete_offsets.len() >= target_del_limit {
+          return Ok(false);
+        }
+      }
+      Ok(true)
+    };
+
     if count >= 0 {
       for offset in 0..len {
-        let idx = meta.head.wrapping_add(offset as u64);
-        let item_k = composer.key_for_idx(idx);
-        if let Some(v) = data_ks.get(item_k)?
-          && v.as_ref() == elem_bytes
-        {
-          to_delete_offsets.push(offset);
-          if to_delete_offsets.len() >= target_del_limit {
-            break;
-          }
+        if !check_match(offset)? {
+          break;
         }
       }
     } else {
       for offset in (0..len).rev() {
-        let idx = meta.head.wrapping_add(offset as u64);
-        let item_k = composer.key_for_idx(idx);
-        if let Some(v) = data_ks.get(item_k)?
-          && v.as_ref() == elem_bytes
-        {
-          to_delete_offsets.push(offset);
-          if to_delete_offsets.len() >= target_del_limit {
-            break;
-          }
+        if !check_match(offset)? {
+          break;
         }
       }
       to_delete_offsets.reverse();
@@ -505,7 +505,7 @@ where
         None => return Ok(None),
       };
 
-      if src_meta.base.size == 1 && src_left == dst_left {
+      if src_left == dst_left {
         return Ok(Some(elem));
       }
 
@@ -638,55 +638,50 @@ where
       .unwrap_or(len);
 
     let elem_bytes = elem.as_ref();
+    let count_limit = match count {
+      Some(0) => usize::MAX,
+      Some(c) => c,
+      None => 1,
+    };
+    let is_multi_count = count.is_some();
     let mut matches = match count {
       Some(c) if c > 0 => Vec::with_capacity(c.min(limit)),
-      _ => Vec::with_capacity(1),
+      _ => Vec::with_capacity(limit.min(16)),
     };
-    let count_limit = count.unwrap_or(1);
-    let is_multi_count = count.is_some();
 
     let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
     let mut rank_count = 0usize;
 
+    let mut check_offset = |offset: usize| -> Result<bool> {
+      let idx = meta.head.wrapping_add(offset as u64);
+      let item_k = composer.key_for_idx(idx);
+      if let Some(val) = data_ks.get(item_k)?
+        && val.as_ref() == elem_bytes
+      {
+        rank_count += 1;
+        if rank_count >= target_rank {
+          matches.push(offset as i64);
+          if (is_multi_count && matches.len() >= count_limit) || !is_multi_count {
+            return Ok(false);
+          }
+        }
+      }
+      Ok(true)
+    };
+
     if !reversed {
       for offset in 0..limit {
-        let idx = meta.head.wrapping_add(offset as u64);
-        let item_k = composer.key_for_idx(idx);
-        if let Some(val) = data_ks.get(item_k)?
-          && val.as_ref() == elem_bytes
-        {
-          rank_count += 1;
-          if rank_count >= target_rank {
-            matches.push(offset as i64);
-            if is_multi_count && count_limit > 0 && matches.len() >= count_limit {
-              break;
-            }
-            if !is_multi_count {
-              break;
-            }
-          }
+        if !check_offset(offset)? {
+          break;
         }
       }
     } else {
       let start_offset = len - 1;
       let end_offset = len.saturating_sub(limit);
       for offset in (end_offset..=start_offset).rev() {
-        let idx = meta.head.wrapping_add(offset as u64);
-        let item_k = composer.key_for_idx(idx);
-        if let Some(val) = data_ks.get(item_k)?
-          && val.as_ref() == elem_bytes
-        {
-          rank_count += 1;
-          if rank_count >= target_rank {
-            matches.push(offset as i64);
-            if is_multi_count && count_limit > 0 && matches.len() >= count_limit {
-              break;
-            }
-            if !is_multi_count {
-              break;
-            }
-          }
+        if !check_offset(offset)? {
+          break;
         }
       }
     }

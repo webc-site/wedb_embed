@@ -227,7 +227,8 @@ impl SearchIndexManager {
     }
   }
 
-  /// FT.CONFIG GET
+  /// Retrieves a search engine configuration parameter (FT.CONFIG GET).
+  /// 获取搜索引擎运行时配置参数
   pub fn config_get(&self, option: &str) -> Result<String> {
     let opt_upper = option.to_ascii_uppercase();
     if let Some(val) = self.configs.get(&opt_upper) {
@@ -239,14 +240,16 @@ impl SearchIndexManager {
     }
   }
 
-  /// FT.CONFIG SET
+  /// Sets a search engine configuration parameter (FT.CONFIG SET).
+  /// 设置搜索引擎运行时配置参数
   pub fn config_set(&mut self, option: &str, value: &str) -> Result<()> {
     let opt_upper = option.to_ascii_uppercase();
     self.configs.insert(opt_upper, value.to_string());
     Ok(())
   }
 
-  /// FT.CONFIG HELP
+  /// Displays help text for a configuration parameter (FT.CONFIG HELP).
+  /// 查看配置参数帮助说明
   pub fn config_help(&self, option: &str) -> Result<String> {
     let opt_upper = option.to_ascii_uppercase();
     match opt_upper.as_str() {
@@ -258,7 +261,8 @@ impl SearchIndexManager {
     }
   }
 
-  /// FT.SUGADD
+  /// Adds a suggestion string to an auto-complete dictionary (FT.SUGADD).
+  /// 向自动补全字典添加建议词条
   pub fn sug_add(
     &mut self,
     key: &str,
@@ -271,7 +275,8 @@ impl SearchIndexManager {
     dict.sug_add(string, score, incr, payload)
   }
 
-  /// FT.SUGGET
+  /// Retrieves auto-complete suggestions matching a prefix (FT.SUGGET).
+  /// 获取匹配前缀的自动补全建议词条
   pub fn sug_get(
     &self,
     key: &str,
@@ -288,7 +293,8 @@ impl SearchIndexManager {
     }
   }
 
-  /// FT.SUGDEL
+  /// Deletes a suggestion string from an auto-complete dictionary (FT.SUGDEL).
+  /// 从自动补全字典删除指定建议词条
   pub fn sug_del(&mut self, key: &str, string: &str) -> bool {
     if let Some(dict) = self.suggestions.get_mut(key) {
       dict.sug_del(string)
@@ -297,7 +303,8 @@ impl SearchIndexManager {
     }
   }
 
-  /// FT.SUGLEN
+  /// Returns the number of entries in an auto-complete dictionary (FT.SUGLEN).
+  /// 获取自动补全字典中的词条总数
   pub fn sug_len(&self, key: &str) -> usize {
     if let Some(dict) = self.suggestions.get(key) {
       dict.sug_len()

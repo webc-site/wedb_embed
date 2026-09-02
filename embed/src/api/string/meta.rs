@@ -5,7 +5,7 @@ use crate::meta::{KeyMeta, RedisType};
 /// 单 KV 字符串头部大小（1字节flags + 8字节过期时间，对标 Apache Kvrocks SingleKV 9字节头）
 pub const STRING_HDR_SIZE: usize = KeyMeta::KVROCKS_SINGLE_KV_ENCODED_SIZE;
 
-/// Operation definition.
+/// Encodes a 9-byte compact SingleKV metadata header (1B flags + 8B big-endian expiry timestamp).
 /// 生成 9 字节 SingleKV 紧凑元数据头（1字节flags + 8字节大端过期毫秒时间戳）
 #[inline]
 pub const fn encode_string_header(expire_at_ms: u64) -> [u8; STRING_HDR_SIZE] {
@@ -16,7 +16,7 @@ pub const fn encode_string_header(expire_at_ms: u64) -> [u8; STRING_HDR_SIZE] {
   ]
 }
 
-/// Returns or computes calculated value.
+/// Precomputed 9-byte SingleKV header constant for keys without expiration.
 /// 预计算无过期时间的 9 字节 SingleKV 常量头部（编译期常量，零运行时计算开销）
 pub const STRING_NO_EXPIRY_HEADER: [u8; STRING_HDR_SIZE] = encode_string_header(0);
 
@@ -34,7 +34,7 @@ pub fn encode_string_value(value: &[u8], expire_at_ms: u64) -> Vec<u8> {
   out
 }
 
-/// Operation definition.
+/// Encodes 9-byte header and payload into an existing byte buffer to avoid heap reallocation.
 /// 将 9 字节头与载荷写入指定 Vec 缓冲区，避免额外堆分配
 #[inline]
 pub fn encode_string_value_into(value: &[u8], expire_at_ms: u64, out: &mut Vec<u8>) {
@@ -47,7 +47,7 @@ pub fn encode_string_value_into(value: &[u8], expire_at_ms: u64, out: &mut Vec<u
   out.extend_from_slice(value);
 }
 
-/// Operation definition.
+/// SingleKV header flags constant (0x81: META_64BIT_ENCODING_MASK | RedisType::String).
 /// SingleKV 头部 Flags 掩码常量 (0x81: META_64BIT_ENCODING_MASK | RedisType::String)
 pub const STRING_HEADER_FLAG: u8 = KeyMeta::META_64BIT_ENCODING_MASK | (RedisType::String as u8);
 
@@ -65,7 +65,7 @@ pub fn decode_string_value(raw: &[u8]) -> (u64, &[u8]) {
   }
 }
 
-/// Operation definition.
+/// Checks whether string expiration timestamp is in the past.
 /// 检查字符串是否已过期
 #[inline]
 pub const fn is_string_expired(expire_at_ms: u64, now_ms: u64) -> bool {

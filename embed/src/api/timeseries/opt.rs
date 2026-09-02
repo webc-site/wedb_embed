@@ -3,6 +3,7 @@ use bitcode::{Decode, Encode};
 use crate::api::timeseries::{
   filter::TsFilter,
   meta::{ChunkType, DuplicatePolicy},
+  reducer::Reducer,
 };
 
 /// Command options enumeration.
@@ -13,7 +14,7 @@ pub enum TsCreate {
   ChunkSize(u64),
   ChunkType(ChunkType),
   DuplicatePolicy(DuplicatePolicy),
-  SourceKey(String),
+  SourceKey(Vec<u8>),
   Labels(Vec<(String, String)>),
 }
 
@@ -31,6 +32,7 @@ pub enum TsRange {
   BucketTimestamp(BucketTimestampType),
 }
 
+/// Bucket timestamp alignment type.
 /// 桶时间戳对齐类型
 #[derive(
   Debug,
@@ -311,68 +313,9 @@ impl Aggregator {
     self.aggregate(samples)
   }
 
+  #[inline]
   pub fn aggregate(&self, samples: &[(u64, f64)]) -> f64 {
-    if samples.is_empty() {
-      return 0.0;
-    }
-    let count = samples.len() as f64;
-    match self.agg_type {
-      AggregationType::Avg | AggregationType::Twa => {
-        let sum: f64 = samples.iter().map(|s| s.1).sum();
-        sum / count
-      }
-      AggregationType::First => samples[0].1,
-      AggregationType::Last => samples[samples.len() - 1].1,
-      AggregationType::Min => samples.iter().map(|s| s.1).fold(f64::INFINITY, f64::min),
-      AggregationType::Max => samples
-        .iter()
-        .map(|s| s.1)
-        .fold(f64::NEG_INFINITY, f64::max),
-      AggregationType::Sum => samples.iter().map(|s| s.1).sum(),
-      AggregationType::Count => count,
-      AggregationType::Range => {
-        let (min, max) = samples
-          .iter()
-          .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), s| {
-            (min.min(s.1), max.max(s.1))
-          });
-        max - min
-      }
-      AggregationType::StdP
-      | AggregationType::VarP
-      | AggregationType::StdS
-      | AggregationType::VarS => {
-        let mut mean = 0.0;
-        let mut m2 = 0.0;
-        for (i, s) in samples.iter().enumerate() {
-          let n = (i + 1) as f64;
-          let delta = s.1 - mean;
-          mean += delta / n;
-          let delta2 = s.1 - mean;
-          m2 += delta * delta2;
-        }
-        let var_p = m2 / count;
-        match self.agg_type {
-          AggregationType::VarP => var_p,
-          AggregationType::StdP => var_p.sqrt(),
-          AggregationType::VarS => {
-            if count <= 1.0 {
-              0.0
-            } else {
-              m2 / (count - 1.0)
-            }
-          }
-          AggregationType::StdS => {
-            if count <= 1.0 {
-              0.0
-            } else {
-              (m2 / (count - 1.0)).max(0.0).sqrt()
-            }
-          }
-          _ => 0.0,
-        }
-      }
-    }
+    Reducer::reduce_samples(samples, self.agg_type)
   }
 }
 
@@ -435,9 +378,9 @@ pub struct TsInfoResult {
   pub chunk_size: u64,
   pub chunk_type: ChunkType,
   pub duplicate_policy: DuplicatePolicy,
-  pub source_key: String,
+  pub source_key: Vec<u8>,
   pub labels: Vec<(String, String)>,
-  pub downstream_rules: Vec<(String, Aggregator)>,
+  pub downstream_rules: Vec<(Vec<u8>, Aggregator)>,
 }
 
 /// Operation definition.

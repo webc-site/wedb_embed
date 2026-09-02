@@ -39,16 +39,23 @@ pub fn compute_lcs_with(s1: &[u8], s2: &[u8], args: StringLCS) -> Result<StringL
     let lcs_len = alen as u32;
     return match args.lcs_type {
       StringLCSType::Len => Ok(StringLCSResult::Len(lcs_len)),
-      StringLCSType::Idx => Ok(StringLCSResult::Idx(StringLCSIdxResult {
-        matches: vec![StringLCSMatchedRange::new(
-          0,
-          lcs_len - 1,
-          0,
-          lcs_len - 1,
-          lcs_len,
-        )],
-        len: lcs_len,
-      })),
+      StringLCSType::Idx => {
+        let matches = if args.min_match_len <= 0 || lcs_len >= args.min_match_len as u32 {
+          vec![StringLCSMatchedRange::new(
+            0,
+            lcs_len - 1,
+            0,
+            lcs_len - 1,
+            lcs_len,
+          )]
+        } else {
+          Vec::new()
+        };
+        Ok(StringLCSResult::Idx(StringLCSIdxResult {
+          matches,
+          len: lcs_len,
+        }))
+      }
       StringLCSType::None => {
         let s = match String::from_utf8(s1.to_vec()) {
           Ok(s) => s,

@@ -34,8 +34,8 @@ use crate::{
   wedb::Db,
 };
 
-/// Operation definition.
-/// Redis 字符串最大支持 512MB
+/// Maximum supported string value size (512MB).
+/// 字符串最大支持 512MB
 pub const MAX_STRING_SIZE: usize = 512 * 1024 * 1024;
 
 pub use key::{
@@ -45,7 +45,7 @@ pub use lcs::{compute_lcs, compute_lcs_with};
 
 pub use crate::meta::normalize_range;
 
-/// Parses parameter or binary slice.
+/// Parses a Redis integer with zero-copy byte inspection and strict whitespace validation.
 /// 解析 Redis 整数（单次遍历零拷贝字节解析，严格校验空白符与数值合法性，对标 Kvrocks ParseInt）
 #[inline]
 pub fn parse_redis_integer(v: &[u8]) -> Result<i64> {
@@ -59,7 +59,7 @@ pub fn parse_redis_float(v: &[u8]) -> Result<f64> {
   meta_parse_redis_float(v, ERR_VALUE_NOT_FLOAT)
 }
 
-/// Returns or computes calculated value.
+/// Computes 64-bit hexadecimal digest string for comparison operations.
 /// 计算字符串 64 位十六进制摘要（对标 Kvrocks util::StringDigest，单次分配）
 #[inline]
 pub fn string_digest(val: &[u8]) -> String {
@@ -69,7 +69,7 @@ pub fn string_digest(val: &[u8]) -> String {
   unsafe { str::from_utf8_unchecked(&bytes) }.to_string()
 }
 
-/// Returns or computes calculated value.
+/// Computes 16-byte hexadecimal digest array with zero heap allocation.
 /// 计算字符串 16 字节十六进制摘要数组（零堆分配，对标 Kvrocks util::StringDigest）
 #[inline]
 pub fn string_digest_bytes(val: &[u8]) -> [u8; 16] {
@@ -77,7 +77,7 @@ pub fn string_digest_bytes(val: &[u8]) -> [u8; 16] {
   bytes_to_hex_16(hash.to_be_bytes())
 }
 
-/// Domain operation (aligned with Kvrocks util::Float2String).
+/// Formats a float into compact byte slice without heap allocation.
 /// 紧凑浮点数字节序列化（基于 zmij 实现零堆分配切片生成，对标 Kvrocks util::Float2String）
 #[inline]
 pub fn format_float_bytes(val: f64, buf: &mut zmij::Buffer) -> &[u8] {

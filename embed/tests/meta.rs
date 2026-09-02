@@ -3,6 +3,11 @@ use wedb_embed::{
   KeyMeta, RedisType, generate_version, init_version_counter, normalize_range, version_to_time,
 };
 
+#[ctor::ctor(unsafe)]
+fn _log_init() {
+  log_init::init();
+}
+
 #[test]
 fn test_version_generation_and_time() -> Void {
   init_version_counter();

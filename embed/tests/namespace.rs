@@ -24,6 +24,11 @@ use wedb_embed::{
   key_composer::KeyComposer,
 };
 
+#[ctor::ctor(unsafe)]
+fn _log_init() {
+  log_init::init();
+}
+
 fn to_hex(bytes: &[u8]) -> String {
   bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

@@ -6,6 +6,7 @@ pub mod r#impl;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod reducer;
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 pub use chunk::{ChunkHeader, MergeStats, TSChunk};
@@ -23,6 +24,7 @@ pub use opt::{
   TSDownStreamMeta, TsCreate, TsInfoResult, TsMGet, TsMGetResult, TsMRange, TsMRangeResult,
   TsRange,
 };
+pub use reducer::Reducer;
 
 /// Domain operation (aligned with Apache Kvrocks GroupSamplesAndReduce).
 /// 多序列聚合归约（对标 Apache Kvrocks GroupSamplesAndReduce）
@@ -68,60 +70,7 @@ pub fn group_samples_and_reduce(
   let mut current_ts = None;
   let mut current_values = Vec::new();
 
-  let reduce = |values: &[f64]| -> f64 {
-    if values.is_empty() {
-      return 0.0;
-    }
-    let count = values.len() as f64;
-    match reducer_type {
-      GroupReducerType::None => 0.0,
-      GroupReducerType::Count => count,
-      GroupReducerType::First => values[0],
-      GroupReducerType::Last => values[values.len() - 1],
-      GroupReducerType::Sum => values.iter().sum(),
-      GroupReducerType::Avg | GroupReducerType::Twa => values.iter().sum::<f64>() / count,
-      GroupReducerType::Min => values.iter().copied().fold(f64::INFINITY, f64::min),
-      GroupReducerType::Max => values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-      GroupReducerType::Range => {
-        let (min_v, max_v) = values
-          .iter()
-          .copied()
-          .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
-            (min.min(v), max.max(v))
-          });
-        max_v - min_v
-      }
-      GroupReducerType::VarP
-      | GroupReducerType::StdP
-      | GroupReducerType::VarS
-      | GroupReducerType::StdS => {
-        let (sum, sq_sum) = values
-          .iter()
-          .copied()
-          .fold((0.0, 0.0), |(sum, sq_sum), v| (sum + v, sq_sum + v * v));
-        let var_p = ((sq_sum - (sum * sum) / count) / count).max(0.0);
-        match reducer_type {
-          GroupReducerType::VarP => var_p,
-          GroupReducerType::StdP => var_p.sqrt(),
-          GroupReducerType::VarS => {
-            if count <= 1.0 {
-              0.0
-            } else {
-              var_p * count / (count - 1.0)
-            }
-          }
-          GroupReducerType::StdS => {
-            if count <= 1.0 {
-              0.0
-            } else {
-              (var_p * count / (count - 1.0)).max(0.0).sqrt()
-            }
-          }
-          _ => 0.0,
-        }
-      }
-    }
-  };
+  let reduce = |values: &[f64]| -> f64 { Reducer::reduce_f64(values, reducer_type) };
 
   while let Some(top) = heap.pop() {
     let val = all_samples[top.vec_idx][top.sample_idx].1;

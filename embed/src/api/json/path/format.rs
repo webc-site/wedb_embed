@@ -1,6 +1,7 @@
 use sonic_rs::{JsonContainerTrait, JsonValueMutTrait, JsonValueTrait, Value};
 
-/// JSON Merge Patch (RFC 7396)
+/// JSON Merge Patch (RFC 7396).
+/// JSON 合并补丁规范实现（RFC 7396）
 pub fn json_merge_patch(target: &mut Value, patch: &Value) {
   if let Some(patch_obj) = patch.as_object() {
     if !target.is_object() {

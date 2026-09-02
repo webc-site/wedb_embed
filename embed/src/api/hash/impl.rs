@@ -24,7 +24,7 @@ use crate::{
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key::{clear_prefix_in_batch, get_meta_checked},
-  key_composer::matches_glob_bytes,
+  key_composer::{KeyComposer, matches_glob_bytes},
   meta::current_now_ms,
   string::format_float_bytes,
   wedb::{Db, DbBatch},
@@ -576,8 +576,22 @@ where
 
   #[inline]
   pub fn hgetall<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-    let mut results = Vec::new();
-    self.hiter(key, |f, v| {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(Vec::new());
+    }
+
+    let mut results = Vec::with_capacity((meta.base.size as usize).min(4096));
+    self.hiter_with_meta(&kc, key_bytes, &meta, now_ms, |f, v| {
       results.push((f.to_vec(), v.to_vec()));
       true
     })?;
@@ -586,8 +600,22 @@ where
 
   #[inline]
   pub fn hkeys<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let mut keys = Vec::new();
-    self.hiter(key, |f, _| {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(Vec::new());
+    }
+
+    let mut keys = Vec::with_capacity((meta.base.size as usize).min(4096));
+    self.hiter_with_meta(&kc, key_bytes, &meta, now_ms, |f, _| {
       keys.push(f.to_vec());
       true
     })?;
@@ -596,8 +624,22 @@ where
 
   #[inline]
   pub fn hvals<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let mut vals = Vec::new();
-    self.hiter(key, |_, v| {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(Vec::new());
+    }
+
+    let mut vals = Vec::with_capacity((meta.base.size as usize).min(4096));
+    self.hiter_with_meta(&kc, key_bytes, &meta, now_ms, |_, v| {
       vals.push(v.to_vec());
       true
     })?;
@@ -754,25 +796,18 @@ where
   }
 
   #[inline]
-  pub fn hiter<K: AsRef<[u8]>, F>(&self, key: K, mut f: F) -> Result<()>
+  fn hiter_with_meta<F>(
+    &self,
+    kc: &KeyComposer,
+    key_bytes: &[u8],
+    meta: &HashMeta,
+    now_ms: u64,
+    mut f: F,
+  ) -> Result<()>
   where
     F: FnMut(&[u8], &[u8]) -> bool,
   {
-    let key_bytes = key.as_ref();
-    let kc = self.kc();
-    let meta_k = compose_hash_meta_key(&kc, key_bytes);
-    let now_ms = current_now_ms();
-
-    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
-      Some(m) if m.base.size > 0 => m,
-      _ => return Ok(()),
-    };
-
-    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
-      return Ok(());
-    }
-
-    let prefix = compose_hash_prefix(&kc, key_bytes);
+    let prefix = compose_hash_prefix(kc, key_bytes);
     let prefix_len = prefix.len();
 
     for guard in self.data().prefix(&prefix) {
@@ -792,6 +827,28 @@ where
   }
 
   #[inline]
+  pub fn hiter<K: AsRef<[u8]>, F>(&self, key: K, f: F) -> Result<()>
+  where
+    F: FnMut(&[u8], &[u8]) -> bool,
+  {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(()),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(());
+    }
+
+    self.hiter_with_meta(&kc, key_bytes, &meta, now_ms, f)
+  }
+
+  #[inline]
   pub fn hrandfield<K: AsRef<[u8]>>(
     &self,
     key: K,
@@ -801,33 +858,58 @@ where
     if count == 0 {
       return Ok(Vec::new());
     }
-    let mut all = self.hgetall(key)?;
-    let total = all.len();
-    if total == 0 {
-      return Ok(Vec::new());
-    }
 
-    if count > 0 {
-      let sample_cnt = (count as usize).min(total);
-      for i in 0..sample_cnt {
-        let j = fastrand::usize(i..total);
-        all.swap(i, j);
+    if with_values {
+      let mut all = self.hgetall(key)?;
+      let total = all.len();
+      if total == 0 {
+        return Ok(Vec::new());
       }
-      all.truncate(sample_cnt);
-      let out = all
-        .into_iter()
-        .map(|(f, v)| (f, if with_values { Some(v) } else { None }))
-        .collect();
-      Ok(out)
+
+      if count > 0 {
+        let sample_cnt = (count as usize).min(total);
+        for i in 0..sample_cnt {
+          let j = fastrand::usize(i..total);
+          all.swap(i, j);
+        }
+        all.truncate(sample_cnt);
+        let out = all.into_iter().map(|(f, v)| (f, Some(v))).collect();
+        Ok(out)
+      } else {
+        let total_sample = count.unsigned_abs() as usize;
+        let mut out = Vec::with_capacity(total_sample);
+        for _ in 0..total_sample {
+          let idx = fastrand::usize(0..total);
+          let (f, v) = &all[idx];
+          out.push((f.clone(), Some(v.clone())));
+        }
+        Ok(out)
+      }
     } else {
-      let total_sample = count.unsigned_abs() as usize;
-      let mut out = Vec::with_capacity(total_sample);
-      for _ in 0..total_sample {
-        let idx = fastrand::usize(0..total);
-        let (f, v) = &all[idx];
-        out.push((f.clone(), if with_values { Some(v.clone()) } else { None }));
+      let mut all_keys = self.hkeys(key)?;
+      let total = all_keys.len();
+      if total == 0 {
+        return Ok(Vec::new());
       }
-      Ok(out)
+
+      if count > 0 {
+        let sample_cnt = (count as usize).min(total);
+        for i in 0..sample_cnt {
+          let j = fastrand::usize(i..total);
+          all_keys.swap(i, j);
+        }
+        all_keys.truncate(sample_cnt);
+        let out = all_keys.into_iter().map(|f| (f, None)).collect();
+        Ok(out)
+      } else {
+        let total_sample = count.unsigned_abs() as usize;
+        let mut out = Vec::with_capacity(total_sample);
+        for _ in 0..total_sample {
+          let idx = fastrand::usize(0..total);
+          out.push((all_keys[idx].clone(), None));
+        }
+        Ok(out)
+      }
     }
   }
 
@@ -1924,42 +2006,36 @@ where
     let mut matching = Vec::with_capacity(limit.min(128));
     let mut skipped = 0;
 
+    let mut process_entry = |k: &[u8], v: &[u8]| -> bool {
+      if !k.starts_with(&prefix) {
+        return false;
+      }
+      let field_bytes = &k[prefix_len..];
+      if let Some((_, payload)) = meta.decode_live_subkey_value(v, now_ms) {
+        if skipped < spec.offset {
+          skipped += 1;
+          return true;
+        }
+        matching.push((field_bytes.to_vec(), payload.to_vec()));
+        if matching.len() >= limit {
+          return false;
+        }
+      }
+      true
+    };
+
     if !spec.reversed {
       for g in data_ks.range((start_ref, end_ref)) {
         let entry = g?;
-        let (k, v) = (entry.key(), entry.value());
-        if !k.starts_with(&prefix) {
+        if !process_entry(entry.key(), entry.value()) {
           break;
-        }
-        let field_bytes = &k[prefix_len..];
-        if let Some((_, payload)) = meta.decode_live_subkey_value(v, now_ms) {
-          if skipped < spec.offset {
-            skipped += 1;
-            continue;
-          }
-          matching.push((field_bytes.to_vec(), payload.to_vec()));
-          if matching.len() >= limit {
-            break;
-          }
         }
       }
     } else {
       for g in data_ks.range((start_ref, end_ref)).rev() {
         let entry = g?;
-        let (k, v) = (entry.key(), entry.value());
-        if !k.starts_with(&prefix) {
+        if !process_entry(entry.key(), entry.value()) {
           break;
-        }
-        let field_bytes = &k[prefix_len..];
-        if let Some((_, payload)) = meta.decode_live_subkey_value(v, now_ms) {
-          if skipped < spec.offset {
-            skipped += 1;
-            continue;
-          }
-          matching.push((field_bytes.to_vec(), payload.to_vec()));
-          if matching.len() >= limit {
-            break;
-          }
         }
       }
     }
