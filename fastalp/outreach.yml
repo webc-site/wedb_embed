@@ -134,3 +134,11 @@ records:
     title: "feat(codec): add ALP (Adaptive Lossless Floating-Point) compression codec"
     status: submitted
     date: 2026-09-03
+
+  - type: pull_request
+    repo: awesome-rust-com/awesome-rust
+    pr_number: 108
+    url: https://github.com/awesome-rust-com/awesome-rust/pull/108
+    title: Add fastalp under Compression section
+    status: submitted
+    date: 2026-09-03
