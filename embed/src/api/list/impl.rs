@@ -22,7 +22,7 @@ where
 {
   #[inline]
   pub fn lpush_one<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<u64> {
-    list_push_internal(self, key.as_ref(), &[value], true, true)
+    list_push_one_internal(self, key.as_ref(), value.as_ref(), true, true)
   }
 
   #[inline]
@@ -32,7 +32,7 @@ where
 
   #[inline]
   pub fn rpush_one<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<u64> {
-    list_push_internal(self, key.as_ref(), &[value], true, false)
+    list_push_one_internal(self, key.as_ref(), value.as_ref(), true, false)
   }
 
   #[inline]
@@ -42,7 +42,7 @@ where
 
   #[inline]
   pub fn lpushx_one<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<u64> {
-    list_push_internal(self, key.as_ref(), &[value], false, true)
+    list_push_one_internal(self, key.as_ref(), value.as_ref(), false, true)
   }
 
   #[inline]
@@ -52,7 +52,7 @@ where
 
   #[inline]
   pub fn rpushx_one<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<u64> {
-    list_push_internal(self, key.as_ref(), &[value], false, false)
+    list_push_one_internal(self, key.as_ref(), value.as_ref(), false, false)
   }
 
   #[inline]
