@@ -12,13 +12,34 @@
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@53/SLHLoauQAr1wmk3FJZTQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@dz/ZRME1cFtu0lmsUpo5MUA.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
 
 ---
 
+- [Overview](#overview)
+- [Usage](#usage)
+  - [Installation](#installation)
+  - [Basic Compression and Decompression](#basic-compression-and-decompression)
+  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
+  - [Stateful Encoding with Parameter Caching](#stateful-encoding-with-parameter-caching)
+  - [Single-Precision Floating-Point Data](#single-precision-floating-point-data)
+- [Features](#features)
+- [Architecture & Design](#architecture-design)
+  - [Compression Pipeline](#compression-pipeline)
+  - [Decompression Pipeline](#decompression-pipeline)
+- [Tech Stack](#tech-stack)
+- [Directory Structure](#directory-structure)
+- [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
+  - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
+  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
+  - [C++ ALP Benchmark Methodology & Criteria Unification](#c-alp-benchmark-methodology-criteria-unification)
+  - [Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)](#evaluation-datasets-authoritative-data-sources-all-37-benchmarks)
+- [Architecture Evolution & Optimization Breakdown](#architecture-evolution-optimization-breakdown)
+  - [1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)](#1-architecture-patterns-adopted-refined-from-c-alp-and-their-purposes)
+  - [2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)](#2-novel-high-performance-optimizations-invented-in-fastalp-and-their-purposes)
 
 ## Overview
 
@@ -438,6 +459,7 @@ To break through the throughput limits and compression ceiling of the original C
     - **Purpose**: Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.
     - **Mechanism**: Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.
 
+
 ---
 
 <a name="zh"></a>
@@ -447,13 +469,34 @@ To break through the throughput limits and compression ceiling of the original C
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@j-/oFwc11kTCB_0dk169UMw.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@-w/QvAZweLc3q4Nj-aYnafg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
 
 ---
 
+- [功能特性](#功能特性)
+- [使用示例](#使用示例)
+  - [添加依赖](#添加依赖)
+  - [基础压缩与解压](#基础压缩与解压)
+  - [内存缓冲区复用](#内存缓冲区复用)
+  - [状态化编码与参数缓存（消除重复采样）](#状态化编码与参数缓存消除重复采样)
+  - [单精度浮点数据处理](#单精度浮点数据处理)
+- [核心特性](#核心特性)
+- [架构设计](#架构设计)
+  - [压缩流程](#压缩流程)
+  - [解压流程](#解压流程)
+- [技术栈](#技术栈)
+- [目录结构](#目录结构)
+- [性能评测与多算法对比](#性能评测与多算法对比)
+  - [测试环境与编译配置](#测试环境与编译配置)
+  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
+  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
+  - [评测数据集全景与公开数据源（共 37 项）](#评测数据集全景与公开数据源共-37-项)
+- [架构演进与优化全景](#架构演进与优化全景)
+  - [一、参考与借鉴 C++ ALP 的架构设计](#一参考与借鉴-c-alp-的架构设计)
+  - [二、fastalp 自主研发的极致原创优化](#二fastalp-自主研发的极致原创优化)
 
 ## 功能特性
 
@@ -874,3 +917,4 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 12. **统一泛型零成本抽象与预计算常数表**：
     - **用途**：一套代码兼顾 `f64` 与 `f32`，杜绝代码膨胀与运行时分支开销。
     - **机制**：通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的极致内联。
+

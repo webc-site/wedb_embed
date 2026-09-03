@@ -70,7 +70,9 @@ where
     if let Some(g) = target {
       let entry = g?;
       let k = entry.key();
-      if k.starts_with(&prefix) && let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
+      if k.starts_with(&prefix)
+        && let Some((score, member)) = parse_score_sub(&k[prefix.len()..])
+      {
         let m_key = compose_zset_key(&kc, k_bytes, member);
         let mut batch = self.batch_with_capacity(3);
         batch.rm_weak_data(k);

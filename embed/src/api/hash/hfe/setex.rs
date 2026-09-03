@@ -113,9 +113,20 @@ where
       return Ok(true);
     }
 
-    let target_expire =
-      resolve_target_expire(options.ttl_action, options.expire_at_ms, entry.kind, entry.expire);
-    apply_setex_field_in_batch(&mut meta, item_k, v_bytes, entry.kind, target_expire, &mut batch);
+    let target_expire = resolve_target_expire(
+      options.ttl_action,
+      options.expire_at_ms,
+      entry.kind,
+      entry.expire,
+    );
+    apply_setex_field_in_batch(
+      &mut meta,
+      item_k,
+      v_bytes,
+      entry.kind,
+      target_expire,
+      &mut batch,
+    );
     commit_hash_batch(&meta_k, &mut meta, batch)?;
     Ok(true)
   }
@@ -241,9 +252,20 @@ where
         continue;
       }
 
-      let target_expire =
-        resolve_target_expire(options.ttl_action, options.expire_at_ms, entry.kind, entry.expire);
-      apply_setex_field_in_batch(&mut meta, item_k, v_bytes, entry.kind, target_expire, &mut batch);
+      let target_expire = resolve_target_expire(
+        options.ttl_action,
+        options.expire_at_ms,
+        entry.kind,
+        entry.expire,
+      );
+      apply_setex_field_in_batch(
+        &mut meta,
+        item_k,
+        v_bytes,
+        entry.kind,
+        target_expire,
+        &mut batch,
+      );
       state_cache.insert(
         f_bytes,
         CachedFieldState {

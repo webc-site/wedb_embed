@@ -3,7 +3,7 @@ use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 use crate::{
   api::set::{
     SetItemKeyComposer, commit_set_batch, compose_set_key, compose_set_meta_key,
-    compose_set_prefix_stack, meta::SetMeta, r#impl::prepare_set_meta_for_write,
+    compose_set_prefix_stack, r#impl::prepare_set_meta_for_write, meta::SetMeta,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
