@@ -519,11 +519,7 @@ pub fn bitpack_fused_delta<F: AlpFloat>(
 /// Safely packs remainder integers (< 8) without 128-bit shift overflow.
 /// 安全打包余数整数（少于 8 个），绝无 128-bit 位移溢出
 #[inline(always)]
-unsafe fn pack_rem(
-  rem: impl IntoIterator<Item = u64>,
-  bit_width: u8,
-  mut dst_ptr: *mut u8,
-) {
+unsafe fn pack_rem(rem: impl IntoIterator<Item = u64>, bit_width: u8, mut dst_ptr: *mut u8) {
   let mask = bit_mask(bit_width);
   let mut acc: u128 = 0;
   let mut bits: u32 = 0;
@@ -716,11 +712,17 @@ unsafe fn write_pair(p: u64, w2: u32, b: usize, dst_ptr: *mut u8) {
   let shift = (b % 8) as u32;
   unsafe {
     if shift == 0 {
-      dst_ptr.add(byte_idx).cast::<u64>().write_unaligned(p.to_le());
+      dst_ptr
+        .add(byte_idx)
+        .cast::<u64>()
+        .write_unaligned(p.to_le());
     } else {
       let existing = *dst_ptr.add(byte_idx);
       let combined = (p << shift) | (existing as u64);
-      dst_ptr.add(byte_idx).cast::<u64>().write_unaligned(combined.to_le());
+      dst_ptr
+        .add(byte_idx)
+        .cast::<u64>()
+        .write_unaligned(combined.to_le());
       if w2 + shift > 64 {
         *dst_ptr.add(byte_idx + 8) = (p >> (64 - shift)) as u8;
       }

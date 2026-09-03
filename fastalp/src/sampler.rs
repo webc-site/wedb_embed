@@ -178,7 +178,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     }
 
     // 当 fac == 0 且标准乘法存在异常时，评估十进制除法重构模式 (Decimal Division Mode)
-    if exp > 0 && exceptions > 0 {
+    if exp > 0 && exceptions > 0 && exceptions < sample_len {
       let mut div_exceptions = 0usize;
       let mut div_min = F::MAX_INT;
       let mut div_max = F::MIN_INT;
@@ -222,8 +222,8 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     }
   }
 
-  // 若采样数据在纯十进制各指数下全部 100% 无法编码，说明数据完全非十进制浮点序列，直接短路早停
-  if !any_decimal {
+  // 若数据非十进制，或已找到开销极小的十进制模型 (<=3 bit/val)，直接跳过高耗时的因子穷举
+  if !any_decimal || best_cost <= sample_len * 3 {
     return best_params;
   }
 
@@ -236,11 +236,33 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
       let exp_factor = F::exp_factor(exp, fac);
       let fac_int = F::fac_int(fac);
 
-      let mut exceptions = 0usize;
+      // 4 采样快速筛选：若前 4 采样已有 >=2 个异常，直接跳过当前组合
+      let pre_n = active_samples.len().min(4);
+      let mut pre_enc = [None; 4];
+      let mut pre_exc = 0;
+      for (i, &val) in active_samples[..pre_n].iter().enumerate() {
+        let res = F::try_encode_fast(val, exp_factor, fac_int, frac_exp);
+        if res.is_none() {
+          pre_exc += 1;
+        }
+        pre_enc[i] = res;
+      }
+      if pre_exc >= 2 {
+        continue;
+      }
+
+      let mut exceptions = pre_exc;
       let mut min_val = F::MAX_INT;
       let mut max_val = F::MIN_INT;
 
-      for &val in active_samples {
+      for &enc_opt in &pre_enc[..pre_n] {
+        if let Some(enc) = enc_opt {
+          min_val = min_val.min(enc);
+          max_val = max_val.max(enc);
+        }
+      }
+
+      for &val in &active_samples[pre_n..] {
         if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
           min_val = min_val.min(enc);
           max_val = max_val.max(enc);
