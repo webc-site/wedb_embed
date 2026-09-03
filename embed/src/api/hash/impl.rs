@@ -1,9 +1,12 @@
 use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
-  api::hash::meta::{
-    HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
-    compose_hash_prefix_stack, decode_field_state, is_field_expired,
+  api::hash::{
+    hfe::commit_hash_batch,
+    meta::{
+      HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
+      compose_hash_prefix_stack, decode_field_state, is_field_expired,
+    },
   },
   engine::{Engine, Partition},
   error::{Error, Result},
@@ -173,12 +176,7 @@ where
       meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
     }
 
-    if meta.base.size == 0 {
-      batch.rm_meta(&meta_k);
-    } else {
-      batch.insert_meta(&meta_k, &meta.encode());
-    }
-    batch.commit()?;
+    commit_hash_batch(&meta_k, &mut meta, batch)?;
 
     Ok(inserted_count)
   }
@@ -320,13 +318,7 @@ where
       } else {
         meta.apply_ttl_to_deleted();
       }
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        meta.clear_bounds_if_no_ttl_candidates();
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_hash_batch(&meta_k, &mut meta, batch)?;
       return Ok(deleted);
     }
     Ok(0)
@@ -381,13 +373,7 @@ where
     }
 
     if physical_removed > 0 {
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        meta.clear_bounds_if_no_ttl_candidates();
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_hash_batch(&meta_k, &mut meta, batch)?;
     }
     Ok(deleted)
   }

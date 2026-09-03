@@ -6,7 +6,10 @@ use crate::{
     r#const::{
       HASH_EXPIRE_COND_FAILED, HASH_EXPIRE_DELETED, HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND,
     },
-    hfe::{commit_hash_batch, get_live_hfe_meta, load_field_state, purge_expired_physical_field},
+    hfe::{
+      apply_expire_in_batch, commit_hash_batch, get_live_hfe_meta, load_field_state,
+      purge_expired_physical_field, remove_field_in_batch,
+    },
     meta::{
       HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, hexpire_condition_passes,
       is_immediate_expire,
@@ -186,28 +189,18 @@ where
         }
         let mut batch = self.batch_with_capacity(2);
         if is_immediate {
-          batch.rm_data(item_k);
-          if entry.kind == HashFieldStateKind::Persistent {
-            meta.apply_persistent_to_deleted();
-          } else {
-            meta.apply_ttl_to_deleted();
-          }
+          remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
           commit_hash_batch(&meta_k, &mut meta, batch)?;
           Ok(HASH_EXPIRE_DELETED)
         } else {
-          if entry.kind == HashFieldStateKind::Persistent {
-            meta.apply_persistent_to_ttl(expire_at_ms);
-          } else {
-            meta.apply_ttl_to_ttl(expire_at_ms);
-          }
-          let payload = entry
-            .raw
-            .as_ref()
-            .and_then(|s| meta.decode_subkey_value(s))
-            .map(|(_, p)| p)
-            .unwrap_or(b"");
-          meta
-            .with_encoded_subkey_value(payload, expire_at_ms, |enc| batch.insert_data(item_k, enc));
+          apply_expire_in_batch(
+            &mut meta,
+            item_k,
+            entry.kind,
+            entry.raw.as_deref(),
+            expire_at_ms,
+            &mut batch,
+          );
           commit_hash_batch(&meta_k, &mut meta, batch)?;
           Ok(HASH_EXPIRE_SET_OK)
         }
@@ -291,12 +284,7 @@ where
           }
 
           if is_immediate {
-            batch.rm_data(item_k);
-            if entry.kind == HashFieldStateKind::Persistent {
-              meta.apply_persistent_to_deleted();
-            } else {
-              meta.apply_ttl_to_deleted();
-            }
+            remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
             meta_changed = true;
             state_cache.insert(
               f_bytes,
@@ -308,21 +296,15 @@ where
             );
             results.push(HASH_EXPIRE_DELETED);
           } else {
-            if entry.kind == HashFieldStateKind::Persistent {
-              meta.apply_persistent_to_ttl(expire_at_ms);
-            } else {
-              meta.apply_ttl_to_ttl(expire_at_ms);
-            }
+            apply_expire_in_batch(
+              &mut meta,
+              item_k,
+              entry.kind,
+              entry.raw.as_deref(),
+              expire_at_ms,
+              &mut batch,
+            );
             meta_changed = true;
-            let payload = entry
-              .raw
-              .as_ref()
-              .and_then(|s| meta.decode_subkey_value(s))
-              .map(|(_, p)| p)
-              .unwrap_or(b"");
-            meta.with_encoded_subkey_value(payload, expire_at_ms, |enc| {
-              batch.insert_data(item_k, enc)
-            });
             state_cache.insert(
               f_bytes,
               CachedFieldState {

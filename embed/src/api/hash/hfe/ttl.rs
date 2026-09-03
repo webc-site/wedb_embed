@@ -4,7 +4,10 @@ use crate::{
   api::hash::{
     CachedFieldState, ceil_div_1000,
     r#const::{HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND, HASH_FIELD_PERSISTENT},
-    hfe::{commit_hash_batch, get_live_hfe_meta, load_field_state, purge_expired_physical_field},
+    hfe::{
+      apply_persist_in_batch, commit_hash_batch, get_live_hfe_meta, load_field_state,
+      purge_expired_physical_field,
+    },
     meta::{
       HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key, decode_field_state,
     },
@@ -125,14 +128,7 @@ where
       HashFieldStateKind::Persistent => Ok(HASH_FIELD_PERSISTENT),
       HashFieldStateKind::LiveTTL => {
         let mut batch = self.batch_with_capacity(2);
-        meta.apply_ttl_to_persistent();
-        let payload = entry
-          .raw
-          .as_ref()
-          .and_then(|s| meta.decode_subkey_value(s))
-          .map(|(_, p)| p)
-          .unwrap_or(b"");
-        meta.with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k, enc));
+        apply_persist_in_batch(&mut meta, item_k, entry.raw.as_deref(), &mut batch);
         commit_hash_batch(&meta_k, &mut meta, batch)?;
         Ok(HASH_EXPIRE_SET_OK)
       }
@@ -199,15 +195,8 @@ where
           results.push(HASH_FIELD_PERSISTENT);
         }
         HashFieldStateKind::LiveTTL => {
-          meta.apply_ttl_to_persistent();
+          apply_persist_in_batch(&mut meta, item_k, entry.raw.as_deref(), &mut batch);
           meta_changed = true;
-          let payload = entry
-            .raw
-            .as_ref()
-            .and_then(|s| meta.decode_subkey_value(s))
-            .map(|(_, p)| p)
-            .unwrap_or(b"");
-          meta.with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k, enc));
           state_cache.insert(
             f_bytes,
             CachedFieldState {

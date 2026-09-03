@@ -4,7 +4,10 @@ use crate::{
   api::hash::{
     CachedFieldState,
     r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-    hfe::{commit_hash_batch, load_field_state},
+    hfe::{
+      apply_setex_field_in_batch, commit_hash_batch, load_field_state, remove_field_in_batch,
+      resolve_target_expire,
+    },
     meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire},
     opt::{HSet, HashFieldSetCondition, HashSetEx, TTLAction},
     prepare_hash_meta_for_write,
@@ -103,57 +106,16 @@ where
       options.ttl_action == TTLAction::Set && is_immediate_expire(options.expire_at_ms, now_ms);
 
     if is_immediate {
-      match entry.kind {
-        HashFieldStateKind::Missing => return Ok(true),
-        HashFieldStateKind::Persistent => {
-          meta.apply_persistent_to_deleted();
-        }
-        HashFieldStateKind::LiveTTL | HashFieldStateKind::ExpiredTTLPhysical => {
-          meta.apply_ttl_to_deleted();
-        }
+      if entry.kind != HashFieldStateKind::Missing {
+        remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
+        commit_hash_batch(&meta_k, &mut meta, batch)?;
       }
-      batch.rm_data(item_k);
-      commit_hash_batch(&meta_k, &mut meta, batch)?;
       return Ok(true);
     }
 
-    let target_expire = match options.ttl_action {
-      TTLAction::Discard | TTLAction::Persist => 0,
-      TTLAction::Keep => {
-        if entry.kind == HashFieldStateKind::LiveTTL
-          || entry.kind == HashFieldStateKind::ExpiredTTLPhysical
-        {
-          entry.expire
-        } else {
-          0
-        }
-      }
-      TTLAction::Set => options.expire_at_ms,
-    };
-
-    match entry.kind {
-      HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
-        if target_expire == 0 {
-          meta.apply_missing_to_persistent();
-        } else {
-          meta.apply_missing_to_ttl(target_expire);
-        }
-      }
-      HashFieldStateKind::Persistent => {
-        if target_expire != 0 {
-          meta.apply_persistent_to_ttl(target_expire);
-        }
-      }
-      HashFieldStateKind::LiveTTL => {
-        if target_expire == 0 {
-          meta.apply_ttl_to_persistent();
-        } else {
-          meta.apply_ttl_to_ttl(target_expire);
-        }
-      }
-    }
-
-    meta.with_encoded_subkey_value(v_bytes, target_expire, |enc| batch.insert_data(item_k, enc));
+    let target_expire =
+      resolve_target_expire(options.ttl_action, options.expire_at_ms, entry.kind, entry.expire);
+    apply_setex_field_in_batch(&mut meta, item_k, v_bytes, entry.kind, target_expire, &mut batch);
     commit_hash_batch(&meta_k, &mut meta, batch)?;
     Ok(true)
   }
@@ -265,16 +227,9 @@ where
       };
 
       if is_immediate {
-        match entry.kind {
-          HashFieldStateKind::Missing => continue,
-          HashFieldStateKind::Persistent => {
-            meta.apply_persistent_to_deleted();
-          }
-          HashFieldStateKind::LiveTTL | HashFieldStateKind::ExpiredTTLPhysical => {
-            meta.apply_ttl_to_deleted();
-          }
+        if entry.kind != HashFieldStateKind::Missing {
+          remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
         }
-        batch.rm_data(item_k);
         state_cache.insert(
           f_bytes,
           CachedFieldState {
@@ -286,43 +241,9 @@ where
         continue;
       }
 
-      let target_expire = match options.ttl_action {
-        TTLAction::Discard | TTLAction::Persist => 0,
-        TTLAction::Keep => {
-          if entry.kind == HashFieldStateKind::LiveTTL
-            || entry.kind == HashFieldStateKind::ExpiredTTLPhysical
-          {
-            entry.expire
-          } else {
-            0
-          }
-        }
-        TTLAction::Set => options.expire_at_ms,
-      };
-
-      match entry.kind {
-        HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
-          if target_expire == 0 {
-            meta.apply_missing_to_persistent();
-          } else {
-            meta.apply_missing_to_ttl(target_expire);
-          }
-        }
-        HashFieldStateKind::Persistent => {
-          if target_expire != 0 {
-            meta.apply_persistent_to_ttl(target_expire);
-          }
-        }
-        HashFieldStateKind::LiveTTL => {
-          if target_expire == 0 {
-            meta.apply_ttl_to_persistent();
-          } else {
-            meta.apply_ttl_to_ttl(target_expire);
-          }
-        }
-      }
-
-      meta.with_encoded_subkey_value(v_bytes, target_expire, |enc| batch.insert_data(item_k, enc));
+      let target_expire =
+        resolve_target_expire(options.ttl_action, options.expire_at_ms, entry.kind, entry.expire);
+      apply_setex_field_in_batch(&mut meta, item_k, v_bytes, entry.kind, target_expire, &mut batch);
       state_cache.insert(
         f_bytes,
         CachedFieldState {

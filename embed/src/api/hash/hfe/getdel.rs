@@ -3,7 +3,10 @@ use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 use crate::{
   api::hash::{
     CachedFieldState,
-    hfe::{commit_hash_batch, get_live_hfe_meta, load_field_state, purge_expired_physical_field},
+    hfe::{
+      commit_hash_batch, extract_subkey_payload, get_live_hfe_meta, load_field_state,
+      purge_expired_physical_field, remove_field_in_batch,
+    },
     meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key},
   },
   engine::Engine,
@@ -44,20 +47,9 @@ where
         Ok(None)
       }
       HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
-        let payload = entry
-          .raw
-          .as_ref()
-          .and_then(|s| meta.decode_subkey_value(s))
-          .map(|(_, p)| p.to_vec())
-          .unwrap_or_default();
-
+        let payload = extract_subkey_payload(&meta, entry.raw.as_deref()).to_vec();
         let mut batch = self.batch_with_capacity(2);
-        batch.rm_data(item_k);
-        if entry.kind == HashFieldStateKind::Persistent {
-          meta.apply_persistent_to_deleted();
-        } else {
-          meta.apply_ttl_to_deleted();
-        }
+        remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
         commit_hash_batch(&meta_k, &mut meta, batch)?;
         Ok(Some(payload))
       }
@@ -111,19 +103,9 @@ where
           results.push(None);
         }
         HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
-          let payload = entry
-            .raw
-            .as_ref()
-            .and_then(|s| meta.decode_subkey_value(s))
-            .map(|(_, p)| p.to_vec())
-            .unwrap_or_default();
+          let payload = extract_subkey_payload(&meta, entry.raw.as_deref()).to_vec();
           results.push(Some(payload));
-          batch.rm_data(item_k);
-          if entry.kind == HashFieldStateKind::Persistent {
-            meta.apply_persistent_to_deleted();
-          } else {
-            meta.apply_ttl_to_deleted();
-          }
+          remove_field_in_batch(&mut meta, item_k, entry.kind, &mut batch);
           meta_changed = true;
           state_cache.insert(
             f_bytes,

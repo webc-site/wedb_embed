@@ -10,6 +10,7 @@ use crate::{
       CachedFieldState,
       r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
       meta::{HashFieldStateKind, HashMeta, decode_field_state},
+      opt::TTLAction,
     },
     key::get_meta_checked,
   },
@@ -137,4 +138,112 @@ where
       raw: None,
     }),
   }
+}
+
+#[inline]
+pub(crate) fn remove_field_in_batch<E: Engine>(
+  meta: &mut HashMeta,
+  item_k: &[u8],
+  entry_kind: HashFieldStateKind,
+  batch: &mut DbBatch<E>,
+) {
+  batch.rm_data(item_k);
+  if entry_kind == HashFieldStateKind::Persistent {
+    meta.apply_persistent_to_deleted();
+  } else {
+    meta.apply_ttl_to_deleted();
+  }
+}
+
+#[inline]
+pub(crate) fn extract_subkey_payload<'a>(meta: &HashMeta, raw: Option<&'a [u8]>) -> &'a [u8] {
+  raw
+    .and_then(|s| meta.decode_subkey_value(s))
+    .map(|(_, p)| p)
+    .unwrap_or(b"")
+}
+
+#[inline]
+pub(crate) fn apply_persist_in_batch<E: Engine>(
+  meta: &mut HashMeta,
+  item_k: &[u8],
+  raw: Option<&[u8]>,
+  batch: &mut DbBatch<E>,
+) {
+  meta.apply_ttl_to_persistent();
+  let payload = extract_subkey_payload(meta, raw);
+  meta.with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k, enc));
+}
+
+#[inline]
+pub(crate) fn apply_expire_in_batch<E: Engine>(
+  meta: &mut HashMeta,
+  item_k: &[u8],
+  entry_kind: HashFieldStateKind,
+  raw: Option<&[u8]>,
+  expire_at_ms: u64,
+  batch: &mut DbBatch<E>,
+) {
+  if entry_kind == HashFieldStateKind::Persistent {
+    meta.apply_persistent_to_ttl(expire_at_ms);
+  } else {
+    meta.apply_ttl_to_ttl(expire_at_ms);
+  }
+  let payload = extract_subkey_payload(meta, raw);
+  meta.with_encoded_subkey_value(payload, expire_at_ms, |enc| batch.insert_data(item_k, enc));
+}
+
+#[inline]
+pub(crate) fn resolve_target_expire(
+  ttl_action: TTLAction,
+  options_expire: u64,
+  entry_kind: HashFieldStateKind,
+  entry_expire: u64,
+) -> u64 {
+  match ttl_action {
+    TTLAction::Discard | TTLAction::Persist => 0,
+    TTLAction::Keep => {
+      if entry_kind == HashFieldStateKind::LiveTTL
+        || entry_kind == HashFieldStateKind::ExpiredTTLPhysical
+      {
+        entry_expire
+      } else {
+        0
+      }
+    }
+    TTLAction::Set => options_expire,
+  }
+}
+
+#[inline]
+pub(crate) fn apply_setex_field_in_batch<E: Engine>(
+  meta: &mut HashMeta,
+  item_k: &[u8],
+  v_bytes: &[u8],
+  entry_kind: HashFieldStateKind,
+  target_expire: u64,
+  batch: &mut DbBatch<E>,
+) {
+  match entry_kind {
+    HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
+      if target_expire == 0 {
+        meta.apply_missing_to_persistent();
+      } else {
+        meta.apply_missing_to_ttl(target_expire);
+      }
+    }
+    HashFieldStateKind::Persistent => {
+      if target_expire != 0 {
+        meta.apply_persistent_to_ttl(target_expire);
+      }
+    }
+    HashFieldStateKind::LiveTTL => {
+      if target_expire == 0 {
+        meta.apply_ttl_to_persistent();
+      } else {
+        meta.apply_ttl_to_ttl(target_expire);
+      }
+    }
+  }
+  meta.with_encoded_subkey_value(v_bytes, target_expire, |enc| batch.insert_data(item_k, enc));
 }
