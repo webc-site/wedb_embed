@@ -8,6 +8,4 @@ cd $DIR
 # set +a
 set -x
 
-cargo nextest run --all-features --no-capture
-
-# cargo test --all-features -- --nocapture
+cargo nextest run -p fastalp --all-features --no-capture

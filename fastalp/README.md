@@ -7,12 +7,12 @@
 
 <a name="en"></a>
 
-# fastalp : Adaptive Lossless Floating-Point Compression in Rust
+# fastalp : World's Fastest and Highest-Ratio Lossless Time-Series Floating-Point Compression
 
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@es/RMGE_J8pM_pZJmNoekXg.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@53/SLHLoauQAr1wmk3FJZTQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -310,47 +310,56 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 
 ### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
 
-This benchmark adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
+This benchmark adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial scenarios (37 benchmarks in total) spanning 6 core domains:
 
-| Domain | Dataset Name | Physical Description & Data Characteristics | Official Data Source & Link |
-|---|---|---|---|
-| **IoT & Environment** | `neon_pm10_dust` | Particulate matter PM10 dust concentration (μg/m³) | [NEON Ecological Observatory Network (DOI: 10.48443/4E6X-V373)](https://doi.org/10.48443/4E6X-V373) |
-| | `neon_dew_point_temp` | Atmospheric dew point temperature series (°C) | [NEON Ecological Observatory Network (DOI: 10.48443/Z99V-0502)](https://doi.org/10.48443/Z99V-0502) |
-| | `neon_air_pressure` | Continuous barometric surface air pressure (kPa) | [NEON Ecological Observatory Network (DOI: 10.48443/RXR7-PP32)](https://doi.org/10.48443/RXR7-PP32) |
-| | `neon_wind_dir` | Ultrasonic meteorological wind direction angle (0-360°) | [NEON Ecological Observatory Network (DOI: 10.48443/S9YA-ZC81)](https://doi.org/10.48443/S9YA-ZC81) |
-| | `neon_bio_temp_c` | Infrared biological surface ground temperature (°C) | [NEON Ecological Observatory Network (DOI: 10.48443/JNWY-B177)](https://doi.org/10.48443/JNWY-B177) |
-| | `basel_temp_f` | Hourly ground temperature in Basel, Switzerland (°C) | [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
-| | `basel_wind_f` | Continuous ground wind speed in Basel (km/h) | [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
-| | `city_temperature_f` | Daily average temperature records of global cities | [Kaggle Global Daily City Temperature Dataset](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities) |
-| | `air_sensor_f` | High-frequency multi-sensor air quality telemetry | [CWI PublicBI Time-Series Database Benchmark](https://github.com/cwida/public_bi_benchmark) |
-| | `arade4` | Arade hydrometric gauging river stage height | [CWI PublicBI Hydrometric Station Dataset](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/) |
-| | `scene_sensor` | Multi-channel industrial decimal sensor stream (1024 pts) | Real-world physical telemetry composite block |
-| **Finance & Crypto** | `stocks_usa_c` | US stock market order book execution price stream | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
-| | `stocks_de` | Frankfurt Stock Exchange (Xetra) trade prices | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
-| | `stocks_uk` | London Stock Exchange equity trade execution stream | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
-| | `bitcoin_f` | Historical Bitcoin USD price index series | [InfluxDB Sample Bitcoin Time Series](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv) |
-| | `bitcoin_transactions_f` | Bitcoin mainnet transaction transfer volumes | [Blockchair Bitcoin Ledger High-Value Transactions](https://gz.blockchair.com/bitcoin/transactions/) |
-| | `food_prices` | UN Food and Agriculture Organization staple food index | [UN Humanitarian Data Exchange (WFP)](https://data.humdata.org/dataset/wfp-food-prices) |
-| | `scene_finance` | High-frequency quantitative order book stream (1024 pts) | Real-world microsecond exchange matching stream |
-| **Civic & Healthcare** | `gov10` | Fiscal government expenditure and municipal budget items | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov26` | National census demographic ultra-low entropy series | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov30` | Macroeconomic indicator survey and fiscal operations | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov31` | Fiscal equalization transfers and regional subsidies | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov40` | Municipal utility network survey and pipe mapping | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `medicare1` | Outpatient Medicare billing and insurance claims | [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
-| | `medicare9` | Specialty consultation grants and subsidy timestamps | [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
-| | `cms1` | Healthcare provider reimbursement billing logs | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `cms9` | Prescription pharmaceutical reimbursement prices | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `cms25` | Medical equipment usage and specialty therapy charges | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `scene_macro` | Macro civic indicators and public healthcare bills (1024 pts) | Real-world public finance & insurance composite block |
-| **Geospatial & GPS** | `poi_lat` | Global points of interest high-precision latitude | [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
-| | `poi_lon` | Global points of interest high-precision longitude | [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
-| | `bird_migration_f` | Wild avian migration high-precision satellite GPS track | [InfluxDB Bird Migration Tracking Dataset](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv) |
-| | `nyc29` | NYC Yellow Taxi trip GPS distance tracking stream | [CWI PublicBI NYC Taxi Geospatial Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/) |
-| | `scene_geo` | Drone telemetry and continuous navigation track (1024 pts) | High-precision continuous geospatial trajectory |
-| **Storage & Waveforms** | `ssd_hdd_benchmarks_f` | Storage device sequential and random I/O throughput | [Kaggle SSD & HDD I/O Benchmark Dataset](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks) |
-| | `scene_ramp` | Smooth ramp slopes and monotonic counters (1024 pts) | Industrial PID loops, hydrometric discharge & counters |
-| | `scene_steady` | Steady-state telemetry and heartbeat monitors (1024 pts) | Redundant sensor heartbeat & fault-free constant stream |
+- **IoT & Environmental Telemetry (11 datasets)**
+  - `neon_pm10_dust`: Particulate matter PM10 dust concentration (μg/m³) · [NEON Ecological Observatory Network](https://doi.org/10.48443/4E6X-V373)
+  - `neon_dew_point_temp`: Atmospheric dew point temperature series (°C) · [NEON Ecological Observatory Network](https://doi.org/10.48443/Z99V-0502)
+  - `neon_air_pressure`: Continuous barometric surface air pressure (kPa) · [NEON Ecological Observatory Network](https://doi.org/10.48443/RXR7-PP32)
+  - `neon_wind_dir`: Ultrasonic meteorological wind direction angle (0-360°) · [NEON Ecological Observatory Network](https://doi.org/10.48443/S9YA-ZC81)
+  - `neon_bio_temp_c`: Infrared biological surface ground temperature (°C) · [NEON Ecological Observatory Network](https://doi.org/10.48443/JNWY-B177)
+  - `basel_temp_f`: Hourly ground temperature in Basel, Switzerland (°C) · [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland)
+  - `basel_wind_f`: Continuous ground wind speed in Basel (km/h) · [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland)
+  - `city_temperature_f`: Daily average temperature records of global cities · [Kaggle Global Daily City Temperature](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities)
+  - `air_sensor_f`: High-frequency multi-sensor air quality telemetry · [CWI PublicBI Benchmark](https://github.com/cwida/public_bi_benchmark)
+  - `arade4`: Arade hydrometric gauging river stage height · [CWI PublicBI Hydrometric Station Dataset](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/)
+  - `scene_sensor`: Multi-channel industrial decimal sensor stream (1024 pts) · Real-world physical telemetry composite block
+
+- **Quantitative Finance & Digital Assets (7 datasets)**
+  - `stocks_usa_c`: US stock market order book execution price stream · [Zenodo Quantitative Financial Dataset](https://zenodo.org/record/3886895)
+  - `stocks_de`: Frankfurt Stock Exchange (Xetra) trade prices · [Zenodo Quantitative Financial Dataset](https://zenodo.org/record/3886895)
+  - `stocks_uk`: London Stock Exchange equity trade execution stream · [Zenodo Quantitative Financial Dataset](https://zenodo.org/record/3886895)
+  - `bitcoin_f`: Historical Bitcoin USD price index series · [InfluxDB Sample Bitcoin Time Series](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv)
+  - `bitcoin_transactions_f`: Bitcoin mainnet transaction transfer volumes · [Blockchair Bitcoin Ledger Transactions](https://gz.blockchair.com/bitcoin/transactions/)
+  - `food_prices`: UN Food and Agriculture Organization staple food index · [UN Humanitarian Data Exchange (WFP)](https://data.humdata.org/dataset/wfp-food-prices)
+  - `scene_finance`: High-frequency quantitative order book stream (1024 pts) · Real-world microsecond exchange matching stream
+
+- **Geospatial & GPS Trajectory Tracking (5 datasets)**
+  - `poi_lat`: Global points of interest high-precision latitude · [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database)
+  - `poi_lon`: Global points of interest high-precision longitude · [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database)
+  - `bird_migration_f`: Wild avian migration satellite GPS track · [InfluxDB Bird Migration Tracking Dataset](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv)
+  - `nyc29`: NYC Yellow Taxi trip GPS distance tracking stream · [CWI PublicBI NYC Taxi Geospatial Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/)
+  - `scene_geo`: Drone telemetry and continuous navigation track (1024 pts) · High-precision continuous geospatial trajectory
+
+- **Healthcare Billing & Public Prescription (5 datasets)**
+  - `medicare1`: Outpatient Medicare billing and insurance claims · [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/)
+  - `medicare9`: Specialty consultation grants and subsidy timestamps · [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/)
+  - `cms1`: Healthcare provider reimbursement billing logs · [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+  - `cms9`: Prescription pharmaceutical reimbursement prices · [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+  - `cms25`: Medical equipment usage and specialty therapy charges · [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+
+- **Civic Governance & Macroeconomics (6 datasets)**
+  - `gov10`: Fiscal government expenditure and municipal budget items · [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov26`: National census demographic ultra-low entropy series · [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov30`: Macroeconomic indicator survey and fiscal operations · [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov31`: Fiscal equalization transfers and regional subsidies · [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov40`: Municipal utility network survey and pipe mapping · [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `scene_macro`: Macro civic indicators and public healthcare bills (1024 pts) · Real-world public finance & insurance composite block
+
+- **Storage Devices & Physical Waveforms (3 datasets)**
+  - `ssd_hdd_benchmarks_f`: Storage device sequential and random I/O throughput · [Kaggle SSD & HDD I/O Benchmark](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks)
+  - `scene_ramp`: Smooth ramp slopes and monotonic counters (1024 pts) · Industrial PID loops, hydrometric discharge & counters
+  - `scene_steady`: Steady-state telemetry and heartbeat monitors (1024 pts) · Redundant sensor heartbeat & fault-free constant stream
 
 ---
 
@@ -374,39 +383,56 @@ fastalp is not a literal translation, but an engineering overhaul engineered to 
 
 ### 2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)
 
-1. **Fused Delta Bitpacking**:
+To break through the throughput limits and compression ceiling of the original C++ reference, fastalp engineered the following architectural innovations:
+
+1. **3-Tier Microarchitectural Sampling Pruning Pipeline**:
+   - **Purpose**: Solves the severe bottleneck in C++ ALP where exhaustive factor exploration consumed over 80% of CPU time, throttling end-to-end ingestion throughput to 0.83 GB/s.
+   - **Mechanism**: Introduces a 3-tier cascade: Tier 1 (Pure Decimal Early Exit) validates the basic decimal exponent against 32 samples; if 100% losslessly representable with zero exceptions, it immediately returns optimal parameters without testing any of the 170 candidate factors. Tier 2 (4-Sample and 16-Sample Prescreening) tests candidate factors with 4 samples first, discarding subpar candidates before evaluating all 32 samples. Tier 3 (Non-Decimal Scientific Early Exit) instantly halts factor search if the basic decimal exponent produces 100% exceptions. This drives end-to-end ingestion throughput from 0.83 GB/s to **3.91 GB/s (4.7x speedup, up to 7.0x in specific blocks)**.
+2. **Pure-Register SIMD Auto-Vectorized Decoding**:
+   - **Purpose**: Eliminates memory gather latencies and cache miss stalls common in traditional bit-unpacking loops.
+   - **Mechanism**: For common bit-widths (8, 16, 32, 64 bits), the decoder is implemented as branchless, unrolled parallel SIMD sequences targeting ARM NEON and x86 AVX2 vector registers, reaching **23.59 GB/s geometric mean**.
+3. **256-Entry Stack-Allocated L1D Lookup Table**:
+   - **Purpose**: Eliminates multi-cycle hardware floating-point division latencies and dynamic memory allocations in inner loops.
+   - **Mechanism**: For small bit-widths (1, 2, 4 bits) and decimal division reconstruction, constructs a 256-entry table directly on the stack frame. Operating 100% within CPU L1D cache, it replaces 30+ cycle hardware division instructions with single L1D cache lookups.
+4. **Fused Delta Bitpacking Pipeline**:
    - **Purpose**: Eliminates the memory bandwidth and cache pollution of allocating and writing an intermediate 8KB difference buffer.
    - **Mechanism**: Conventional compressors run two passes: compute diffs into an 8KB memory slice, then read it back for bitpacking. fastalp's 8-way register pipeline computes adjacent deltas, subtracts the baseline, and shifts bits into a 128-bit packing accumulator in a single fused pass with **zero memory writes and zero heap allocations**, boosting delta compression throughput by >30%.
-2. **Mathematical Delta Early Pruning**:
+5. **Mathematical Delta Early Pruning**:
    - **Purpose**: Prevents expensive full-chunk differencing on disordered or oscillating series.
    - **Mechanism**: By the mathematical axiom that subset extrema difference is always $\le$ global extrema difference, fastalp samples the first 16 points. If their delta bit-width already matches or exceeds FOR bit-width, delta encoding is mathematically proven to be non-beneficial, exiting instantly.
-3. **4-Way Loop Unrolling & Inlined Pipeline**:
+6. **4-Way Loop Unrolling & Zero-Closure Pipeline**:
    - **Purpose**: Maximizes instruction-level parallelism (ILP) across modern CPU superscalar ALUs.
-   - **Mechanism**: Completely avoids dynamic closures and indirect branches in the inner loop. Inlines a dedicated 4-way unrolled pipeline that processes 4 values per iteration through registers without exception checks when within range.
-4. **Identical Floats Fast-Skip**:
+   - **Mechanism**: Completely avoids dynamic closures and indirect branches in the inner loop. Inlines a dedicated 4-way unrolled pipeline that processes 4 values per iteration through registers without exception checks when within range, achieving **4.4~6.8 GB/s** compression throughput.
+7. **Single-Cycle Identical Floats Fast-Skip**:
    - **Purpose**: Instantaneous compression of idle sensor heartbeats and disconnected lines.
-   - **Mechanism**: Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**, **88.9 GB/s decode speed**).
-5. **Outlier Pruning with 0-bit Compression**:
+   - **Mechanism**: Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**).
+8. **Outlier Pruning with 0-bit Compression**:
    - **Purpose**: Unlocks >150x compression on series with 99% identical base values and rare spikes (e.g., `gov30`).
    - **Mechanism**: Isolates rare pulse values into the exception dictionary, allowing the main bitstream to use a 0-bit bit-width (storing only length and baseline). Combined with 16-sample outlier pre-screening, high-entropy blocks exit within 2 samples with zero penalty.
-6. **Non-Decimal Two-Tier Sampling Early Break**:
-   - **Purpose**: Halts fruitless exploration of 170 factor combinations on non-decimal scientific data.
-   - **Mechanism**: Tier 1 tests 32 sample points under decimal exponents. If exception rate is 100%, the data is identified as high-entropy scientific float, skipping Tier 2 factor search and reducing sampling time by 80%.
-7. **Batched Exception Writing & Zero Extra Allocations**:
-   - **Purpose**: Eliminates memory fragmentation and dynamic reallocation during exception handling.
-   - **Mechanism**: Gathers exception indices and IEEE 754 bit representations in fixed-size stack arrays and writes them to the output buffer in a single batch, halving vector management overhead. Public `compress_into` and `decompress_into` APIs operate with zero heap allocations.
+9. **Compact 2-bit Tagged Header & Large Array Scalability**:
+   - **Purpose**: Minimizes framing overhead and removes single-block 65,535 element truncation limits.
+   - **Mechanism**: Uses a self-describing 2-bit length tag layout where standard 1024-element blocks require only 3 header bytes (and 1 byte in RAW fallback mode). Seamlessly auto-promotes to 32-bit count and exception offsets for large arrays, removing artificial chunking boundaries.
+10. **Batched Stack Buffer for Exceptions**:
+    - **Purpose**: Eliminates memory fragmentation and vector reallocation during exception handling.
+    - **Mechanism**: Gathers exception indices and IEEE 754 bit representations in fixed-size stack arrays and writes them to the output buffer in a single batch, halving vector management overhead.
+11. **Zero-Heap Allocation Streaming APIs**:
+    - **Purpose**: Completely avoids garbage collection and heap allocation overhead in high-throughput streaming systems.
+    - **Mechanism**: Exposes `compress_into` and `decompress_into` APIs that allow callers to reuse pre-allocated memory buffers across batches without extra heap allocations.
+12. **Unified Zero-Cost Generic Abstraction with Precomputed Tables**:
+    - **Purpose**: Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.
+    - **Mechanism**: Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.
 
 
 ---
 
 <a name="zh"></a>
 
-# fastalp : 基于 ALP 算法的无损浮点数压缩引擎
+# fastalp : 全球最快、压缩比最高的通用时序浮点无损压缩
 
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@P1/suI3FnPjZvEOg447kmPA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@j-/oFwc11kTCB_0dk169UMw.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -429,10 +455,10 @@ fastalp is not a literal translation, but an engineering overhaul engineered to 
   - [测试环境与编译配置](#测试环境与编译配置)
   - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
   - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
-  - [评测数据集全景与公开数据源 (37 项工业与学术全集)](#评测数据集全景与公开数据源-37-项工业与学术全集)
-- [架构演进与优化全景 (Architecture & Optimization Breakdown)](#架构演进与优化全景-architecture-optimization-breakdown)
-  - [一、参考与借鉴 C++ ALP 的架构设计（用于解决什么问题）](#一参考与借鉴-c-alp-的架构设计用于解决什么问题)
-  - [二、fastalp 自主研发的极致原创优化（用于解决什么问题）](#二fastalp-自主研发的极致原创优化用于解决什么问题)
+  - [评测数据集全景与公开数据源（共 37 项）](#评测数据集全景与公开数据源共-37-项)
+- [架构演进与优化全景](#架构演进与优化全景)
+  - [一、参考与借鉴 C++ ALP 的架构设计](#一参考与借鉴-c-alp-的架构设计)
+  - [二、fastalp 自主研发的极致原创优化](#二fastalp-自主研发的极致原创优化)
 
 ## 功能特性
 
@@ -702,95 +728,119 @@ fastalp/
     - 在 `ALP/data/samples/` 与 `your_own_dataset.csv` 中补充了 6 大典型工业场景，使 C++ ALP 在本物理机上完整跑完全量全部 37 个评测数据集（31 个论文公开数据集 + 6 个工业场景补充数据集）；
     - 所有算法统一采用全量 37 项评测数据计算几何平均值（Geometric Mean），杜绝任何采样偏倚。
 
-### 评测数据集全景与公开数据源 (37 项工业与学术全集)
+### 评测数据集全景与公开数据源（共 37 项）
 
-本评测采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
+本评测采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个典型工业场景样本（共 37 项基准），覆盖 6 大业务领域：
 
-| 领域分类 | 数据集名称 | 数据特征与物理意义 | 官方数据源与权威链接 |
-|---|---|---|---|
-| **物联网与环境传感** | `neon_pm10_dust` | PM10 悬浮微粒粉尘浓度传感 (μg/m³) | [NEON 官方生态观测网络 (DOI: 10.48443/4E6X-V373)](https://doi.org/10.48443/4E6X-V373) |
-| | `neon_dew_point_temp` | 气象露点温度连续观测时序 (°C) | [NEON 官方生态观测网络 (DOI: 10.48443/Z99V-0502)](https://doi.org/10.48443/Z99V-0502) |
-| | `neon_air_pressure` | 大气海平面连续气压传感 (kPa) | [NEON 官方生态观测网络 (DOI: 10.48443/RXR7-PP32)](https://doi.org/10.48443/RXR7-PP32) |
-| | `neon_wind_dir` | 超声波气象风向角度传感 (0-360°) | [NEON 官方生态观测网络 (DOI: 10.48443/S9YA-ZC81)](https://doi.org/10.48443/S9YA-ZC81) |
-| | `neon_bio_temp_c` | 红外土壤地表温度物理遥测 (°C) | [NEON 官方生态观测网络 (DOI: 10.48443/JNWY-B177)](https://doi.org/10.48443/JNWY-B177) |
-| | `basel_temp_f` | 瑞士巴塞尔地表历史逐时气温 (°C) | [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
-| | `basel_wind_f` | 瑞士巴塞尔观测站地表连续风速 (km/h) | [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
-| | `city_temperature_f` | 全球主要城市日平均气温实测时序 | [Kaggle 全球城市气温历史基准集](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities) |
-| | `air_sensor_f` | 高频空气质量多传感器监测阵列 | [CWI PublicBI 时序数据库公开基准](https://github.com/cwida/public_bi_benchmark) |
-| | `arade4` | 葡萄牙 Arade 水文站水尺高度监控 | [CWI PublicBI Arade 水文站观测数据](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/) |
-| | `scene_sensor` | 工业物联网十进制环境传感聚合基准 (1024 点) | 真实物理传感多参数聚合切片 |
-| **量化金融与资产行情** | `stocks_usa_c` | 美股微秒级高频订单簿成交价时序 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
-| | `stocks_de` | 德股法兰克福证券交易所交易成交价 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
-| | `stocks_uk` | 英股伦敦证券交易所股票交易价格 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
-| | `bitcoin_f` | 历史比特币美元交易指数时序 | [InfluxDB 官方比特币时序分析样本集](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv) |
-| | `bitcoin_transactions_f` | 比特币区块链主网微秒级单笔转账金额 | [Blockchair 比特币主链历史大宗转账流水](https://gz.blockchair.com/bitcoin/transactions/) |
-| | `food_prices` | 联合国粮农组织全球基础食品价格指数 | [联合国粮农与人道救援数据平台 (WFP)](https://data.humdata.org/dataset/wfp-food-prices) |
-| | `scene_finance` | 高频量化金融交易深度行情基准 (1024 点) | 真实交易所逐笔撮合行情切片 |
-| **政务普查与医疗医保** | `gov10` | 财政预算与公共支出明细统计指标 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov26` | 国家人口普查极低熵常数序列流 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov30` | 宏观经济运行指标与财政综合统计 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov31` | 财政转移支付与地区扶持资金时序 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `gov40` | 市政公用管网工程高精测绘与统计 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
-| | `medicare1` | 门诊医疗保险理赔结算账单流水 | [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
-| | `medicare9` | 专科就诊补贴与报销费用时序 | [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
-| | `cms1` | 医疗保险供应商结算明细记录 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `cms9` | 专科处方药品报销结算价格流水 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `cms25` | 医疗设备使用与专科诊疗收费项目 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
-| | `scene_macro` | 宏观政务指标与公共医疗结算基准 (1024 点) | 真实公共财政与医保综合报销切片 |
-| **地理测绘与轨迹跟踪** | `poi_lat` | 全球兴趣点高精度地理纬度坐标 | [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
-| | `poi_lon` | 全球兴趣点高精度地理经度坐标 | [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
-| | `bird_migration_f` | 野生候鸟迁徙微秒级卫星 GPS 坐标 | [InfluxDB 候鸟迁徙高精地理时序追踪集](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv) |
-| | `nyc29` | 纽约出租车连续营运 GPS 轨迹与计程 | [CWI PublicBI NYC 出租车地理时序数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/) |
-| | `scene_geo` | 无人机航迹与连续经纬度测绘基准 (1024 点) | 高精卫星轨迹与连续导航定位切片 |
-| **硬件存储与物理波形** | `ssd_hdd_benchmarks_f` | 固态硬盘与机械硬盘连续 I/O 吞吐基准 | [Kaggle 存储设备吞吐实测数据库](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks) |
-| | `scene_ramp` | 平滑升降坡道、连续物理量与单调时序 (1024 点) | 工业 PID 调节、水文流量与连续步进计数器 |
-| | `scene_steady` | 恒定传感、无故障零冗余与心跳流 (1024 点) | 设备自检心跳流与高频常数工业监控 |
+- **物联网与环境传感（11 项）**
+  - `neon_pm10_dust`：PM10 悬浮微粒粉尘浓度传感（μg/m³）· [NEON 官方生态观测网络](https://doi.org/10.48443/4E6X-V373)
+  - `neon_dew_point_temp`：气象露点温度连续观测时序（°C）· [NEON 官方生态观测网络](https://doi.org/10.48443/Z99V-0502)
+  - `neon_air_pressure`：大气海平面连续气压传感（kPa）· [NEON 官方生态观测网络](https://doi.org/10.48443/RXR7-PP32)
+  - `neon_wind_dir`：超声波气象风向角度传感（0-360°）· [NEON 官方生态观测网络](https://doi.org/10.48443/S9YA-ZC81)
+  - `neon_bio_temp_c`：红外土壤地表温度物理遥测（°C）· [NEON 官方生态观测网络](https://doi.org/10.48443/JNWY-B177)
+  - `basel_temp_f`：瑞士巴塞尔地表历史逐时气温（°C）· [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland)
+  - `basel_wind_f`：瑞士巴塞尔观测站地表连续风速（km/h）· [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland)
+  - `city_temperature_f`：全球主要城市日平均气温实测时序 · [Kaggle 全球城市气温历史基准集](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities)
+  - `air_sensor_f`：高频空气质量多传感器监测阵列 · [CWI PublicBI 时序数据库公开基准](https://github.com/cwida/public_bi_benchmark)
+  - `arade4`：葡萄牙 Arade 水文站水尺高度监控 · [CWI PublicBI Arade 水文站观测数据](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/)
+  - `scene_sensor`：工业物联网十进制环境传感聚合基准（1024 点）· 真实物理传感多参数聚合切片
+
+- **量化金融与资产行情（7 项）**
+  - `stocks_usa_c`：美股微秒级高频订单簿成交价时序 · [Zenodo 全球金融量化交易公开集](https://zenodo.org/record/3886895)
+  - `stocks_de`：德股法兰克福证券交易所交易成交价 · [Zenodo 全球金融量化交易公开集](https://zenodo.org/record/3886895)
+  - `stocks_uk`：英股伦敦证券交易所股票交易价格 · [Zenodo 全球金融量化交易公开集](https://zenodo.org/record/3886895)
+  - `bitcoin_f`：历史比特币美元交易指数时序 · [InfluxDB 官方比特币时序分析样本集](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv)
+  - `bitcoin_transactions_f`：比特币区块链主网微秒级单笔转账金额 · [Blockchair 比特币主链转账流水](https://gz.blockchair.com/bitcoin/transactions/)
+  - `food_prices`：联合国粮农组织全球基础食品价格指数 · [联合国粮农与人道救援数据平台 (WFP)](https://data.humdata.org/dataset/wfp-food-prices)
+  - `scene_finance`：高频量化金融交易深度行情基准（1024 点）· 真实交易所逐笔撮合行情切片
+
+- **地理测绘与轨迹跟踪（5 项）**
+  - `poi_lat`：全球兴趣点高精度地理纬度坐标 · [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database)
+  - `poi_lon`：全球兴趣点高精度地理经度坐标 · [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database)
+  - `bird_migration_f`：野生候鸟迁徙微秒级卫星 GPS 坐标 · [InfluxDB 候鸟迁徙高精地理时序追踪集](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv)
+  - `nyc29`：纽约出租车连续营运 GPS 轨迹与计程 · [CWI PublicBI NYC 出租车地理时序数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/)
+  - `scene_geo`：无人机航迹与连续经纬度测绘基准（1024 点）· 高精卫星轨迹与连续导航定位切片
+
+- **医疗社保与公共卫生（5 项）**
+  - `medicare1`：门诊医疗保险理赔结算账单流水 · [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/)
+  - `medicare9`：专科就诊补贴与报销费用时序 · [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/)
+  - `cms1`：医疗保险供应商结算明细记录 · [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+  - `cms9`：专科处方药品报销结算价格流水 · [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+  - `cms25`：医疗设备使用与专科诊疗收费项目 · [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/)
+
+- **公共政务与宏观经济（6 项）**
+  - `gov10`：财政预算与公共支出明细统计指标 · [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov26`：国家人口普查极低熵常数序列流 · [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov30`：宏观经济运行指标与财政综合统计 · [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov31`：财政转移支付与地区扶持资金时序 · [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `gov40`：市政公用管网工程高精测绘与统计 · [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/)
+  - `scene_macro`：宏观政务指标与公共医疗结算基准（1024 点）· 真实公共财政与医保综合报销切片
+
+- **硬件存储与物理波形（3 项）**
+  - `ssd_hdd_benchmarks_f`：固态硬盘与机械硬盘连续 I/O 吞吐基准 · [Kaggle 存储设备吞吐实测数据库](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks)
+  - `scene_ramp`：平滑升降坡道、连续物理量与单调时序（1024 点）· 工业 PID 调节、水文流量与连续步进计数器
+  - `scene_steady`：恒定传感、无故障零冗余与心跳流（1024 点）· 设备自检心跳流与高频常数工业监控
 
 ---
 
-## 架构演进与优化全景 (Architecture & Optimization Breakdown)
+## 架构演进与优化全景
 
 fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓的基础上，针对现代多核流水线与时序数据库列存痛点重构的高性能压缩引擎。
 
-### 一、参考与借鉴 C++ ALP 的架构设计（用于解决什么问题）
+### 一、参考与借鉴 C++ ALP 的架构设计
 
 在架构演进中，fastalp 完整保留并吸收了 C++ ALP 经数学严密证明的优秀工业设计：
 
-1. **状态化编码器与跨块参数缓存（Stateful Encoder & Parameter Caching）**：
+1. **状态化编码器与跨块参数缓存**：
    - **用途**：解决时序数据库连续写入时频繁重复采样的性能瓶颈。
    - **机制**：在工业时序流中，同一指标列（如温度）相邻数据块的量纲和精度具有高度连续性。fastalp 借鉴 C++ 设计，支持跨 1024 块复用上一数据块探测出的指数 `exp` 与因子 `fac`。连续写入时直接跳过昂贵的全部样本扫描，使连续压缩吞吐由 4~5 GB/s 跃升至 **15~20+ GB/s**。
-2. **12.5% 异常阈值保底回退（Exception Threshold RAW Fallback）**：
+2. **12.5% 异常阈值保底回退**：
    - **用途**：彻底消除高熵浮点数（如高精 GPS 坐标、科学计算随机数）压缩时空间膨胀的“负压缩”隐患。
    - **机制**：当异常值数量超过 128 个（占 1024 元素的 12.5%）时，强制判定该数据块不可有效进行十进制变换，立即终止后续分析，直接降级存储为单字节头部的 RAW 紧凑原始流，杜绝 C++ 原版中曾出现的 2 倍体积膨胀。
-3. **十进制除法重构模式（Decimal Division Mode）**：
+3. **十进制除法重构模式**：
    - **用途**：消除 IEEE 754 乘法舍入误差导致的“虚假异常点”。
    - **机制**：浮点乘法 `x * 0.1` 无法精确表示十进制小数，会导致大量本可无损还原的工业传感器数据（如 `12.3`）因尾数截断误差而被误判为不可缩放的异常。fastalp 借鉴并优化了除法重构模式，以精确除法将虚假异常彻底清零，使真实环境传感数据的每点占用减少 20%~38%。
 
 ---
 
-### 二、fastalp 自主研发的极致原创优化（用于解决什么问题）
+### 二、fastalp 自主研发的极致原创优化
 
 为了突破 C++ 原版的吞吐上限与时序压缩率天花板，fastalp 自主研发了以下核心架构创新：
 
-1. **熔合一阶差分位打包（Fused Delta Bitpacking）**：
+1. **三级级联微架构采样剪枝流水线**：
+   - **用途**：解决 C++ 原版暴力穷举导致采样耗时超 80%、端到端吞吐仅 0.83 GB/s 的核心瓶颈。
+   - **机制**：首创三级级联剪枝机制：第 1 级（纯十进制早停）对 32 个采样点进行基础十进制验证，无异常即刻确定参数返回，杜绝探索后续 170 种乘除因子；第 2 级（4 样本与 16 样本快筛）在评估候选因子时优先以 4 样本探测，超阈值即刻剪枝淘汰，避免全量 32 样本遍历；第 3 级（高熵科学浮点全面早停）若基础十进制异常率达 100%，判定为不可压缩科学高熵数据，直接跳出全部因子枚举。端到端编码吞吐因此从 0.83 GB/s 暴增至 **3.91 GB/s（4.7x 提速，单场景最高达 7.0x）**。
+2. **纯寄存器 SIMD 自动向量化解压流水线**：
+   - **用途**：突破传统查表解压的内存寻址延迟与缓存未命中惩罚。
+   - **机制**：针对 8、16、32、64 等常见位宽，重构为零分支、纯寄存器的并行 SIMD 展开指令序列（利用 ARM NEON 与 x86 AVX2 硬件向量寄存器），消除 gather 内存间接读取与缓存停顿，几何平均解压吞吐达到 **23.59 GB/s**。
+3. **256 项栈上 L1D 局部查找表加速除法与小位宽**：
+   - **用途**：消除循环体内耗费数十周期的硬件除法延迟与动态内存分配。
+   - **机制**：针对 1、2、4 位小位宽以及十进制除法重构模式，在函数栈上直接构建 256 项局部查找表，数据 100% 常驻 CPU L1D 缓存，将原本几十个时钟周期的浮点硬件除法运算转化为单次纳秒级 L1D 查表。
+4. **8 路寄存器级熔合差分位打包**：
    - **用途**：消除差分压缩时 8KB 内存回写带来的内存带宽与缓存挤占开销。
-   - **机制**：传统实现采用“遍历计算差分并写回 8KB 临时内存 + 另起循环读取临时内存做 Bitpacking”的两遍扫描模式。fastalp 独创 8 路寄存器级熔合流水线：在读取相邻元素求差的同时，直接减去基准、并流水线移位推入 128 位寄存器打包输出，全过程**零临时内存分配、零内存回写**，差分压缩吞吐提升 30% 以上。
-2. **数学前置短路差分快筛（Mathematical Delta Early Pruning）**：
+   - **机制**：传统实现采用“遍历计算差分写回 8KB 内存 + 读回内存做 Bitpacking”的双 pass 模式。fastalp 独创 8 路寄存器熔合流水线：在读取相邻元素求差的同时，直接减去基准，并流水线移位推入 128 位寄存器累加器打包输出，全过程**零临时内存分配、零内存回写**，差分压缩吞吐提升 30% 以上。
+5. **数学前置短路差分快筛**：
    - **用途**：消除对无序/震荡数据无意义的全量一阶差分计算。
    - **机制**：基于数学定理“局部子集的一阶极值跨度必小于等于全局极值跨度”，在决定是否启用差分模式时，仅探测前 16 个采样点。若前 16 项的差分位宽已大于等于 FOR 基准位宽，则数学证明全局差分绝不可能更优，即刻早停跳出，避免了 90% 非平滑序列的全量差分扫描。
-3. **4 路流水线无闭包展开编码（4-Way Loop Unrolling & Inlined Pipeline）**：
+6. **4 路流水线无闭包展开编码**：
    - **用途**：释放现代 CPU 超标量流水线的乱序执行与多算术逻辑单元（ALU）吞吐潜能。
-   - **机制**：将核心采样与整型缩放循环彻底消除动态闭包与间接跳转，特化为专用的 4 路展开指令流。连续 4 项无异常时走全寄存器极值更新路径，使压缩吞吐从 C++ 原版的 0.84 GB/s 暴增至 **4.4~6.8 GB/s**。
-4. **单次比较全等快跳（Identical Floats Fast-Skip）**：
+   - **机制**：将核心采样与整型缩放循环彻底消除动态闭包与间接跳转，特化为专用的 4 路展开指令流。连续 4 项无异常时走全寄存器极值更新路径，使压缩吞吐突破 **4.4~6.8 GB/s**。
+7. **单次比较全等快跳**：
    - **用途**：应对工业断线、设备待机与心跳常数流的极致瞬时压缩。
-   - **机制**：在编码入口仅用 1 次 `slice[1] == slice[0]` 快速比对。非全等序列仅耗费 1 个 CPU 时钟周期即可退出；全等序列仅需 11 字节即可压缩 1024 元素（压缩比高达 **744x**，解压吞吐达 **88.9 GB/s**）。
-5. **智能离群点剪枝与 0-bit 稀疏常数压缩（Outlier Pruning with 0-bit Compression）**：
+   - **机制**：在编码入口仅用 1 次 `slice[1] == slice[0]` 快速比对。非全等序列仅耗费 1 个 CPU 时钟周期即可退出；全等序列仅需 11 字节即可压缩 1024 元素（压缩比高达 **744x**）。
+8. **智能离群点剪枝与 0-bit 稀疏常数压缩**：
    - **用途**：针对 99% 为 0.0 仅有极少突变脉冲的数据集（如财政公共支出 `gov30`），实现百倍压缩比。
    - **机制**：自动将少量脉冲离群值分离到异常字典中，主位流以 0-bit 存储，压缩体积从原版的 2100 字节骤降至 43 字节（压缩比突破 **150x**）。配合前 16 采样离群点快筛，高熵数据 2 个采样点即刻早停，零额外性能损耗。
-6. **两级采样探测非十进制全面早停（Non-Decimal Sampling Early Break）**：
-   - **用途**：防止对不可压缩浮点数据盲目枚举 170 种乘除因子导致编码性能崩塌。
-   - **机制**：在第 1 级 32 点快筛中，若在基础十进制指数下异常率已达 100%，判定为科学高熵浮点，直接跳过第 2 级因子枚举，将不可压缩数据的编码耗时缩减 80%。
-7. **栈缓冲融合与异常值单次批量提交（Batched Exception Writing & Zero Extra Allocations）**：
-   - **用途**：杜绝动态扩容与堆内存碎片。
-   - **机制**：解码与编码全程利用固定大小栈缓存；异常值位置索引与原始值在栈上定长组装后单次批量推入，将异常写出的系统开销降低 50%。对外提供 `compress_into` 与 `decompress_into` 零内存分配接口。
+9. **2-bit 长度标签极简自描述帧头与超大数组原生支持**：
+   - **用途**：消除帧头冗余开销并打破 65,535 元素单块截断限制。
+   - **机制**：采用 2-bit 长度标签自描述格式，标准 1024 元素满块头仅需 3 字节，RAW 保底模式仅需 1 字节；对于超过 65,535 元素的超大数组，自动升级为 32 位数量与异常偏移字段，无需人为分块截断即可实现单帧无损编码。
+10. **栈缓冲融合与异常值单次批量提交**：
+    - **用途**：杜绝动态扩容与堆内存碎片。
+    - **机制**：解码与编码全程利用固定大小栈缓存；异常值位置索引与原始值在栈上定长组装后单次批量推入，将异常写出的系统开销降低 50%。
+11. **零堆分配流水线与内存缓冲区就地复用**：
+    - **用途**：高频流式管道中彻底杜绝 GC 与堆分配压力。
+    - **机制**：对外统一提供 `compress_into` 与 `decompress_into` 接口，支持上层应用预分配并永久复用底层向量缓冲区，在海量流式写入中实现真正的**零额外堆内存分配**。
+12. **统一泛型零成本抽象与预计算常数表**：
+    - **用途**：一套代码兼顾 `f64` 与 `f32`，杜绝代码膨胀与运行时分支开销。
+    - **机制**：通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的极致内联。
 

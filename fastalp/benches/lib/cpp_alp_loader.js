@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export const loadCppAlpResult = async () => {
-  const csvPath = "/Users/z/git/db/ALP/benchmarks/your_own_dataset_result.csv";
+  const alpDir = process.env.ALP_DIR || resolve(import.meta.dirname, "../../../../ALP");
+  const csvPath = resolve(alpDir, "benchmarks/your_own_dataset_result.csv");
   const file = Bun.file(csvPath);
   if (!(await file.exists())) return null;
 
@@ -51,7 +52,7 @@ export const loadCppAlpResult = async () => {
 
   const resultObj = {
     algorithm: "cpp_alp",
-    display_name: "C++ ALP (Reference)",
+    display_name: "C++ ALP",
     category: "specialized_float",
     paper_31: {
       total_raw_bytes: totalRaw,

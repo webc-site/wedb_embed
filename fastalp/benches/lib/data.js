@@ -99,49 +99,67 @@ export const datasetMeta = {
   "scene_ramp": { zh: "单调趋势波形", en: "Monotonic Ramp Wave", domain: "工业", domainZh: "波形趋势", domainEn: "Waveform" },
   "scene_steady": { zh: "稳态常数监控", en: "Steady Heartbeat", domain: "工业", domainZh: "稳态监控", domainEn: "Monitoring" },
   "ssd_hdd_benchmarks_f": { zh: "存储设备吞吐", en: "Storage I/O Speed", domain: "工业", domainZh: "硬件指标", domainEn: "Hardware" },
+  "scene_geo": { zh: "高精测绘切片", en: "Geospatial Benchmark", domain: "地理", domainZh: "空间遥测", domainEn: "Geospatial" },
+  "scene_macro": { zh: "宏观普查切片", en: "Demographics Benchmark", domain: "政务", domainZh: "宏观指标", domainEn: "Macro" },
+};
+
+export const scenarioDatasetMap = {
+  scene_sensor: [
+    "neon_pm10_dust", "neon_air_pressure", "neon_bio_temp_c", "neon_dew_point_temp",
+    "neon_wind_dir", "air_sensor_f", "scene_sensor", "basel_temp_f", "basel_wind_f",
+    "city_temperature_f", "arade4"
+  ],
+  scene_finance: [
+    "stocks_usa_c", "stocks_de", "stocks_uk", "bitcoin_f",
+    "bitcoin_transactions_f", "food_prices", "scene_finance"
+  ],
+  scene_geo: [
+    "bird_migration_f", "nyc29", "poi_lat", "poi_lon", "scene_geo"
+  ],
+  scene_health: [
+    "cms1", "cms25", "cms9", "medicare1", "medicare9"
+  ],
+  scene_macro: [
+    "gov10", "gov26", "gov30", "gov31", "gov40", "scene_macro"
+  ],
+  scene_waveform: [
+    "scene_ramp", "scene_steady", "ssd_hdd_benchmarks_f"
+  ]
 };
 
 export const computeScenarioMetrics = (algo, sceneKey) => {
-  if (!algo) return { dec_gb_s: 1.0, enc_gb_s: 0.5, ratio: 1.0 };
+  if (!algo) return { dec_gb_s: 1.0, enc_gb_s: 0.5, ratio: 1.0, count: 0, totalPts: 0 };
   const ds = algo.paper_31?.datasets || [];
-  const exact = ds.find((d) => d.name === sceneKey);
-  if (exact) {
-    return { dec_gb_s: exact.dec_gb_s, enc_gb_s: exact.enc_gb_s, ratio: exact.ratio };
+
+  const targetNames = scenarioDatasetMap[sceneKey];
+  if (targetNames && targetNames.length > 0) {
+    const list = ds.filter((d) => targetNames.includes(d.name));
+    if (list.length > 0) {
+      const avgDec = list.reduce((acc, d) => acc + (d.dec_gb_s || 0), 0) / list.length;
+      const avgEnc = list.reduce((acc, d) => acc + (d.enc_gb_s || 0), 0) / list.length;
+      const totalRaw = list.reduce((acc, d) => acc + (d.raw_bytes || 8192), 0);
+      const totalComp = list.reduce((acc, d) => acc + (d.compressed_bytes || 8192), 0);
+      return {
+        dec_gb_s: avgDec,
+        enc_gb_s: avgEnc,
+        ratio: totalRaw / totalComp,
+        count: list.length,
+        totalPts: list.length * 1024
+      };
+    }
   }
 
-  if (sceneKey === "scene_ramp") {
-    if (algo.micro_benchmarks?.ramp_1024) {
-      const mb = algo.micro_benchmarks.ramp_1024;
-      return { dec_gb_s: mb.dec_gb_s, enc_gb_s: mb.enc_gb_s, ratio: mb.ratio };
-    }
+  const exact = ds.find((d) => d.name === sceneKey);
+  if (exact) {
+    return { dec_gb_s: exact.dec_gb_s, enc_gb_s: exact.enc_gb_s, ratio: exact.ratio, count: 1, totalPts: 1024 };
   }
-  if (sceneKey === "scene_steady") {
-    if (algo.micro_benchmarks?.constant_1024) {
-      const mb = algo.micro_benchmarks.constant_1024;
-      return { dec_gb_s: mb.dec_gb_s, enc_gb_s: mb.enc_gb_s, ratio: mb.ratio };
-    }
-    const gov26 = ds.find(d => d.name === "gov26");
-    if (gov26) return { dec_gb_s: gov26.dec_gb_s, enc_gb_s: gov26.enc_gb_s, ratio: gov26.ratio };
-  }
-  const scenarioDatasetMap = {
-    scene_sensor: ["neon_pm10_dust", "neon_air_pressure", "neon_bio_temp_c", "basel_temp_f"],
-    scene_finance: ["stocks_usa_c", "stocks_de", "stocks_uk", "bitcoin_transactions_f"],
-    scene_geo: ["bird_migration_f", "poi_lat", "poi_lon"],
-    scene_macro: ["gov10", "gov30", "gov40", "medicare9"]
-  };
-  const targetNames = scenarioDatasetMap[sceneKey] || [];
-  const list = ds.filter(d => targetNames.includes(d.name));
-  if (list.length > 0) {
-    const avgDec = list.reduce((acc, d) => acc + (d.dec_gb_s || 0), 0) / list.length;
-    const avgEnc = list.reduce((acc, d) => acc + (d.enc_gb_s || 0), 0) / list.length;
-    const totalRaw = list.reduce((acc, d) => acc + (d.raw_bytes || 8192), 0);
-    const totalComp = list.reduce((acc, d) => acc + (d.compressed_bytes || 8192), 0);
-    return { dec_gb_s: avgDec, enc_gb_s: avgEnc, ratio: totalRaw / totalComp };
-  }
+
   return {
     dec_gb_s: algo.paper_31?.avg_dec_gb_s || 1.0,
     enc_gb_s: algo.paper_31?.avg_enc_gb_s || 0.5,
-    ratio: algo.paper_31?.ratio || 1.0
+    ratio: algo.paper_31?.ratio || 1.0,
+    count: 1,
+    totalPts: 1024
   };
 };
 
@@ -151,7 +169,7 @@ export const loadBenchData = async () => {
 
   const algorithms = [];
   const measuredCpp = await loadCppAlpResult();
-  const scenarioKeys = ["scene_sensor", "scene_ramp", "scene_finance", "scene_steady", "scene_geo", "scene_macro"];
+  const scenarioKeys = ["scene_sensor", "scene_finance", "scene_geo", "scene_health", "scene_macro", "scene_waveform"];
 
   for (const f of jsonFiles) {
     const filePath = join(JSON_DIR, f);
@@ -177,6 +195,7 @@ export const loadBenchData = async () => {
         });
       }
     }
+    content.paper_31.datasets = allDatasets;
 
     // Calculate Comprehensive Geometric Mean across ALL datasets + ALL scenarios
     const decs = allDatasets.map((d) => d.dec_gb_s || 0.1);

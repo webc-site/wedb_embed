@@ -75,8 +75,8 @@ pub fn decode_delta<F: AlpFloat>(
         *ptr = F::decode_from_int_div(first, exp_factor);
         reconstruct_unrolled!(|c| F::decode_from_int_div(c, exp_factor));
       } else if fac_int == 1 {
-        *ptr = F::decode_from_int(first, 1, frac_flt);
-        reconstruct_unrolled!(|c| F::decode_from_int(c, 1, frac_flt));
+        *ptr = F::decode_from_int_fac1(first, frac_flt);
+        reconstruct_unrolled!(|c| F::decode_from_int_fac1(c, frac_flt));
       } else {
         *ptr = F::decode_from_int(first, fac_int, frac_flt);
         reconstruct_unrolled!(|c| F::decode_from_int(c, fac_int, frac_flt));
@@ -112,7 +112,7 @@ pub fn decode_delta<F: AlpFloat>(
           |c| F::decode_from_int_div(c, exp_factor),
         )?;
       } else if fac_int == 1 {
-        *ptr = F::decode_from_int(first, 1, frac_flt);
+        *ptr = F::decode_from_int_fac1(first, frac_flt);
         decode_delta_stream(
           packed_slice,
           rest_count,
@@ -120,7 +120,7 @@ pub fn decode_delta<F: AlpFloat>(
           min_delta,
           &mut curr,
           ptr.add(1),
-          |c| F::decode_from_int(c, 1, frac_flt),
+          |c| F::decode_from_int_fac1(c, frac_flt),
         )?;
       } else {
         *ptr = F::decode_from_int(first, fac_int, frac_flt);
@@ -147,6 +147,10 @@ pub fn decode_delta<F: AlpFloat>(
 
 /// Helper decoding a batch of delta offsets with 4-way unrolling into destination float pointer.
 /// 4路循环展开解码单批 Delta 偏移量至浮点目标指针
+///
+/// # Safety
+///
+/// 调用方必须确保 `out_ptr` 具备至少 `offsets.len()` 个元素的连续可写内存空间。
 #[inline(always)]
 unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
   offsets: &[u64],
@@ -155,9 +159,10 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
   out_ptr: *mut F,
   decode_fn: &D,
 ) {
+  let (chunks, rem) = offsets.as_chunks::<4>();
+  let mut idx = 0;
+  // SAFETY: Caller guarantees out_ptr has at least offsets.len() space
   unsafe {
-    let (chunks, rem) = offsets.as_chunks::<4>();
-    let mut idx = 0;
     for chunk in chunks {
       let d0 = F::u64_to_int_add(chunk[0], min_delta);
       let d1 = F::u64_to_int_add(chunk[1], min_delta);
@@ -188,8 +193,11 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
   }
 }
 
-/// Decodes bitpacked delta stream in 1024-element stack batches (O(1) memory, zero heap allocation).
-/// 以 1024 元素固定栈缓冲区流式解包位流（O(1) 空间复杂度，零堆分配，L1 缓存高度友好）
+/// Decodes bitpacked delta stream in 1024-element stack batches (O(1) 空间复杂度，零堆分配，L1 缓存高度友好)
+///
+/// # Safety
+///
+/// 调用方必须确保 `out_ptr` 具备至少 `rest_count` 个元素的连续可写内存空间。
 #[inline(always)]
 unsafe fn decode_delta_stream<F: AlpFloat, D: Fn(F::Int) -> F>(
   packed_slice: &[u8],
@@ -200,19 +208,20 @@ unsafe fn decode_delta_stream<F: AlpFloat, D: Fn(F::Int) -> F>(
   out_ptr: *mut F,
   decode_fn: D,
 ) -> Result<()> {
-  unsafe {
-    let mut stack_offsets = [0u64; 1024];
-    let mut processed = 0;
-    let mut packed_offset = 0;
-    while processed < rest_count {
-      let batch = (rest_count - processed).min(1024);
-      let batch_bytes = packed_byte_size(batch, delta_bit_width);
-      bitunpack_u64_slice(
-        &packed_slice[packed_offset..packed_offset + batch_bytes],
-        batch,
-        delta_bit_width,
-        &mut stack_offsets[..batch],
-      )?;
+  let mut stack_offsets = [0u64; 1024];
+  let mut processed = 0;
+  let mut packed_offset = 0;
+  while processed < rest_count {
+    let batch = (rest_count - processed).min(1024);
+    let batch_bytes = packed_byte_size(batch, delta_bit_width);
+    bitunpack_u64_slice(
+      &packed_slice[packed_offset..packed_offset + batch_bytes],
+      batch,
+      delta_bit_width,
+      &mut stack_offsets[..batch],
+    )?;
+    // SAFETY: Caller guarantees out_ptr has rest_count space, processed + batch <= rest_count
+    unsafe {
       decode_delta_offsets::<F, D>(
         &stack_offsets[..batch],
         min_delta,
@@ -220,9 +229,9 @@ unsafe fn decode_delta_stream<F: AlpFloat, D: Fn(F::Int) -> F>(
         out_ptr.add(processed),
         &decode_fn,
       );
-      packed_offset += batch_bytes;
-      processed += batch;
     }
-    Ok(())
+    packed_offset += batch_bytes;
+    processed += batch;
   }
+  Ok(())
 }

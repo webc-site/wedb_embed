@@ -137,6 +137,11 @@ impl AlpFloat for f64 {
   }
 
   #[inline(always)]
+  fn decode_from_int_fac1(encoded: Self::Int, frac_exp: Self) -> Self {
+    (encoded as f64) * frac_exp
+  }
+
+  #[inline(always)]
   fn decode_from_int_div(encoded: Self::Int, exp_factor: Self) -> Self {
     (encoded as f64) / exp_factor
   }

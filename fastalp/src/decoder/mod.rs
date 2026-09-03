@@ -104,6 +104,11 @@ pub(crate) fn patch_exceptions<F: AlpFloat>(
     return Ok(());
   }
 
+  debug_assert!(
+    dst.len() >= start_idx + count,
+    "destination buffer too small for exceptions"
+  );
+
   let mut cursor = 0;
   let is_large = count > u16::MAX as usize;
   let (exc_count, exc_count_len) = if is_large {

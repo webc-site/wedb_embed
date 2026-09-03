@@ -57,6 +57,7 @@ pub const fn raw_header_len(count: usize) -> usize {
 /// 写入紧凑自描述头部至 dst 缓冲区（栈上构建，单次拷贝，零多余容量检查）
 #[inline(always)]
 pub fn write_header(type_byte: u8, count: usize, params: Option<u16>, dst: &mut Vec<u8>) {
+  debug_assert!(count <= u32::MAX as usize, "count exceeds u32::MAX");
   let mut buf = [0u8; MAX_HEADER_LEN];
   let mut len = 1;
 
@@ -139,7 +140,8 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
       cursor += 4;
       c
     }
-    _ => unreachable!(),
+    // SAFETY: len_tag 是 (desc_byte >> LEN_TAG_SHIFT) & 0x03，取值范围严格为 0..=3，上方 4 个分支已完全穷尽全部取值
+    _ => unsafe { core::hint::unreachable_unchecked() },
   };
 
   let is_raw = type_byte == TYPE_F64_RAW || type_byte == TYPE_F32_RAW;

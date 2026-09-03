@@ -1,14 +1,14 @@
 [package]
 name = "fastalp"
-version = "0.1.26"
+version = "0.1.27"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/webc-site/wedb_embed.git"
 homepage = "https://github.com/webc-site/wedb_embed/tree/main/fastalp"
 documentation = "https://docs.rs/fastalp"
 readme = "README.md"
-description = "High-performance lossless floating-point compression in pure Rust / 基于 ALP 算法的高性能无损浮点数压缩库"
-keywords = ["compression", "floating-point", "lossless", "alp", "codec"]
+description = "World's fastest and highest-ratio lossless floating-point compression / 全球最快、压缩比最高的通用时序浮点无损压缩"
+keywords = ["compression", "floating-point", "lossless", "alp", "time-series"]
 categories = [
   "compression",
   "algorithms",

@@ -470,10 +470,10 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
       let enc2 = v2.fast_round_to_int(exp_factor);
       let enc3 = v3.fast_round_to_int(exp_factor);
 
-      let d0 = F::decode_from_int(enc0, 1, frac_exp);
-      let d1 = F::decode_from_int(enc1, 1, frac_exp);
-      let d2 = F::decode_from_int(enc2, 1, frac_exp);
-      let d3 = F::decode_from_int(enc3, 1, frac_exp);
+      let d0 = F::decode_from_int_fac1(enc0, frac_exp);
+      let d1 = F::decode_from_int_fac1(enc1, frac_exp);
+      let d2 = F::decode_from_int_fac1(enc2, frac_exp);
+      let d3 = F::decode_from_int_fac1(enc3, frac_exp);
 
       let ok0 = d0.to_raw_bits() == v0.to_raw_bits();
       let ok1 = d1.to_raw_bits() == v1.to_raw_bits();
@@ -485,8 +485,8 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
         enc_ptr.add(i + 1).write(enc1);
         enc_ptr.add(i + 2).write(enc2);
         enc_ptr.add(i + 3).write(enc3);
-        let l_min = enc0.min(enc1).min(enc2.min(enc3));
-        let l_max = enc0.max(enc1).max(enc2.max(enc3));
+        let l_min = (enc0.min(enc1)).min(enc2.min(enc3));
+        let l_max = (enc0.max(enc1)).max(enc2.max(enc3));
         min_val = min_val.min(l_min);
         max_val = max_val.max(l_max);
       } else {
@@ -502,9 +502,6 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
                 pos: $idx,
                 bits: $val.to_raw_bits(),
               });
-              if exceptions.len() > 128 {
-                return (F::MAX_INT, F::MIN_INT);
-              }
             }
           };
         }
@@ -512,6 +509,9 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
         handle_one!(i + 1, v1, enc1, ok1);
         handle_one!(i + 2, v2, enc2, ok2);
         handle_one!(i + 3, v3, enc3, ok3);
+        if exceptions.len() > 128 {
+          return (F::MAX_INT, F::MIN_INT);
+        }
       }
       i += 4;
     }
@@ -519,7 +519,7 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
     while i < len {
       let val = *slice.get_unchecked(i);
       let enc = val.fast_round_to_int(exp_factor);
-      let d = F::decode_from_int(enc, 1, frac_exp);
+      let d = F::decode_from_int_fac1(enc, frac_exp);
       if d.to_raw_bits() == val.to_raw_bits() {
         enc_ptr.add(i).write(enc);
         min_val = min_val.min(enc);
@@ -598,8 +598,10 @@ unsafe fn encode_loop_div<F: AlpFloat>(
         enc_ptr.add(i + 1).write(enc1);
         enc_ptr.add(i + 2).write(enc2);
         enc_ptr.add(i + 3).write(enc3);
-        min_val = min_val.min(enc0).min(enc1).min(enc2).min(enc3);
-        max_val = max_val.max(enc0).max(enc1).max(enc2).max(enc3);
+        let l_min = (enc0.min(enc1)).min(enc2.min(enc3));
+        let l_max = (enc0.max(enc1)).max(enc2.max(enc3));
+        min_val = min_val.min(l_min);
+        max_val = max_val.max(l_max);
       } else {
         handle_one!(i, v0, enc0, ok0);
         handle_one!(i + 1, v1, enc1, ok1);
@@ -696,8 +698,10 @@ unsafe fn encode_loop_fac<F: AlpFloat>(
         enc_ptr.add(i + 1).write(enc1);
         enc_ptr.add(i + 2).write(enc2);
         enc_ptr.add(i + 3).write(enc3);
-        min_val = min_val.min(enc0).min(enc1).min(enc2).min(enc3);
-        max_val = max_val.max(enc0).max(enc1).max(enc2).max(enc3);
+        let l_min = (enc0.min(enc1)).min(enc2.min(enc3));
+        let l_max = (enc0.max(enc1)).max(enc2.max(enc3));
+        min_val = min_val.min(l_min);
+        max_val = max_val.max(l_max);
       } else {
         handle_one!(i, v0, enc0, ok0);
         handle_one!(i + 1, v1, enc1, ok1);

@@ -76,6 +76,13 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
   /// 当因子为 1 时根据基准值与逆缩放因子快速解码浮点数
   fn decode_from_offset_fac1(offset: u64, base: Self::Int, frac_exp: Self) -> Self;
 
+  /// Decodes a floating-point value directly from integer when factor is 1 (scale = 10^-exp).
+  /// 当因子为 1 时根据整数与逆缩放因子快速解码浮点数
+  #[inline(always)]
+  fn decode_from_int_fac1(encoded: Self::Int, frac_exp: Self) -> Self {
+    Self::decode_from_int(encoded, 1, frac_exp)
+  }
+
   #[inline(always)]
   fn build_lut<const N: usize>(base: Self::Int, fac_int: i64, frac_exp: Self) -> [Self; N] {
     let mut lut = [Self::ZERO; N];
