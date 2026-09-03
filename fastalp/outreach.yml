@@ -230,3 +230,11 @@ records:
     title: "【开源自荐】fastalp：最快的通用时序浮点压缩、解压"
     status: submitted
     date: 2026-09-03
+
+  - type: discussion
+    repo: openGemini/openGemini
+    discussion: 968
+    url: https://github.com/openGemini/openGemini/discussions/968
+    title: "Exploring decimal float compression for time-series: comparing integer mapping (fastalp) with mantissa erasing (MLF)"
+    status: posted
+    date: 2026-09-04
