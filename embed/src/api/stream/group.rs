@@ -211,7 +211,6 @@ where
   let key_bytes = key.as_ref();
   let kc = db.kc();
   let meta_k = key::meta(&kc, key_bytes);
-  let _meta_ks = db.meta();
   let data_ks = db.data();
 
   let now_ms = current_now_ms();
@@ -275,7 +274,6 @@ where
   let key_bytes = key.as_ref();
   let kc = db.kc();
   let meta_k = key::meta(&kc, key_bytes);
-  let _meta_ks = db.meta();
   let data_ks = db.data();
 
   let now_ms = current_now_ms();

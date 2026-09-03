@@ -397,9 +397,8 @@ where
               batch.rm_weak_data(k);
               deleted_chunks += 1;
             } else {
-              let new_first_ts = TSChunk::get_first_timestamp(&new_chunk_data).unwrap_or(chunk_ts);
-              let new_last_ts =
-                TSChunk::get_last_timestamp(&new_chunk_data).unwrap_or(new_first_ts);
+              let (new_first_ts, new_last_ts) =
+                TSChunk::get_boundary_timestamps(&new_chunk_data).unwrap_or((chunk_ts, chunk_ts));
               let new_key = key::chunk(&kc, key_bytes, new_first_ts);
               if new_key[..] != **k {
                 batch.rm_weak_data(k);
@@ -413,8 +412,8 @@ where
           } else {
             let count = TSChunk::get_count(v);
             if count > 0 {
-              let chunk_first = TSChunk::get_first_timestamp(v).unwrap_or(chunk_ts);
-              let chunk_last = TSChunk::get_last_timestamp(v).unwrap_or(chunk_first);
+              let (chunk_first, chunk_last) =
+                TSChunk::get_boundary_timestamps(v).unwrap_or((chunk_ts, chunk_ts));
               if first_remaining_ts.is_none() {
                 first_remaining_ts = Some(chunk_first);
               }

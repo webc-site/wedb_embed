@@ -20,6 +20,29 @@ use crate::{
   string::{decode_string_value, encode_string_value, is_string_expired},
   wedb::Db,
 };
+/// Helper struct containing segment-level bit coordinate calculation.
+#[derive(Debug, Clone, Copy)]
+struct SegmentBitCoord {
+  seg_idx: u32,
+  bit_offset_in_seg: usize,
+  byte_idx_in_seg: usize,
+  used_size: u64,
+}
+
+#[inline]
+const fn resolve_segment_bit_coord(offset: u64) -> SegmentBitCoord {
+  let seg_idx = segment_index_for_bit(offset);
+  let bit_offset_in_seg = (offset % (BITMAP_SEGMENT_BITS as u64)) as usize;
+  let byte_idx_in_seg = bit_offset_in_seg >> 3;
+  let used_size = segment_byte_offset_for_bit(offset) as u64 + byte_idx_in_seg as u64 + 1;
+  SegmentBitCoord {
+    seg_idx,
+    bit_offset_in_seg,
+    byte_idx_in_seg,
+    used_size,
+  }
+}
+
 /// Bitmap operations interface (Bitmaps).
 /// 位图结构操作接口 (Bitmaps)
 impl<E: Engine> Db<E>
@@ -46,6 +69,8 @@ where
     let meta_ks = self.meta();
     check_composite_meta_not_other_type(self, key_bytes, KeyTag::BitmapMeta.as_slice(), now_ms)?;
 
+    let coord = resolve_segment_bit_coord(offset);
+
     // 1. 优先检查元数据（Segment 分段模式）
     let bm_meta_k = key::meta(&kc, key_bytes);
     let cur_meta_opt = meta_ks
@@ -55,31 +80,26 @@ where
     if let Some(mut meta) = cur_meta_opt
       && !meta.is_expired(now_ms)
     {
-      let seg_idx = segment_index_for_bit(offset);
-      let bit_offset_in_seg = (offset % (BITMAP_SEGMENT_BITS as u64)) as usize;
-      let byte_idx_in_seg = bit_offset_in_seg >> 3;
-
-      let seg_k = key::segment(&kc, key_bytes, seg_idx);
+      let seg_k = key::segment(&kc, key_bytes, coord.seg_idx);
       let seg_slice_opt = data_ks.get(&seg_k)?;
       let old_bit = seg_slice_opt
         .as_deref()
-        .map(|s| get_bit_lsb(s, bit_offset_in_seg))
+        .map(|s| get_bit_lsb(s, coord.bit_offset_in_seg))
         .unwrap_or(0);
 
-      let used_size = segment_byte_offset_for_bit(offset) as u64 + byte_idx_in_seg as u64 + 1;
-      let bitmap_size = meta.base.size.max(used_size);
+      let bitmap_size = meta.base.size.max(coord.used_size);
 
       if let Some(ref seg_slice) = seg_slice_opt
         && old_bit == bit
         && meta.base.size == bitmap_size
-        && byte_idx_in_seg < seg_slice.len()
+        && coord.byte_idx_in_seg < seg_slice.len()
       {
         return Ok(old_bit);
       }
 
       let mut seg = seg_slice_opt.map(|v| v.to_vec()).unwrap_or_default();
-      expand_bitmap_segment(&mut seg, byte_idx_in_seg + 1);
-      set_bit_lsb(&mut seg, bit_offset_in_seg, bit);
+      expand_bitmap_segment(&mut seg, coord.byte_idx_in_seg + 1);
+      set_bit_lsb(&mut seg, coord.bit_offset_in_seg, bit);
       meta.base.size = bitmap_size;
 
       let mut batch = self.batch();
@@ -114,18 +134,13 @@ where
     }
 
     // 3. 不存在任何未过期键时，默认初始化为 Segment 模式
-    let seg_idx = segment_index_for_bit(offset);
-    let bit_offset_in_seg = (offset % (BITMAP_SEGMENT_BITS as u64)) as usize;
-    let byte_idx_in_seg = bit_offset_in_seg >> 3;
-
     let mut seg = Vec::new();
-    expand_bitmap_segment(&mut seg, byte_idx_in_seg + 1);
-    let old_bit = set_bit_lsb(&mut seg, bit_offset_in_seg, bit);
+    expand_bitmap_segment(&mut seg, coord.byte_idx_in_seg + 1);
+    let old_bit = set_bit_lsb(&mut seg, coord.bit_offset_in_seg, bit);
 
-    let used_size = segment_byte_offset_for_bit(offset) as u64 + byte_idx_in_seg as u64 + 1;
-    let meta = BitmapMeta::new_with_version(0, used_size);
+    let meta = BitmapMeta::new_with_version(0, coord.used_size);
 
-    let seg_k = key::segment(&kc, key_bytes, seg_idx);
+    let seg_k = key::segment(&kc, key_bytes, coord.seg_idx);
     let mut batch = self.batch();
     if cur_meta_opt.is_some() {
       let bm_prefix = key::prefix_stack(&kc, key_bytes);
@@ -158,12 +173,11 @@ where
       if meta.is_expired(now_ms) {
         return Ok(0);
       }
-      let seg_idx = segment_index_for_bit(offset);
-      let bit_offset_in_seg = (offset % (BITMAP_SEGMENT_BITS as u64)) as usize;
-      let seg_k = key::segment(&kc, key_bytes, seg_idx);
+      let coord = resolve_segment_bit_coord(offset);
+      let seg_k = key::segment(&kc, key_bytes, coord.seg_idx);
 
       if let Some(seg) = data_ks.get(&seg_k)? {
-        return Ok(get_bit_lsb(&seg, bit_offset_in_seg));
+        return Ok(get_bit_lsb(&seg, coord.bit_offset_in_seg));
       }
       return Ok(0);
     }

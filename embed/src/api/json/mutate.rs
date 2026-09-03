@@ -16,6 +16,15 @@ use crate::{
   wedb::Db,
 };
 
+/// Extracts lengths from a list of JSON nodes using a mapping closure.
+#[inline]
+pub(crate) fn extract_node_lengths<F>(nodes: &[&Value], extract: F) -> Vec<Option<usize>>
+where
+  F: Fn(&Value) -> Option<usize>,
+{
+  nodes.iter().map(|n| extract(n)).collect()
+}
+
 /// JSON numeric, string, boolean, and object mutations (JSON.NUMINCRBY, JSON.STRAPPEND, JSON.TOGGLE, etc.).
 /// JSON 数值、字符串、布尔及对象变异操作接口实现
 impl<E: Engine> Db<E>
@@ -23,11 +32,12 @@ where
   Error: From<E::Error>,
 {
   #[inline]
-  pub fn json_numincrby<K: AsRef<[u8]>>(
+  fn json_numop_internal<K: AsRef<[u8]>>(
     &self,
     key: K,
     path: &str,
     num_str: &str,
+    op: JsonNumberOp,
   ) -> Result<Option<String>> {
     let kc = self.kc();
     let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key.as_ref())? {
@@ -35,7 +45,7 @@ where
       None => return Ok(None),
     };
 
-    let res_values = execute_numop(&mut root_val, path, num_str, JsonNumberOp::Incr)?;
+    let res_values = execute_numop(&mut root_val, path, num_str, op)?;
 
     if res_values.iter().any(|v| !v.is_null()) {
       write_json_meta_and_val(self, &kc, key, &meta, &root_val)?;
@@ -46,26 +56,23 @@ where
   }
 
   #[inline]
+  pub fn json_numincrby<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    path: &str,
+    num_str: &str,
+  ) -> Result<Option<String>> {
+    self.json_numop_internal(key, path, num_str, JsonNumberOp::Incr)
+  }
+
+  #[inline]
   pub fn json_nummultby<K: AsRef<[u8]>>(
     &self,
     key: K,
     path: &str,
     num_str: &str,
   ) -> Result<Option<String>> {
-    let kc = self.kc();
-    let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key.as_ref())? {
-      Some(pair) => pair,
-      None => return Ok(None),
-    };
-
-    let res_values = execute_numop(&mut root_val, path, num_str, JsonNumberOp::Mul)?;
-
-    if res_values.iter().any(|v| !v.is_null()) {
-      write_json_meta_and_val(self, &kc, key, &meta, &root_val)?;
-    }
-
-    let out = sonic_rs::to_string(&res_values).unwrap_or_default();
-    Ok(Some(out))
+    self.json_numop_internal(key, path, num_str, JsonNumberOp::Mul)
   }
 
   #[inline]
@@ -130,17 +137,9 @@ where
 
     let p = path.unwrap_or(JSON_ROOT_PATH);
     let nodes = get_path_values(&root_val, p)?;
-
-    let mut lengths = Vec::with_capacity(nodes.len());
-    for n in nodes {
-      if let Some(s) = n.as_str() {
-        lengths.push(Some(s.len()));
-      } else {
-        lengths.push(None);
-      }
-    }
-
-    Ok(lengths)
+    Ok(extract_node_lengths(&nodes, |n| {
+      n.as_str().map(|s| s.len())
+    }))
   }
 
   #[inline]
@@ -292,16 +291,8 @@ where
 
     let p = path.unwrap_or(JSON_ROOT_PATH);
     let nodes = get_path_values(&root_val, p)?;
-
-    let mut lengths = Vec::with_capacity(nodes.len());
-    for n in nodes {
-      if let Some(obj) = n.as_object() {
-        lengths.push(Some(obj.len()));
-      } else {
-        lengths.push(None);
-      }
-    }
-
-    Ok(lengths)
+    Ok(extract_node_lengths(&nodes, |n| {
+      n.as_object().map(|o| o.len())
+    }))
   }
 }

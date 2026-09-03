@@ -1,7 +1,10 @@
+use std::ops::Bound;
+
 use crate::{
   api::stream::{
+    StreamEntry,
     r#const::*,
-    encode_stream_entry_pairs, key,
+    decode_stream_entry_fields, encode_stream_entry_pairs, key,
     meta::{StreamId, StreamMeta},
     opt::{StreamAdd, StreamLen, StreamTrimStrategy},
     parse_stream_id_from_subkey,
@@ -28,6 +31,27 @@ where
   let kc = db.kc();
   let meta_k = key::meta(&kc, key);
   get_meta_checked::<StreamMeta, _>(db, key, &meta_k, now_ms)
+}
+
+/// Reads a stream entry by StreamId (internal helper method).
+/// 按 StreamId 获取单个流条目的字段（内部辅助方法）
+#[inline]
+pub(crate) fn get_stream_entry<E: Engine>(
+  db: &Db<E>,
+  key: &[u8],
+  id: StreamId,
+) -> Result<Option<StreamEntry>>
+where
+  Error: From<E::Error>,
+{
+  let kc = db.kc();
+  let item_k = key::item(&kc, key, id.ms, id.seq);
+  if let Some(v) = db.data().get(&item_k)? {
+    let fields = decode_stream_entry_fields(&v).unwrap_or_default();
+    Ok(Some((id, fields)))
+  } else {
+    Ok(None)
+  }
 }
 
 /// Cleans up obsolete data keys, consumer groups, and PEL entries of expired stream.
@@ -82,8 +106,6 @@ where
   let key_bytes = key.as_ref();
   let kc = db.kc();
   let meta_k = key::meta(&kc, key_bytes);
-  let _meta_ks = db.meta();
-  let _data_ks = db.data();
 
   let now_ms = current_now_ms();
   let opt_m = get_stream_meta(db, key_bytes, now_ms)?;
@@ -171,7 +193,7 @@ where
 }
 
 /// Retrieves stream length with options aligned with Apache Kvrocks Stream::Len.
-/// XLEN key with options（对标 Apache Kvrocks Stream::Len）
+/// XLEN key with options（对标 Apache Kvrocks Stream::Len，通过 range seek 快速定位）
 pub fn stream_len_with_options<E: Engine, K: AsRef<[u8]>>(
   db: &Db<E>,
   key: K,
@@ -206,21 +228,37 @@ where
 
   let kc = db.kc();
   let prefix = key::prefix_stack(&kc, key_bytes);
+  let target_k = key::item(&kc, key_bytes, options.entry_id.ms, options.entry_id.seq);
   let data_ks = db.data();
   let mut count = 0u64;
-  for g in data_ks.prefix(&prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if !k.starts_with(prefix.as_slice()) {
-      break;
-    }
-    if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
-      if options.to_first {
+
+  if options.to_first {
+    for g in data_ks.range((
+      Bound::Included(prefix.as_slice()),
+      Bound::Included(target_k.as_slice()),
+    )) {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(prefix.as_slice()) {
+        break;
+      }
+      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
         if sid >= options.entry_id {
           break;
         }
         count += 1;
-      } else if sid > options.entry_id {
+      }
+    }
+  } else {
+    for g in data_ks.range((Bound::Included(target_k.as_slice()), Bound::Unbounded)) {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(prefix.as_slice()) {
+        break;
+      }
+      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
+        && sid > options.entry_id
+      {
         count += 1;
       }
     }

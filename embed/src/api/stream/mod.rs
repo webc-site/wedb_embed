@@ -165,11 +165,13 @@ pub fn decode_stream_entry_fields_borrowed(bytes: &[u8]) -> Option<Vec<(&str, &s
 /// 二进制解码 Stream 键值对（生成 String Vector）
 #[inline]
 pub fn decode_stream_entry_fields(bytes: &[u8]) -> Option<Vec<(String, String)>> {
-  let borrowed = decode_stream_entry_fields_borrowed(bytes)?;
-  Some(
-    borrowed
-      .into_iter()
-      .map(|(k, v)| (k.to_string(), v.to_string()))
-      .collect(),
-  )
+  let iter = decode_stream_entry_raw_iter(bytes)?;
+  let mut fields = Vec::with_capacity(iter.remaining);
+  for (k, v) in iter {
+    fields.push((
+      str::from_utf8(k).ok()?.to_string(),
+      str::from_utf8(v).ok()?.to_string(),
+    ));
+  }
+  Some(fields)
 }

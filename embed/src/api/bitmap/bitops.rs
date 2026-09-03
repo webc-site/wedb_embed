@@ -256,7 +256,6 @@ pub const fn normalize_to_byte_range_with_padding_mask(
   }
 }
 
-
 /// 64-bit word vectorized bitwise AND operation.
 /// 64 位原生字向量化位与操作
 #[inline]

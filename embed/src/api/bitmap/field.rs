@@ -594,7 +594,6 @@ where
       results.push(ret);
 
       if op.op_type != BitfieldOpType::Get && !read_only && ret.is_some() {
-
         for s_idx in first_seg..=last_seg {
           let seg_base_byte = s_idx * (BITMAP_SEGMENT_BYTES as u32);
           let seg_end_byte = seg_base_byte + (BITMAP_SEGMENT_BYTES as u32);

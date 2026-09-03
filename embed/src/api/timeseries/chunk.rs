@@ -226,6 +226,50 @@ impl TSChunk {
     }
   }
 
+  /// Extracts both first and last timestamps in chunk with a single header decode.
+  /// 单次解析 Header 同时获取 Chunk 首尾时间戳 (first_ts, last_ts)
+  #[inline]
+  pub fn get_boundary_timestamps(chunk_data: &[u8]) -> Option<(u64, u64)> {
+    if chunk_data.len() < ChunkHeader::ENCODED_SIZE {
+      return None;
+    }
+    let header = ChunkHeader::decode(chunk_data)?;
+    if header.count == 0 {
+      return None;
+    }
+    let payload = &chunk_data[ChunkHeader::ENCODED_SIZE..];
+    if header.is_compressed {
+      if payload.len() < 4 + 8 {
+        return None;
+      }
+      let first_ts = u64::from_be_bytes(payload[4..12].try_into().ok()?);
+      if header.count == 1 {
+        return Some((first_ts, first_ts));
+      }
+      let ts_len = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+      if payload.len() < 4 + ts_len {
+        return None;
+      }
+      let ts_payload = &payload[4..4 + ts_len];
+      let last_ts = decompress_last_timestamp(ts_payload, header.count as usize)?;
+      Some((first_ts, last_ts))
+    } else {
+      if payload.len() < 8 {
+        return None;
+      }
+      let first_ts = u64::from_be_bytes(payload[..8].try_into().ok()?);
+      if header.count == 1 {
+        return Some((first_ts, first_ts));
+      }
+      let offset = (header.count as usize - 1) * 16;
+      if payload.len() >= offset + 8 {
+        let last_ts = u64::from_be_bytes(payload[offset..offset + 8].try_into().ok()?);
+        return Some((first_ts, last_ts));
+      }
+      None
+    }
+  }
+
   /// Extracts last timestamp in chunk with O(1) space aligned with Kvrocks GetLastTimestamp.
   /// 提取 Chunk 末尾时间戳（未压缩与压缩均实现 O(1) 空间零堆分配提取，对标 Kvrocks GetLastTimestamp）
   #[inline]

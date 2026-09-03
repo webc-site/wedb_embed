@@ -5,7 +5,7 @@ use crate::{
     StreamEntry,
     r#const::{ERR_INVALID_END_ID_INTERVAL, ERR_INVALID_START_ID_INTERVAL},
     decode_stream_entry_fields,
-    r#impl::get_stream_meta,
+    r#impl::{get_stream_entry, get_stream_meta},
     key,
     meta::StreamId,
     opt::StreamRange,
@@ -95,22 +95,20 @@ where
     return Ok(Vec::new());
   }
 
-  let kc = db.kc();
-  let data_ks = db.data();
-
   // 单点查询快速路径（O(1) 直接点查）
   if options.start == options.end {
     if options.exclude_start || options.exclude_end {
       return Ok(Vec::new());
     }
-    let item_k = key::item(&kc, key_bytes, options.start.ms, options.start.seq);
-    if let Some(v) = data_ks.get(&item_k)? {
-      let fields = decode_stream_entry_fields(&v).unwrap_or_default();
-      return Ok(vec![(options.start, fields)]);
-    }
-    return Ok(Vec::new());
+    return Ok(
+      get_stream_entry(db, key_bytes, options.start)?
+        .into_iter()
+        .collect(),
+    );
   }
 
+  let kc = db.kc();
+  let data_ks = db.data();
   let prefix = key::prefix_stack(&kc, key_bytes);
   let max_count = options.count.unwrap_or(usize::MAX);
   let mut results = Vec::with_capacity(max_count.min(1024));
@@ -136,6 +134,18 @@ where
     results.len() < max_count
   };
 
+  let mut scan_entry = |k: &[u8], v: &[u8]| -> bool {
+    if !k.starts_with(prefix.as_slice()) {
+      return false;
+    }
+    if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
+      && !process_entry(sid, v)
+    {
+      return false;
+    }
+    true
+  };
+
   if !options.reverse {
     let start_item_k = key::item(&kc, key_bytes, options.start.ms, options.start.seq);
     let end_item_k = key::item(&kc, key_bytes, options.end.ms, options.end.seq);
@@ -145,13 +155,7 @@ where
       Bound::Included(end_item_k.as_slice()),
     )) {
       let entry = g?;
-      let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(prefix.as_slice()) {
-        break;
-      }
-      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
-        && !process_entry(sid, v)
-      {
+      if !scan_entry(entry.key(), entry.value()) {
         break;
       }
     }
@@ -167,13 +171,7 @@ where
       .rev()
     {
       let entry = g?;
-      let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(prefix.as_slice()) {
-        break;
-      }
-      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
-        && !process_entry(sid, v)
-      {
+      if !scan_entry(entry.key(), entry.value()) {
         break;
       }
     }

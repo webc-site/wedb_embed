@@ -272,24 +272,20 @@ where
   pub fn json_del<K: AsRef<[u8]>>(&self, key: K, path: Option<&str>) -> Result<usize> {
     let kc = self.kc();
     let key_bytes = key.as_ref();
-
-    let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key_bytes)? {
-      Some(pair) => pair,
-      None => return Ok(0),
+    let is_root_del = match path {
+      None => true,
+      Some(p) => {
+        let trimmed = p.trim();
+        trimmed == JSON_ROOT_PATH || trimmed == "."
+      }
     };
 
-    let Some(p) = path else {
+    if is_root_del {
       let meta_k = key::meta(&kc, key_bytes);
-      let data_k = key::prefix_stack(&kc, key_bytes);
-      let mut batch = self.batch();
-      batch.rm_meta(&meta_k);
-      batch.rm_data(&data_k);
-      batch.commit()?;
-      return Ok(1);
-    };
-    let p = p.trim();
-    if p == JSON_ROOT_PATH || p == "." {
-      let meta_k = key::meta(&kc, key_bytes);
+      let now_ms = current_now_ms();
+      if get_meta_checked::<JsonMeta, _>(self, key_bytes, &meta_k, now_ms)?.is_none() {
+        return Ok(0);
+      }
       let data_k = key::prefix_stack(&kc, key_bytes);
       let mut batch = self.batch();
       batch.rm_meta(&meta_k);
@@ -298,6 +294,12 @@ where
       return Ok(1);
     }
 
+    let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key_bytes)? {
+      Some(pair) => pair,
+      None => return Ok(0),
+    };
+
+    let p = path.unwrap_or(JSON_ROOT_PATH).trim();
     let deleted = delete_path_values(&mut root_val, p)?;
 
     if deleted > 0 {
@@ -371,8 +373,10 @@ where
 
   #[inline]
   pub fn json_info<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<(JsonStorageFormat, usize)>> {
-    let kc = self.kc();
-    if let Some((meta, _)) = read_json_meta_and_val(self, &kc, key)? {
+    let key_bytes = key.as_ref();
+    let meta_k = key::meta(&self.kc(), key_bytes);
+    let now_ms = current_now_ms();
+    if let Some(meta) = get_meta_checked::<JsonMeta, _>(self, key_bytes, &meta_k, now_ms)? {
       Ok(Some((meta.format, meta.base.size as usize)))
     } else {
       Ok(None)

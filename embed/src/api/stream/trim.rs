@@ -1,3 +1,5 @@
+use std::result::Result as StdResult;
+
 use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
@@ -141,6 +143,32 @@ where
   Ok(delete_cnt)
 }
 
+#[inline]
+fn find_stream_boundary_id<I, E, Item>(
+  iter: I,
+  prefix: &[u8],
+  deleted_ids: &HashSet<StreamId>,
+) -> Result<Option<StreamId>>
+where
+  I: Iterator<Item = StdResult<Item, E>>,
+  Error: From<E>,
+  Item: KvEntry,
+{
+  for g in iter {
+    let entry = g?;
+    let k = entry.key();
+    if !k.starts_with(prefix) {
+      break;
+    }
+    if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
+      && !deleted_ids.contains(&sid)
+    {
+      return Ok(Some(sid));
+    }
+  }
+  Ok(None)
+}
+
 /// Deletes stream entries by ID (XDEL) aligned with Apache Kvrocks Stream::DeleteEntries.
 /// XDEL key id [id ...]（对标 Apache Kvrocks Stream::DeleteEntries）
 pub fn stream_del<E: Engine, K: AsRef<[u8]>>(db: &Db<E>, key: K, ids: &[StreamId]) -> Result<u64>
@@ -154,7 +182,6 @@ where
   let key_bytes = key.as_ref();
   let now_ms = current_now_ms();
   let meta_k = key::meta(&db.kc(), key_bytes);
-  let _meta_ks = db.meta();
 
   let mut meta = match get_stream_meta(db, key_bytes, now_ms)? {
     Some(m) => m,
@@ -195,36 +222,21 @@ where
 
       if need_new_first || need_new_last {
         let prefix = key::prefix_stack(&kc, key_bytes);
-        if need_new_first {
-          for g in data_ks.prefix(&prefix) {
-            let entry = g?;
-            let k = entry.key();
-            if !k.starts_with(prefix.as_slice()) {
-              break;
-            }
-            if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
-              && !deleted_ids.contains(&sid)
-            {
-              meta.first_entry_id = sid;
-              meta.recorded_first_entry_id = sid;
-              break;
-            }
-          }
+        if need_new_first
+          && let Some(sid) =
+            find_stream_boundary_id(data_ks.prefix(&prefix), prefix.as_slice(), &deleted_ids)?
+        {
+          meta.first_entry_id = sid;
+          meta.recorded_first_entry_id = sid;
         }
-        if need_new_last {
-          for g in data_ks.prefix(&prefix).rev() {
-            let entry = g?;
-            let k = entry.key();
-            if !k.starts_with(prefix.as_slice()) {
-              break;
-            }
-            if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
-              && !deleted_ids.contains(&sid)
-            {
-              meta.last_entry_id = sid;
-              break;
-            }
-          }
+        if need_new_last
+          && let Some(sid) = find_stream_boundary_id(
+            data_ks.prefix(&prefix).rev(),
+            prefix.as_slice(),
+            &deleted_ids,
+          )?
+        {
+          meta.last_entry_id = sid;
         }
       }
     }

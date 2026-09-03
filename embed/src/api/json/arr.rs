@@ -3,6 +3,7 @@ use sonic_rs::{JsonContainerTrait, JsonValueMutTrait, Value};
 use super::{
   r#const::*,
   r#impl::{read_json_meta_and_val, write_json_meta_and_val},
+  mutate::extract_node_lengths,
   opt::JsonArrIndex,
   path::{get_path_values, mutate_path_values},
 };
@@ -11,6 +12,18 @@ use crate::{
   error::{Error, Result},
   wedb::Db,
 };
+
+/// Parses a slice of JSON strings into Value array.
+#[inline]
+pub(crate) fn parse_json_values(values_json: &[&str]) -> Result<Vec<Value>> {
+  let mut parsed_vals = Vec::with_capacity(values_json.len());
+  for &s in values_json {
+    let v: Value = sonic_rs::from_str(s)
+      .map_err(|e| Error::invalid_data(format!("{ERR_INVALID_JSON_VALUE}: {e}")))?;
+    parsed_vals.push(v);
+  }
+  Ok(parsed_vals)
+}
 
 /// JSON array operations interface (JSON.ARRAPPEND, JSON.ARRINSERT, etc.).
 /// JSON 数组操作接口实现
@@ -26,12 +39,7 @@ where
     values_json: &[&str],
   ) -> Result<Vec<Option<usize>>> {
     let kc = self.kc();
-    let mut parsed_vals = Vec::with_capacity(values_json.len());
-    for &s in values_json {
-      let v: Value = sonic_rs::from_str(s)
-        .map_err(|e| Error::invalid_data(format!("{ERR_INVALID_JSON_VALUE}: {e}")))?;
-      parsed_vals.push(v);
-    }
+    let parsed_vals = parse_json_values(values_json)?;
 
     let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key.as_ref())? {
       Some(pair) => pair,
@@ -66,12 +74,7 @@ where
     values_json: &[&str],
   ) -> Result<Vec<Option<usize>>> {
     let kc = self.kc();
-    let mut parsed_vals = Vec::with_capacity(values_json.len());
-    for &s in values_json {
-      let v: Value = sonic_rs::from_str(s)
-        .map_err(|e| Error::invalid_data(format!("{ERR_INVALID_JSON_VALUE}: {e}")))?;
-      parsed_vals.push(v);
-    }
+    let parsed_vals = parse_json_values(values_json)?;
 
     let (meta, mut root_val) = match read_json_meta_and_val(self, &kc, key.as_ref())? {
       Some(pair) => pair,
@@ -205,17 +208,9 @@ where
 
     let p = path.unwrap_or(JSON_ROOT_PATH);
     let nodes = get_path_values(&root_val, p)?;
-
-    let mut lengths = Vec::with_capacity(nodes.len());
-    for n in nodes {
-      if let Some(arr) = n.as_array() {
-        lengths.push(Some(arr.len()));
-      } else {
-        lengths.push(None);
-      }
-    }
-
-    Ok(lengths)
+    Ok(extract_node_lengths(&nodes, |n| {
+      n.as_array().map(|a| a.len())
+    }))
   }
 
   #[inline]

@@ -1,9 +1,8 @@
 use crate::{
   api::stream::{
     r#const::*,
-    decode_stream_entry_fields,
     group::check_lag_valid,
-    r#impl::get_stream_meta,
+    r#impl::{get_stream_entry, get_stream_meta},
     key,
     meta::{StreamConsumerGroupMeta, StreamConsumerMeta, StreamId, StreamInfo},
     range::stream_range,
@@ -67,35 +66,15 @@ where
     }
   };
 
-  let kc = db.kc();
-  let data_ks = db.data();
   let mut first_entry = None;
   let mut last_entry = None;
 
   if meta.base.size > 0 && !meta.first_entry_id.is_min() {
-    let item_k = key::item(
-      &kc,
-      key_bytes,
-      meta.first_entry_id.ms,
-      meta.first_entry_id.seq,
-    );
-    if let Some(v) = data_ks.get(&item_k)? {
-      let fields = decode_stream_entry_fields(&v).unwrap_or_default();
-      first_entry = Some((meta.first_entry_id, fields));
-    }
+    first_entry = get_stream_entry(db, key_bytes, meta.first_entry_id)?;
   }
 
   if meta.base.size > 0 && !meta.last_entry_id.is_min() {
-    let item_k = key::item(
-      &kc,
-      key_bytes,
-      meta.last_entry_id.ms,
-      meta.last_entry_id.seq,
-    );
-    if let Some(v) = data_ks.get(&item_k)? {
-      let fields = decode_stream_entry_fields(&v).unwrap_or_default();
-      last_entry = Some((meta.last_entry_id, fields));
-    }
+    last_entry = get_stream_entry(db, key_bytes, meta.last_entry_id)?;
   }
 
   let entries = if full {
