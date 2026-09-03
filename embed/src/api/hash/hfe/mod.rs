@@ -5,13 +5,40 @@ pub mod setex;
 pub mod ttl;
 
 use crate::{
-  api::hash::{
-    CachedFieldState,
-    meta::{HashFieldStateKind, HashMeta, decode_field_state},
+  api::{
+    hash::{
+      CachedFieldState,
+      meta::{HashFieldStateKind, HashMeta, decode_field_state},
+      r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+    },
+    key::get_meta_checked,
   },
-  engine::Partition,
+  engine::{Engine, Partition},
   error::{Error, Result},
+  wedb::Db,
 };
+
+#[inline]
+pub(crate) fn get_hfe_meta<E: Engine>(
+  db: &Db<E>,
+  key_bytes: &[u8],
+  meta_k: &[u8],
+  now_ms: u64,
+) -> Result<Option<HashMeta>>
+where
+  Error: From<E::Error>,
+{
+  let meta = match get_meta_checked::<HashMeta, _>(db, key_bytes, meta_k, now_ms)? {
+    Some(m) => m,
+    None => return Ok(None),
+  };
+  if meta.is_legacy_subkey_encoding() {
+    return Err(Error::invalid_data(
+      ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+    ));
+  }
+  Ok(Some(meta))
+}
 
 #[inline]
 pub(crate) fn load_field_state<P: Partition>(

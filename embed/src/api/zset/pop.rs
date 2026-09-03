@@ -460,12 +460,9 @@ where
       }
       if spec.check(member) {
         if v.len() >= 8 {
-          let mut sb = [0u8; 8];
-          sb.copy_from_slice(&v[..8]);
-
           s_key.clear();
           s_key.extend_from_slice(&score_prefix);
-          s_key.extend_from_slice(&sb);
+          s_key.extend_from_slice(&v[..8]);
           s_key.extend_from_slice(member);
 
           batch.rm_weak_data(&s_key);

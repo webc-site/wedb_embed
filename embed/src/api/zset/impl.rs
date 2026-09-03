@@ -6,7 +6,7 @@ use crate::{
   api::zset::{
     ZSetMemberScore,
     key::{compose_zset_key, compose_zset_score_key},
-    meta::ZSetMeta,
+    meta::{ZSetMeta, decode_sortable_f64_slice},
     opt::{RangeLex, RangeScore, ZAdd},
   },
   engine::{Engine, Partition},
@@ -16,7 +16,7 @@ use crate::{
   },
   key_composer::{KeyComposer, KeyTag, SmallKey},
   meta::{
-    current_now_ms, decode_sortable_f64, encode_sortable_f64, generate_version,
+    current_now_ms, encode_sortable_f64, generate_version,
     normalize_range as meta_normalize_range,
   },
   wedb::{Db, DbBatch},
@@ -24,17 +24,9 @@ use crate::{
 
 pub(crate) const SCORE_LEN: usize = 8;
 
-/// Zero-copy parses (score, member) pair from big-endian 8-byte score index key.
-/// 零拷贝解析 Score 索引子键中的 (score, member) 切片（大端序紧凑保序 8 字节）
 #[inline(always)]
 pub(crate) fn parse_score_sub(sub: &[u8]) -> Option<(f64, &[u8])> {
-  if sub.len() >= SCORE_LEN {
-    let mut b = [0u8; 8];
-    b.copy_from_slice(&sub[..8]);
-    Some((decode_sortable_f64(b), &sub[8..]))
-  } else {
-    None
-  }
+  decode_sortable_f64_slice(sub).map(|score| (score, &sub[SCORE_LEN..]))
 }
 
 /// Stack-allocated ZSet metadata key without heap allocation.
@@ -303,11 +295,7 @@ where
 
       if let Some(old_sb) = old_score_bytes {
         if !nx {
-          let mut sb = [0u8; 8];
-          if old_sb.len() >= 8 {
-            sb.copy_from_slice(&old_sb[..8]);
-          }
-          let old_score = decode_sortable_f64(sb);
+          let old_score = decode_sortable_f64_slice(&old_sb).unwrap_or(0.0);
 
           let final_score = if incr {
             if (lt && *input_score >= 0.0) || (gt && *input_score <= 0.0) {
@@ -375,11 +363,7 @@ where
           if nx {
             continue;
           }
-          let mut sb = [0u8; 8];
-          if old_sb.len() >= 8 {
-            sb.copy_from_slice(&old_sb[..8]);
-          }
-          let old_score = decode_sortable_f64(sb);
+          let old_score = decode_sortable_f64_slice(&old_sb).unwrap_or(0.0);
 
           let final_score = *input_score;
 
@@ -397,7 +381,7 @@ where
             changed += 1;
             s_key.clear();
             s_key.extend_from_slice(&score_prefix);
-            s_key.extend_from_slice(&sb);
+            s_key.extend_from_slice(&old_sb[..8]);
             s_key.extend_from_slice(m_bytes);
             batch.rm_weak_data(&s_key);
 
@@ -468,11 +452,7 @@ where
       if let Some(sb) = data_ks.get(m_key.as_slice())? {
         deleted = 1;
         meta.base.size = meta.base.size.saturating_sub(1);
-        let mut b = [0u8; 8];
-        if sb.len() >= 8 {
-          b.copy_from_slice(&sb[..8]);
-        }
-        let score = decode_sortable_f64(b);
+        let score = decode_sortable_f64_slice(&sb).unwrap_or(0.0);
         let s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
 
         batch.rm_weak_data(s_key.as_slice());
@@ -497,17 +477,15 @@ where
         if let Some(sb) = data_ks.get(&m_key)? {
           deleted += 1;
           meta.base.size = meta.base.size.saturating_sub(1);
-          let mut b = [0u8; 8];
+
           if sb.len() >= 8 {
-            b.copy_from_slice(&sb[..8]);
+            s_key.clear();
+            s_key.extend_from_slice(&score_prefix);
+            s_key.extend_from_slice(&sb[..8]);
+            s_key.extend_from_slice(m_bytes);
+
+            batch.rm_weak_data(&s_key);
           }
-
-          s_key.clear();
-          s_key.extend_from_slice(&score_prefix);
-          s_key.extend_from_slice(&b);
-          s_key.extend_from_slice(m_bytes);
-
-          batch.rm_weak_data(&s_key);
           batch.rm_weak_data(&m_key);
         }
       }
@@ -555,11 +533,7 @@ where
     };
 
     let final_score = if let Some(old_sb) = old_score_bytes {
-      let mut sb = [0u8; 8];
-      if old_sb.len() >= 8 {
-        sb.copy_from_slice(&old_sb[..8]);
-      }
-      let old_score = decode_sortable_f64(sb);
+      let old_score = decode_sortable_f64_slice(&old_sb).unwrap_or(0.0);
       let score = old_score + increment;
       if score.is_nan() {
         return Err(Error::invalid_data(

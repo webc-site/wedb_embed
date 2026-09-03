@@ -3,7 +3,7 @@ use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 use crate::{
   api::zset::{
     compose_zset_key, compose_zset_prefix,
-    meta::decode_sortable_f64,
+    meta::decode_sortable_f64_slice,
     r#impl::{compose_zset_meta_key, get_zset_meta},
   },
   engine::{Engine, Partition},
@@ -31,15 +31,7 @@ where
     }
 
     let m_key = compose_zset_key(&kc, k_bytes, member.as_ref());
-
-    match self.data().get(m_key.as_slice())? {
-      Some(sb) if sb.len() >= 8 => {
-        let mut b = [0u8; 8];
-        b.copy_from_slice(&sb[..8]);
-        Ok(Some(decode_sortable_f64(b)))
-      }
-      _ => Ok(None),
-    }
+    Ok(self.data().get(m_key.as_slice())?.and_then(|sb| decode_sortable_f64_slice(&sb)))
   }
 
   /// ZMSCORE key member [member ...] (multi-score lookup with single metadata check).
@@ -66,34 +58,12 @@ where
     }
 
     let data_ks = self.data();
-
-    if members.len() == 1 {
-      let m_key = compose_zset_key(&kc, k_bytes, members[0].as_ref());
-      let score = match data_ks.get(m_key.as_slice())? {
-        Some(sb) if sb.len() >= 8 => {
-          let mut b = [0u8; 8];
-          b.copy_from_slice(&sb[..8]);
-          Some(decode_sortable_f64(b))
-        }
-        _ => None,
-      };
-      scores.push(score);
-      return Ok(scores);
-    }
-
     let prefix = compose_zset_prefix(&kc, k_bytes);
     let mut composer = SubkeyComposer::from_slice(&prefix);
 
     for m in members {
       let m_key = composer.compose_sub(m.as_ref());
-      let score = match data_ks.get(m_key)? {
-        Some(sb) if sb.len() >= 8 => {
-          let mut b = [0u8; 8];
-          b.copy_from_slice(&sb[..8]);
-          Some(decode_sortable_f64(b))
-        }
-        _ => None,
-      };
+      let score = data_ks.get(m_key)?.and_then(|sb| decode_sortable_f64_slice(&sb));
       scores.push(score);
     }
     Ok(scores)
@@ -122,20 +92,6 @@ where
     }
 
     let data_ks = self.data();
-
-    if members.len() == 1 {
-      let m_bytes = members[0].as_ref();
-      let m_key = compose_zset_key(&kc, k_bytes, m_bytes);
-      if let Some(sb) = data_ks.get(m_key.as_slice())?
-        && sb.len() >= 8
-      {
-        let mut b = [0u8; 8];
-        b.copy_from_slice(&sb[..8]);
-        mscores.insert(m_bytes.to_vec(), decode_sortable_f64(b));
-      }
-      return Ok(mscores);
-    }
-
     let prefix = compose_zset_prefix(&kc, k_bytes);
     let mut composer = SubkeyComposer::from_slice(&prefix);
 
@@ -143,11 +99,9 @@ where
       let m_bytes = m.as_ref();
       let m_key = composer.compose_sub(m_bytes);
       if let Some(sb) = data_ks.get(m_key)?
-        && sb.len() >= 8
+        && let Some(score) = decode_sortable_f64_slice(&sb)
       {
-        let mut b = [0u8; 8];
-        b.copy_from_slice(&sb[..8]);
-        mscores.insert(m_bytes.to_vec(), decode_sortable_f64(b));
+        mscores.insert(m_bytes.to_vec(), score);
       }
     }
     Ok(mscores)

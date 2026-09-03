@@ -1,20 +1,12 @@
 use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 
 use crate::{
-  api::{
-    hash::{
-      CachedFieldState,
-      hfe::load_field_state,
-      key,
-      meta::{
-        HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
-        decode_field_state,
-      },
-      r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-    },
-    key::get_meta_checked,
+  api::hash::{
+    CachedFieldState,
+    hfe::{get_hfe_meta, load_field_state},
+    meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key},
   },
-  engine::{Engine, Partition},
+  engine::Engine,
   error::{Error, Result},
   meta::current_now_ms,
   wedb::Db,
@@ -49,80 +41,16 @@ where
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
 
-    let mut meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(vec![None; fields.len()]),
     };
-
-    if meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
-
-    if fields.len() == 1 {
-      let f_bytes = fields[0].as_ref();
-      let item_k = key::field(&kc, key_bytes, f_bytes);
-      let data_ks = self.data();
-      let raw_opt = data_ks.get(item_k.as_slice())?;
-      let (state_kind, payload) = match raw_opt.as_ref() {
-        None => (HashFieldStateKind::Missing, None),
-        Some(raw) => match decode_field_state(&meta, raw, now_ms) {
-          None => (HashFieldStateKind::Missing, None),
-          Some(s) => {
-            let p = meta.decode_subkey_value(raw).map(|(_, p)| p.to_vec());
-            (s.kind, p)
-          }
-        },
-      };
-
-      match state_kind {
-        HashFieldStateKind::Missing => return Ok(vec![None]),
-        HashFieldStateKind::ExpiredTTLPhysical => {
-          let mut batch = self.batch();
-          batch.rm_data(item_k.as_slice());
-          meta.apply_ttl_to_deleted();
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
-          return Ok(vec![None]);
-        }
-        HashFieldStateKind::Persistent => {
-          let mut batch = self.batch();
-          batch.rm_data(item_k.as_slice());
-          meta.apply_persistent_to_deleted();
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
-          return Ok(vec![payload]);
-        }
-        HashFieldStateKind::LiveTTL => {
-          let mut batch = self.batch();
-          batch.rm_data(item_k.as_slice());
-          meta.apply_ttl_to_deleted();
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
-          return Ok(vec![payload]);
-        }
-      }
-    }
 
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
     let mut meta_changed = false;
     let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
     let data_ks = self.data();
-    let _meta_ks = self.meta();
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
 
     for f in fields {

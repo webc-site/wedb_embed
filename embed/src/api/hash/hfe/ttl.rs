@@ -1,21 +1,12 @@
 use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 
 use crate::{
-  api::{
-    hash::{
-      CachedFieldState, ceil_div_1000,
-      hfe::load_field_state,
-      key,
-      meta::{
-        HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
-        decode_field_state,
-      },
-      r#const::{
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING, HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND,
-        HASH_FIELD_PERSISTENT,
-      },
-    },
-    key::get_meta_checked,
+  api::hash::{
+    CachedFieldState, ceil_div_1000,
+    hfe::{get_hfe_meta, load_field_state},
+    key,
+    meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, decode_field_state},
+    r#const::{HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND, HASH_FIELD_PERSISTENT},
   },
   engine::{Engine, Partition},
   error::{Error, Result},
@@ -102,66 +93,16 @@ where
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
 
-    let mut meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]),
     };
-
-    if meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
-
-    if fields.len() == 1 {
-      let f_bytes = fields[0].as_ref();
-      let item_k = key::field(&kc, key_bytes, f_bytes);
-      let data_ks = self.data();
-      let raw_opt = data_ks.get(item_k.as_slice())?;
-      let (state_kind, payload) = match raw_opt.as_ref() {
-        None => (HashFieldStateKind::Missing, &[][..]),
-        Some(raw) => match decode_field_state(&meta, raw, now_ms) {
-          None => (HashFieldStateKind::Missing, &[][..]),
-          Some(s) => {
-            let p = meta.decode_subkey_value(raw).map(|(_, p)| p).unwrap_or(b"");
-            (s.kind, p)
-          }
-        },
-      };
-
-      match state_kind {
-        HashFieldStateKind::Missing => return Ok(vec![HASH_FIELD_NOT_FOUND]),
-        HashFieldStateKind::Persistent => return Ok(vec![HASH_FIELD_PERSISTENT]),
-        HashFieldStateKind::ExpiredTTLPhysical => {
-          let mut batch = self.batch();
-          batch.rm_data(item_k.as_slice());
-          meta.apply_ttl_to_deleted();
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
-          return Ok(vec![HASH_FIELD_NOT_FOUND]);
-        }
-        HashFieldStateKind::LiveTTL => {
-          let mut batch = self.batch();
-          meta.apply_ttl_to_persistent();
-          meta
-            .with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k.as_slice(), enc));
-          batch.insert_meta(&meta_k, &meta.encode());
-          batch.commit()?;
-          return Ok(vec![HASH_EXPIRE_SET_OK]);
-        }
-      }
-    }
 
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
     let mut meta_changed = false;
     let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
     let data_ks = self.data();
-    let _meta_ks = self.meta();
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
 
     for f in fields {
@@ -248,16 +189,10 @@ where
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
 
-    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+    let meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(HASH_FIELD_NOT_FOUND),
     };
-
-    if meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
 
     let f_bytes = field.as_ref();
     let item_k = key::field(&kc, key_bytes, f_bytes);
@@ -297,16 +232,10 @@ where
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
 
-    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+    let meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]),
     };
-
-    if meta.is_legacy_subkey_encoding() {
-      return Err(Error::invalid_data(
-        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-      ));
-    }
 
     let mut result_cache: HashMap<&[u8], i64> = HashMap::with_capacity(fields.len());
     let mut results = Vec::with_capacity(fields.len());

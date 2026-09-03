@@ -112,11 +112,32 @@ where
 
   let prefix = key::prefix_stack(&kc, key_bytes);
   let max_count = options.count.unwrap_or(usize::MAX);
+  let mut results = Vec::with_capacity(max_count.min(1024));
+
+  let mut process_entry = |sid: StreamId, v: &[u8]| -> bool {
+    if !options.reverse {
+      if options.exclude_start && sid <= options.start {
+        return true;
+      }
+      if (options.exclude_end && sid >= options.end) || sid > options.end {
+        return false;
+      }
+    } else {
+      if options.exclude_start && sid >= options.start {
+        return true;
+      }
+      if (options.exclude_end && sid <= options.end) || sid < options.end {
+        return false;
+      }
+    }
+    let fields = decode_stream_entry_fields(v).unwrap_or_default();
+    results.push((sid, fields));
+    results.len() < max_count
+  };
 
   if !options.reverse {
     let start_item_k = key::item(&kc, key_bytes, options.start.ms, options.start.seq);
     let end_item_k = key::item(&kc, key_bytes, options.end.ms, options.end.seq);
-    let mut results = Vec::with_capacity(max_count.min(1024));
 
     for g in data_ks.range((
       Bound::Included(start_item_k.as_slice()),
@@ -127,29 +148,15 @@ where
       if !k.starts_with(prefix.as_slice()) {
         break;
       }
-      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
-        if options.exclude_start && sid <= options.start {
-          continue;
-        }
-        if options.exclude_end && sid >= options.end {
-          break;
-        }
-        if sid > options.end {
-          break;
-        }
-
-        let fields = decode_stream_entry_fields(v).unwrap_or_default();
-        results.push((sid, fields));
-        if results.len() >= max_count {
-          break;
-        }
+      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
+        && !process_entry(sid, v)
+      {
+        break;
       }
     }
-    Ok(results)
   } else {
     let low_item_k = key::item(&kc, key_bytes, options.end.ms, options.end.seq);
     let high_item_k = key::item(&kc, key_bytes, options.start.ms, options.start.seq);
-    let mut results = Vec::with_capacity(max_count.min(1024));
 
     for g in data_ks
       .range((
@@ -163,29 +170,15 @@ where
       if !k.starts_with(prefix.as_slice()) {
         break;
       }
-      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
-        if options.exclude_start && sid >= options.start {
-          continue;
-        }
-        if sid > options.start {
-          continue;
-        }
-        if options.exclude_end && sid <= options.end {
-          break;
-        }
-        if sid < options.end {
-          break;
-        }
-
-        let fields = decode_stream_entry_fields(v).unwrap_or_default();
-        results.push((sid, fields));
-        if results.len() >= max_count {
-          break;
-        }
+      if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..])
+        && !process_entry(sid, v)
+      {
+        break;
       }
     }
-    Ok(results)
   }
+
+  Ok(results)
 }
 
 impl<E: Engine> Db<E>
@@ -214,4 +207,3 @@ where
     stream_range_with_options(self, key, opts)
   }
 }
-

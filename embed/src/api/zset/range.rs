@@ -2,7 +2,8 @@ use std::{mem::swap, ops::Bound, str};
 
 use crate::{
   api::zset::{
-    ZSetMemberScore, decode_sortable_f64,
+    ZSetMemberScore,
+    meta::decode_sortable_f64_slice,
     r#impl::{
       compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix, get_zset_meta,
       lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
@@ -103,11 +104,7 @@ where
         break;
       }
       let member = &k[prefix.len()..];
-      let mut sb = [0u8; 8];
-      if v.len() >= 8 {
-        sb.copy_from_slice(&v[..8]);
-      }
-      let score = decode_sortable_f64(sb);
+      let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
       if !f(member, score) {
         break;
       }
@@ -137,11 +134,7 @@ where
         break;
       }
       let member = &k[prefix.len()..];
-      let mut sb = [0u8; 8];
-      if v.len() >= 8 {
-        sb.copy_from_slice(&v[..8]);
-      }
-      let score = decode_sortable_f64(sb);
+      let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
       if !f(member, score) {
         break;
       }
@@ -283,11 +276,7 @@ where
         }
       }
       if spec.check(member) {
-        let mut sb = [0u8; 8];
-        if v.len() >= 8 {
-          sb.copy_from_slice(&v[..8]);
-        }
-        let score = decode_sortable_f64(sb);
+        let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
         if !f(member, score) {
           break;
         }
@@ -340,11 +329,7 @@ where
         }
       }
       if spec.check(member) {
-        let mut sb = [0u8; 8];
-        if v.len() >= 8 {
-          sb.copy_from_slice(&v[..8]);
-        }
-        let score = decode_sortable_f64(sb);
+        let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
         if !f(member, score) {
           break;
         }

@@ -3,7 +3,7 @@ use std::ops::Bound;
 use crate::{
   api::zset::{
     ZScanResult, ZSetScanByMemberResult, compose_zset_key, compose_zset_prefix,
-    meta::decode_sortable_f64,
+    meta::decode_sortable_f64_slice,
     r#impl::{compose_zset_meta_key, get_zset_meta},
   },
   engine::{Engine, KvEntry, Partition},
@@ -95,49 +95,27 @@ where
     let mut results = Vec::with_capacity(limit);
     let mut next_cursor = None;
 
-    if let Some(cursor_bytes) = cursor {
-      let start_k = compose_zset_key(&kc, k_bytes, cursor_bytes);
-      let upper = prefix_upper_bound(prefix_bytes);
-      let upper_ref = Bound::as_ref(&upper).map(|v| v.as_slice());
-      for g in data_ks.range((Bound::Excluded(start_k.as_slice()), upper_ref)) {
-        let entry = g?;
-        let (k, v) = (entry.key(), entry.value());
-        if !k.starts_with(prefix_bytes) {
-          break;
-        }
-        let member = &k[prefix_len..];
-        if is_match_all || matches_glob_bytes(pat_bytes, member) {
-          let mut sb = [0u8; 8];
-          if v.len() >= 8 {
-            sb.copy_from_slice(&v[..8]);
-          }
-          let score = decode_sortable_f64(sb);
-          results.push((member.to_vec(), score));
-          if results.len() >= limit {
-            next_cursor = Some(member.to_vec());
-            break;
-          }
-        }
+    let start_bound = cursor
+      .map(|c| compose_zset_key(&kc, k_bytes, c))
+      .map(|k| Bound::Excluded(k.to_vec()))
+      .unwrap_or(Bound::Included(prefix_bytes.to_vec()));
+    let start_ref = Bound::as_ref(&start_bound).map(|v| v.as_slice());
+    let upper = prefix_upper_bound(prefix_bytes);
+    let upper_ref = Bound::as_ref(&upper).map(|v| v.as_slice());
+
+    for g in data_ks.range((start_ref, upper_ref)) {
+      let entry = g?;
+      let (k, v) = (entry.key(), entry.value());
+      if !k.starts_with(prefix_bytes) {
+        break;
       }
-    } else {
-      for g in data_ks.prefix(prefix_bytes) {
-        let entry = g?;
-        let (k, v) = (entry.key(), entry.value());
-        if !k.starts_with(prefix_bytes) {
+      let member = &k[prefix_len..];
+      if is_match_all || matches_glob_bytes(pat_bytes, member) {
+        let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
+        results.push((member.to_vec(), score));
+        if results.len() >= limit {
+          next_cursor = Some(member.to_vec());
           break;
-        }
-        let member = &k[prefix_len..];
-        if is_match_all || matches_glob_bytes(pat_bytes, member) {
-          let mut sb = [0u8; 8];
-          if v.len() >= 8 {
-            sb.copy_from_slice(&v[..8]);
-          }
-          let score = decode_sortable_f64(sb);
-          results.push((member.to_vec(), score));
-          if results.len() >= limit {
-            next_cursor = Some(member.to_vec());
-            break;
-          }
         }
       }
     }
