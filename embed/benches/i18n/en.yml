@@ -1,0 +1,237 @@
+title: "Benchmark: wedb_embed vs Redis"
+subtitle: "{items} Structured Items ｜ Raw Payload {payload} MB ｜ Physical Disk & Memory Benchmark"
+card1_title: "Average Throughput"
+card1_num: "{speedup} Faster"
+card1_sub: "{wedb_ops} vs {redis_ops}"
+card2_title: "P95 Get Latency"
+card2_num: "{speedup} Faster"
+card2_sub: "{wedb_lat} vs {redis_lat}"
+card3_title: "Disk Footprint"
+card3_num: "Saves {pct}"
+card3_sub: "{wedb_disk} GB vs {redis_disk} GB"
+card4_title: "Memory (RSS)"
+card4_num: "Saves {pct}"
+card4_sub: "{wedb_rss} MB vs {redis_rss} MB"
+sec_title: "Core Command Throughput & Performance Benchmark"
+sec_sub: "Covers 17 data structures & official modules across 98 commands (incl. WeDb Native features)"
+alt: "wedb_embed vs Redis Performance Benchmark"
+
+report:
+  hw_title: "Hardware & Test Environment"
+  hw_cpu: "CPU: {cpu_model} ({cpu_cores} cores)"
+  hw_mem: "Memory: {total_mem_gb}"
+  hw_disk: "Disk: {disk_info}"
+  hw_os: "OS: {os_name}"
+  hw_rust: "Rust: {rust_ver}"
+  hw_redis: "Redis: {redis_ver}"
+  
+  footprint_title: "Physical Footprint & Memory Benchmark ({payload_gb} Dataset Scale)"
+  footprint_col_dim: "Resource Metric"
+  footprint_col_wedb: "wedb_embed (Embedded LSM+LZ4)"
+  footprint_col_redis: "Redis ({redis_ver} AOF Mode)"
+  footprint_col_saved: "Resource Savings"
+  footprint_row_items: "**Dataset Scale**"
+  footprint_val_items: "{items} Structured Items"
+  footprint_desc_items: "All 14 Data Formats"
+  footprint_row_payload: "**Raw Uncompressed Payload**"
+  footprint_val_payload: "{payload_mb} MB"
+  footprint_desc_payload: "Structured Payload"
+  footprint_row_disk: "**Physical Disk Footprint**"
+  footprint_val_disk: "**{disk_mb} MB**"
+  footprint_desc_disk: "**Saves {pct}**"
+  footprint_row_rss: "**Resident Memory (RSS)**"
+  footprint_val_rss: "**{rss_mb} MB**"
+  footprint_desc_rss: "**Saves {pct}**"
+
+  cmp_title: "wedb_embed vs Redis Core Command Benchmark"
+  cmp_col_cmd: "Command"
+  cmp_col_wedb_p95: "wedb_embed P95 Latency"
+  cmp_col_redis_p95: "Redis P95 Latency"
+  cmp_col_speedup: "Speedup"
+
+  hero_alt: "wedb_embed vs Redis Performance & Resource Comparison"
+  hero_env: "Benchmark Environment"
+
+col1:
+  - name: "String · Key-Value"
+    scene: "High-performance caching, counters, distributed locks & binary payloads"
+    cmds:
+      - "GET"
+      - "SET"
+      - "MGET"
+      - "MSET"
+      - "INCRBY"
+      - "DECRBY"
+      - "APPEND"
+      - "STRLEN"
+      - "GETDEL"
+      - "GETRANGE"
+      - "SETRANGE"
+
+  - name: "Hash · Dictionary"
+    scene: "Object models, user profiles & multi-field attribute storage"
+    cmds:
+      - "HGET"
+      - "HSET"
+      - "HMGET"
+      - "HEXISTS"
+      - "HLEN"
+      - "HDEL"
+      - "HGETALL"
+      - "HKEYS"
+      - "HVALS"
+      - "HINCRBY"
+
+  - name: "List · Double-Ended Queue"
+    scene: "Message queuing, social feeds & FIFO/LIFO pipelines"
+    cmds:
+      - "LPUSH"
+      - "RPUSH"
+      - "LPOP"
+      - "RPOP"
+      - "LLEN"
+      - "LRANGE"
+      - "LINDEX"
+      - "LSET"
+      - "LREM"
+      - "LTRIM"
+
+  - name: "JSON · Document (RedisJSON)"
+    scene: "Nested JSON docs, JSONPath querying & atomic field mutations"
+    cmds:
+      - "JSON.GET"
+      - "JSON.SET"
+      - "JSON.DEL"
+      - "JSON.NUMINCRBY"
+      - "JSON.ARRLEN"
+      - "JSON.TYPE"
+
+  - name: "Search & Vector (RediSearch)"
+    scene: "HNSW vector similarity, KNN Top-K search & full-text tag filtering"
+    cmds:
+      - "VECTOR.KNN"
+      - "FT.SEARCH"
+      - "FT.TAG"
+
+  - name: "SortedInt · Compressed Set (WeDb Native)"
+    scene: "Unread message IDs, ordered order serials, inverted tags & integer sets"
+    cmds:
+      - cmd: "SI.ADD"
+        desc: "Add int64 to compressed set"
+        exclusive: true
+      - cmd: "SI.REM"
+        desc: "Remove int64 from set"
+        exclusive: true
+      - cmd: "SI.CARD"
+        desc: "Count total integer elements"
+        exclusive: true
+      - cmd: "SI.EXISTS"
+        desc: "O(1) fast existence check"
+        exclusive: true
+      - cmd: "SI.RANGE"
+        desc: "Range scan & cursor iter"
+        exclusive: true
+
+  - name: "HyperLogLog · Cardinality"
+    scene: "Billion-scale UV counting with fixed tiny memory footprint (12KB)"
+    cmds:
+      - "PFADD"
+      - "PFCOUNT"
+      - cmd: "PFMERGE"
+        desc: "Merge multiple HLL sketches"
+        exclusive: true
+
+  - name: "Storage Engine & Batch (WeDb Native)"
+    scene: "Multi-tenant namespace isolation & atomic batch transaction engine"
+    cmds:
+      - cmd: "NAMESPACE"
+        desc: "Multi-tenant isolated namespace"
+        exclusive: true
+      - cmd: "BATCH_COMMIT"
+        desc: "Atomic batch commit engine"
+        exclusive: true
+
+col2:
+  - name: "Set · Unordered Collection"
+    scene: "Unique tags, social relations & set algebra operations"
+    cmds:
+      - "SADD"
+      - "SREM"
+      - "SISMEMBER"
+      - "SCARD"
+      - "SMEMBERS"
+      - "SPOP"
+      - "SRANDMEMBER"
+
+  - name: "ZSet · Sorted Set"
+    scene: "Leaderboards, score-based ranking & delayed task scheduling"
+    cmds:
+      - "ZADD"
+      - "ZSCORE"
+      - "ZRANGE"
+      - "ZCARD"
+      - "ZCOUNT"
+      - "ZINCRBY"
+      - "ZRANK"
+      - "ZREVRANGE"
+      - "ZPOPMIN"
+      - "ZREM"
+
+  - name: "Bitmap · Bit Operations"
+    scene: "User check-in, retention analysis & billion-scale bitflags"
+    cmds:
+      - "GETBIT"
+      - "SETBIT"
+      - "BITCOUNT"
+      - "BITPOS"
+
+  - name: "Stream · Event Log"
+    scene: "Event streaming, pub-sub messaging & consumer group pipeline"
+    cmds:
+      - "XADD"
+      - "XLEN"
+      - "XRANGE"
+      - "XREAD"
+      - "XDEL"
+
+  - name: "Bloom & Cuckoo (RedisBloom)"
+    scene: "Cache penetration defense, deduplication & dynamic deletion"
+    cmds:
+      - "BF.ADD"
+      - "BF.EXISTS"
+      - "BF.INFO"
+      - "CF.ADD"
+      - "CF.EXISTS"
+      - "CF.DEL"
+
+  - name: "TimeSeries (RedisTimeSeries)"
+    scene: "IoT sensor metrics, financial ticker feeds & window aggregation"
+    cmds:
+      - "TS.ADD"
+      - "TS.GET"
+      - "TS.RANGE"
+      - "TS.INCRBY"
+
+  - name: "Geo · Spatial (GIS)"
+    scene: "Location-based services (LBS), geofencing & radius search"
+    cmds:
+      - "GEOADD"
+      - "GEODIST"
+      - "GEOPOS"
+      - "GEOHASH"
+
+  - name: "T-Digest · Quantile (RedisBloom)"
+    scene: "P50/P90/P99 streaming percentiles & quantile estimation"
+    cmds:
+      - "TDIGEST.ADD"
+      - "TDIGEST.QUANTILE"
+      - "TDIGEST.BYRANK"
+      - "TDIGEST.CDF"
+
+  - name: "Key & TTL Management"
+    scene: "Key lifecycle, safety eviction, TTL & expiration management"
+    cmds:
+      - "EXISTS"
+      - "DEL"
+      - "EXPIRE"
+      - "TTL"

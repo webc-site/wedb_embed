@@ -1,0 +1,237 @@
+title: "性能对比测试：wedb_embed vs Redis"
+subtitle: "{items} 条全格式结构化数据 ｜ 原始未压缩载荷 {payload} MB ｜ 真实物理落盘与内存实测"
+card1_title: "平均吞吐"
+card1_num: "快 {speedup}"
+card1_sub: "{wedb_ops} vs {redis_ops}"
+card2_title: "点查 P95 延迟"
+card2_num: "快 {speedup}"
+card2_sub: "{wedb_lat} vs {redis_lat}"
+card3_title: "磁盘占用"
+card3_num: "省 {pct}"
+card3_sub: "{wedb_disk} GB vs {redis_disk} GB"
+card4_title: "内存开销"
+card4_num: "省 {pct}"
+card4_sub: "{wedb_rss} MB vs {redis_rss} MB"
+sec_title: "全数据结构核心指令吞吐量与性能基准"
+sec_sub: "涵盖 17 大核心数据结构与官方扩展插件全部 98 项指令（含 WeDb 专有特性）"
+alt: "wedb_embed vs Redis 性能对比图"
+
+report:
+  hw_title: "硬件与测试环境"
+  hw_cpu: "CPU: {cpu_model} ({cpu_cores}核)"
+  hw_mem: "内存: {total_mem_gb}"
+  hw_disk: "硬盘: {disk_info}"
+  hw_os: "系统: {os_name}"
+  hw_rust: "Rust: {rust_ver}"
+  hw_redis: "Redis: {redis_ver}"
+  
+  footprint_title: "真实物理落盘与内存占用实测 ({payload_gb} 数据规模)"
+  footprint_col_dim: "资源维度"
+  footprint_col_wedb: "wedb_embed (嵌入式 LSM+LZ4)"
+  footprint_col_redis: "Redis ({redis_ver} AOF持久化)"
+  footprint_col_saved: "资源节省比例"
+  footprint_row_items: "**测试数据规模**"
+  footprint_val_items: "{items} 条全格式结构化数据"
+  footprint_desc_items: "14 种数据格式等比实测"
+  footprint_row_payload: "**原始数据载荷**"
+  footprint_val_payload: "{payload_mb} MB"
+  footprint_desc_payload: "真实结构化载荷"
+  footprint_row_disk: "**实际物理落盘大小**"
+  footprint_val_disk: "**{disk_mb} MB**"
+  footprint_desc_disk: "**节省 {pct}**"
+  footprint_row_rss: "**进程常驻内存 (RSS)**"
+  footprint_val_rss: "**{rss_mb} MB**"
+  footprint_desc_rss: "**节省 {pct}**"
+
+  cmp_title: "wedb_embed vs Redis 核心指令性能对比"
+  cmp_col_cmd: "指令"
+  cmp_col_wedb_p95: "wedb_embed P95延迟"
+  cmp_col_redis_p95: "Redis P95延迟"
+  cmp_col_speedup: "性能领先"
+
+  hero_alt: "wedb_embed vs Redis 性能与资源对比"
+  hero_env: "测试环境"
+
+col1:
+  - name: "String · 字符串与键值"
+    scene: "适用于缓存、计数器、分布式锁与高性能键值存取"
+    cmds:
+      - "GET"
+      - "SET"
+      - "MGET"
+      - "MSET"
+      - "INCRBY"
+      - "DECRBY"
+      - "APPEND"
+      - "STRLEN"
+      - "GETDEL"
+      - "GETRANGE"
+      - "SETRANGE"
+
+  - name: "Hash · 哈希字典"
+    scene: "对象实体模型、用户资料与多字段属性存储"
+    cmds:
+      - "HGET"
+      - "HSET"
+      - "HMGET"
+      - "HEXISTS"
+      - "HLEN"
+      - "HDEL"
+      - "HGETALL"
+      - "HKEYS"
+      - "HVALS"
+      - "HINCRBY"
+
+  - name: "List · 双向列表"
+    scene: "消息排队、最新动态时间线与 FIFO/LIFO 任务队列"
+    cmds:
+      - "LPUSH"
+      - "RPUSH"
+      - "LPOP"
+      - "RPOP"
+      - "LLEN"
+      - "LRANGE"
+      - "LINDEX"
+      - "LSET"
+      - "LREM"
+      - "LTRIM"
+
+  - name: "JSON · 结构化文档 (RedisJSON)"
+    scene: "嵌套文档存储、JSONPath 动态解析与字段级原子修改"
+    cmds:
+      - "JSON.GET"
+      - "JSON.SET"
+      - "JSON.DEL"
+      - "JSON.NUMINCRBY"
+      - "JSON.ARRLEN"
+      - "JSON.TYPE"
+
+  - name: "Search · 检索与向量 (RediSearch)"
+    scene: "HNSW 向量相似度检索、KNN Top-K 查询与全文标签过滤"
+    cmds:
+      - "VECTOR.KNN"
+      - "FT.SEARCH"
+      - "FT.TAG"
+
+  - name: "SortedInt · 有序整数集 (WeDb 专有)"
+    scene: "未读消息ID、时间序订单号、用户标签倒排与海量有序整数"
+    cmds:
+      - cmd: "SI.ADD"
+        desc: "添加 64 位整数到有序集合"
+        exclusive: true
+      - cmd: "SI.REM"
+        desc: "从集合中删除指定整数"
+        exclusive: true
+      - cmd: "SI.CARD"
+        desc: "获取集合内整数元素总基数"
+        exclusive: true
+      - cmd: "SI.EXISTS"
+        desc: "O(1) 快速判定整数是否存在"
+        exclusive: true
+      - cmd: "SI.RANGE"
+        desc: "范围扫描与前缀游标迭代"
+        exclusive: true
+
+  - name: "HyperLogLog · 基数统计"
+    scene: "亿级 UV 独立访客统计，极小固定内存开销 (12KB)"
+    cmds:
+      - "PFADD"
+      - "PFCOUNT"
+      - cmd: "PFMERGE"
+        desc: "多基数统计集合无损合并"
+        exclusive: true
+
+  - name: "Engine · 存储引擎与批处理 (WeDb 专有)"
+    scene: "多租户物理命名空间隔离与底层 LSM 原子批量事务提交"
+    cmds:
+      - cmd: "NAMESPACE"
+        desc: "多租户物理前缀隔离命名空间"
+        exclusive: true
+      - cmd: "BATCH_COMMIT"
+        desc: "底层 LSM 原子批量事务写入提交"
+        exclusive: true
+
+col2:
+  - name: "Set · 无序集合"
+    scene: "唯一标签、社交关系关注/粉丝与集合交并差集运算"
+    cmds:
+      - "SADD"
+      - "SREM"
+      - "SISMEMBER"
+      - "SCARD"
+      - "SMEMBERS"
+      - "SPOP"
+      - "SRANDMEMBER"
+
+  - name: "ZSet · 有序集合"
+    scene: "排行榜、按分数/时间范围分页与延时任务调度"
+    cmds:
+      - "ZADD"
+      - "ZSCORE"
+      - "ZRANGE"
+      - "ZCARD"
+      - "ZCOUNT"
+      - "ZINCRBY"
+      - "ZRANK"
+      - "ZREVRANGE"
+      - "ZPOPMIN"
+      - "ZREM"
+
+  - name: "Bitmap · 高效位图"
+    scene: "用户签到打卡、活跃留存统计与千万级布尔标志位"
+    cmds:
+      - "GETBIT"
+      - "SETBIT"
+      - "BITCOUNT"
+      - "BITPOS"
+
+  - name: "Stream · 消息流与日志"
+    scene: "事件驱动日志、发布订阅消息队列与 ACK 消费组流转"
+    cmds:
+      - "XADD"
+      - "XLEN"
+      - "XRANGE"
+      - "XREAD"
+      - "XDEL"
+
+  - name: "Bloom & Cuckoo · 概率过滤 (RedisBloom)"
+    scene: "缓存穿透防护、垃圾邮件过滤与允许动态删除的概率集合"
+    cmds:
+      - "BF.ADD"
+      - "BF.EXISTS"
+      - "BF.INFO"
+      - "CF.ADD"
+      - "CF.EXISTS"
+      - "CF.DEL"
+
+  - name: "TimeSeries · 时序引擎 (RedisTimeSeries)"
+    scene: "IoT 传感器时序上报、金融行情监控与滑动窗口降采样"
+    cmds:
+      - "TS.ADD"
+      - "TS.GET"
+      - "TS.RANGE"
+      - "TS.INCRBY"
+
+  - name: "Geo · 地理位置 (GIS)"
+    scene: "附近的人 (LBS)、电子围栏与地理半径距离检索"
+    cmds:
+      - "GEOADD"
+      - "GEODIST"
+      - "GEOPOS"
+      - "GEOHASH"
+
+  - name: "T-Digest · 分位数统计 (RedisBloom)"
+    scene: "流式数据 P50/P90/P99 百分位数与分位数精确分布估计"
+    cmds:
+      - "TDIGEST.ADD"
+      - "TDIGEST.QUANTILE"
+      - "TDIGEST.BYRANK"
+      - "TDIGEST.CDF"
+
+  - name: "Key & TTL · 键与过期管理"
+    scene: "键存在检测、安全删除、生存时间与自动过期淘汰"
+    cmds:
+      - "EXISTS"
+      - "DEL"
+      - "EXPIRE"
+      - "TTL"

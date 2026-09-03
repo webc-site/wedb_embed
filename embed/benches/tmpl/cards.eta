@@ -1,0 +1,82 @@
+<!-- 2. Top Summary: 4 Key Metric Cards (2 Rows x 2 Columns Grid with Mini Visual Comparison Bars) -->
+<g transform="translate(0, 96)">
+  <!-- Row 1, Card 1: 平均吞吐 -->
+  <g transform="translate(12, 0)">
+    <rect width="342" height="68" rx="8" fill="url(#card-bg-grad)" stroke="#e2e8f0" stroke-width="1"/>
+    <!-- Left Stat -->
+    <text x="14" y="18" class="txt card-title"><%= it.card1_title %></text>
+    <text x="14" y="42" class="txt card-num" fill="#2563eb"><%= it.card1_num %></text>
+    <text x="14" y="58" class="txt card-sub-muted"><%= it.card1_sub %></text>
+    
+    <!-- Right Mini Dual-Bar Comparison -->
+    <g transform="translate(168, 14)">
+      <text x="0" y="10.5" class="txt mini-label-blue">WeDb</text>
+      <rect x="34" y="1.5" width="<%= it.card1_wedb_bar_w %>" height="10" rx="2.5" fill="url(#wedb-blue-grad)"/>
+      <text x="<%= 38 + it.card1_wedb_bar_w %>" y="9.5" class="txt mini-bar-val-blue"><%= it.wedb_avg_qps_str %></text>
+      
+      <text x="0" y="28.5" class="txt mini-label-gray">Redis</text>
+      <rect x="34" y="20" width="<%= it.card1_redis_bar_w %>" height="9" rx="2" fill="url(#redis-gray-grad)"/>
+      <text x="<%= 38 + it.card1_redis_bar_w %>" y="27.5" class="txt mini-bar-val-gray"><%= it.redis_avg_qps_str %></text>
+    </g>
+  </g>
+
+  <!-- Row 1, Card 2: 点查 P95 延迟 -->
+  <g transform="translate(366, 0)">
+    <rect width="342" height="68" rx="8" fill="url(#card-bg-grad)" stroke="#e2e8f0" stroke-width="1"/>
+    <!-- Left Stat -->
+    <text x="14" y="18" class="txt card-title"><%= it.card2_title %></text>
+    <text x="14" y="42" class="txt card-num" fill="#2563eb"><%= it.card2_num %></text>
+    <text x="14" y="58" class="txt card-sub-muted"><%= it.card2_sub %></text>
+    
+    <!-- Right Mini Dual-Bar Comparison -->
+    <g transform="translate(168, 14)">
+      <text x="0" y="10.5" class="txt mini-label-blue">WeDb</text>
+      <rect x="34" y="1.5" width="<%= it.card2_wedb_bar_w %>" height="10" rx="2.5" fill="url(#wedb-blue-grad)"/>
+      <text x="<%= 38 + it.card2_wedb_bar_w %>" y="9.5" class="txt mini-bar-val-blue"><%= it.wedb_get_lat_str %></text>
+      
+      <text x="0" y="28.5" class="txt mini-label-gray">Redis</text>
+      <rect x="34" y="20" width="<%= it.card2_redis_bar_w %>" height="9" rx="2" fill="url(#redis-gray-grad)"/>
+      <text x="<%= 38 + it.card2_redis_bar_w %>" y="27.5" class="txt mini-bar-val-gray"><%= it.redis_get_lat_str %></text>
+    </g>
+  </g>
+
+  <!-- Row 2, Card 3: 磁盘占用 -->
+  <g transform="translate(12, 76)">
+    <rect width="342" height="68" rx="8" fill="url(#card-bg-grad)" stroke="#e2e8f0" stroke-width="1"/>
+    <!-- Left Stat -->
+    <text x="14" y="18" class="txt card-title"><%= it.card3_title %></text>
+    <text x="14" y="42" class="txt card-num" fill="#2563eb"><%= it.card3_num %></text>
+    <text x="14" y="58" class="txt card-sub-muted"><%= it.card3_sub %></text>
+    
+    <!-- Right Mini Dual-Bar Comparison -->
+    <g transform="translate(168, 14)">
+      <text x="0" y="10.5" class="txt mini-label-blue">WeDb</text>
+      <rect x="34" y="1.5" width="<%= it.card3_wedb_bar_w %>" height="10" rx="2.5" fill="url(#wedb-blue-grad)"/>
+      <text x="<%= 38 + it.card3_wedb_bar_w %>" y="9.5" class="txt mini-bar-val-blue"><%= it.wedb_disk_gb %> GB</text>
+      
+      <text x="0" y="28.5" class="txt mini-label-gray">Redis</text>
+      <rect x="34" y="20" width="<%= it.card3_redis_bar_w %>" height="9" rx="2" fill="url(#redis-gray-grad)"/>
+      <text x="<%= 38 + it.card3_redis_bar_w %>" y="27.5" class="txt mini-bar-val-gray"><%= it.redis_disk_gb %> GB</text>
+    </g>
+  </g>
+
+  <!-- Row 2, Card 4: 内存开销 (RSS) -->
+  <g transform="translate(366, 76)">
+    <rect width="342" height="68" rx="8" fill="url(#card-bg-grad)" stroke="#e2e8f0" stroke-width="1"/>
+    <!-- Left Stat -->
+    <text x="14" y="18" class="txt card-title"><%= it.card4_title %></text>
+    <text x="14" y="42" class="txt card-num" fill="#2563eb"><%= it.card4_num %></text>
+    <text x="14" y="58" class="txt card-sub-muted"><%= it.card4_sub %></text>
+    
+    <!-- Right Mini Dual-Bar Comparison -->
+    <g transform="translate(168, 14)">
+      <text x="0" y="10.5" class="txt mini-label-blue">WeDb</text>
+      <rect x="34" y="1.5" width="<%= it.card4_wedb_bar_w %>" height="10" rx="2.5" fill="url(#wedb-blue-grad)"/>
+      <text x="<%= 38 + it.card4_wedb_bar_w %>" y="9.5" class="txt mini-bar-val-blue"><%= it.wedb_rss_mb %> MB</text>
+      
+      <text x="0" y="28.5" class="txt mini-label-gray">Redis</text>
+      <rect x="34" y="20" width="<%= it.card4_redis_bar_w %>" height="9" rx="2" fill="url(#redis-gray-grad)"/>
+      <text x="<%= 38 + it.card4_redis_bar_w %>" y="27.5" class="txt mini-bar-val-gray"><%= it.redis_rss_mb %> MB</text>
+    </g>
+  </g>
+</g>

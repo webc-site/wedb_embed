@@ -1,0 +1,16 @@
+<defs>
+  <!-- WeDb 科技蓝质感渐变 -->
+  <linearGradient id="wedb-blue-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#1d4ed8"/>
+    <stop offset="100%" stop-color="#3b82f6"/>
+  </linearGradient>
+  <!-- Redis 灰色质感渐变 -->
+  <linearGradient id="redis-gray-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#94a3b8"/>
+    <stop offset="100%" stop-color="#64748b"/>
+  </linearGradient>
+  <linearGradient id="card-bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+    <stop offset="0%" stop-color="#f8fafc"/>
+    <stop offset="100%" stop-color="#f1f5f9"/>
+  </linearGradient>
+</defs>

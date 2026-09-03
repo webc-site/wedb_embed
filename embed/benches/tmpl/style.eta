@@ -1,0 +1,30 @@
+<style>
+  .txt { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "STHeiti", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", Roboto, sans-serif; }
+  .main-title { font-size: 21px; font-weight: 800; fill: #0f172a; letter-spacing: 0.3px; }
+  .subtitle { font-size: 11.5px; font-weight: 500; fill: #64748b; }
+  .legend-tag { font-size: 12px; font-weight: 700; }
+  
+  .card-title { font-size: 10.5px; font-weight: 700; fill: #64748b; letter-spacing: 0.3px; }
+  .card-num { font-size: 17px; font-weight: 800; }
+  .card-sub { font-size: 10.5px; font-weight: 700; fill: #2563eb; }
+  .card-sub-muted { font-size: 9.5px; font-weight: 600; fill: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .mini-label-blue { font-size: 9.5px; font-weight: 700; fill: #2563eb; }
+  .mini-label-gray { font-size: 9.5px; font-weight: 600; fill: #64748b; }
+  .mini-bar-val-blue { font-size: 8.5px; font-weight: 700; fill: #2563eb; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mini-bar-val-gray { font-size: 8.5px; font-weight: 600; fill: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .sec-title { font-size: 13px; font-weight: 800; fill: #0f172a; letter-spacing: 0.3px; }
+  .sec-sub { font-size: 10.5px; font-weight: 500; fill: #64748b; }
+
+  .grp-title { font-size: 11px; font-weight: 800; fill: #1e293b; letter-spacing: 0.2px; }
+  .grp-cnt { font-size: 9.5px; font-weight: 700; fill: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .grp-desc { font-size: 9px; font-weight: 500; fill: #64748b; }
+
+  .cmd-name { font-size: 11.5px; font-weight: 800; fill: #0f172a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .speedup-badge { font-size: 11.5px; font-weight: 800; fill: #2563eb; }
+  .cmd-desc { font-size: 9.5px; font-weight: 600; fill: #2563eb; }
+  .bar-text { font-size: 8.5px; font-weight: 700; fill: #ffffff; }
+  .bar-text-blue { font-size: 8.5px; font-weight: 700; fill: #2563eb; }
+  .bar-text-muted { font-size: 8px; font-weight: 600; fill: #64748b; }
+</style>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 <%= it.total_h || 1180 %>" width="100%" height="100%">
+  <%~ include("./defs.eta", it) %>
+  <%~ include("./style.eta", it) %>
+  <%~ include("./header.eta", it) %>
+  <%~ include("./cards.eta", it) %>
+
+  <!-- Section Title -->
+  <g transform="translate(12, 252)">
+    <text x="0" y="16" class="txt sec-title"><%= it.sec_title %></text>
+    <text x="0" y="32" class="txt sec-sub"><%= it.sec_sub %></text>
+  </g>
+
+<% it.col_li.forEach(function(col) { %>
+  <!-- Column x=<%= col.x %> -->
+  <% col.card_li.forEach(function(card) { %>
+    <!-- Card Block: <%= card.title %> -->
+    <g transform="translate(<%= col.x %>, <%= card.y %>)">
+      <rect width="342" height="<%= card.height %>" rx="8" fill="url(#card-bg-grad)" stroke="#e2e8f0" stroke-width="1"/>
+      
+      <!-- Card Header: Title + Tag -->
+      <rect x="8" y="8" width="326" height="22" rx="4" fill="#e2e8f0" fill-opacity="0.65" stroke="#cbd5e1" stroke-width="0.6"/>
+      <rect x="13" y="12" width="3" height="14" rx="1.5" fill="#2563eb"/>
+      <text x="21" y="23" class="txt grp-title"><%= card.title %></text>
+      <text x="326" y="23" class="txt grp-cnt" text-anchor="end"><%= card.count_str %></text>
+
+      <!-- Card Subtitle: Real-World Scenario -->
+      <text x="10" y="43" class="txt grp-desc"><%= card.scene %></text>
+
+      <!-- Command Items inside this Card -->
+      <% card.item_li.forEach(function(item) { %>
+        <g transform="translate(10, <%= item.rel_y %>)">
+          <% if (item.is_exclusive) { %>
+            <%~ include("./cmd_exclusive.eta", item) %>
+          <% } else { %>
+            <%~ include("./cmd.eta", item) %>
+          <% } %>
+        </g>
+      <% }) %>
+    </g>
+  <% }) %>
+<% }) %>
+</svg>

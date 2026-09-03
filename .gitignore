@@ -2,11 +2,11 @@ conf/
 node_modules/
 target/
 Cargo.lock
-
+.DS_Store
 
 # Benchmark datasets
 fastalp/benches/data/
-benches/
+/benches/
 *.isd
 *.rdb
 

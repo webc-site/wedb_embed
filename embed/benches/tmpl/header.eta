@@ -1,0 +1,14 @@
+<!-- 1. Header (Centered Title, Dedicated Centered Legend Line, Subtitle) -->
+<g transform="translate(0, 0)">
+  <text x="360" y="34" class="txt main-title" text-anchor="middle"><%= it.title %></text>
+  
+  <!-- Centered Legend Line (Blue for WeDb, Gray for Redis) -->
+  <g transform="translate(255, 46)">
+    <rect x="0" y="2" width="12" height="12" rx="3" fill="url(#wedb-blue-grad)"/>
+    <text x="18" y="12" class="txt legend-tag" fill="#2563eb">wedb_embed</text>
+    <rect x="125" y="2" width="12" height="12" rx="3" fill="url(#redis-gray-grad)"/>
+    <text x="143" y="12" class="txt legend-tag" fill="#64748b">Redis</text>
+  </g>
+
+  <text x="360" y="80" class="txt subtitle" text-anchor="middle"><%= it.subtitle %></text>
+</g>

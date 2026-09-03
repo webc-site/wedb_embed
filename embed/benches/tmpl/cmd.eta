@@ -1,0 +1,6 @@
+<text x="0" y="11" class="txt cmd-name"><%= it.cmd %></text>
+<text x="326" y="11" class="txt speedup-badge" text-anchor="end"><%= it.speedup %></text>
+<rect x="0" y="16" width="<%= it.wedb_bar_w %>" height="10" rx="2.5" fill="url(#wedb-blue-grad)"/>
+<text x="<%= it.wedb_label_x %>" y="24.5" text-anchor="<%= it.wedb_label_anchor %>" class="txt <%= it.wedb_label_class %>"><%= it.wedb_label_text %></text>
+<rect x="0" y="28" width="<%= it.redis_bar_w %>" height="6" rx="2" fill="url(#redis-gray-grad)"/>
+<text x="<%= it.redis_label_x %>" y="33.5" text-anchor="<%= it.redis_label_anchor %>" class="txt <%= it.redis_label_class %>"><%= it.redis_label_text %></text>

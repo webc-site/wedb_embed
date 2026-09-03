@@ -1,0 +1,80 @@
+title: "fastalp 浮点压缩引擎综合基准评测"
+subtitle: "同机实测：解压吞吐量、压缩吞吐量、压缩率与工业场景全量对比"
+env_title: "评测环境"
+env_badge_title: "实测硬件与运行环境"
+
+hero_alt: "fastalp 浮点压缩算法全量性能与压缩比横向对比"
+
+card1_title: "单核解压吞吐峰值"
+card1_val: "{val}"
+card1_sub: "较 C++ 提速 {val} (稳态心跳流)"
+
+card2_title: "趋势波形压缩率 (Ramp)"
+card2_val: "{val}"
+card2_sub: "Delta-ALP 驱动，较 C++ 提升 {val}"
+
+card3_title: "全量综合解压吞吐"
+card3_val: "{val}"
+card3_sub: "几何均值稳健领先各主流通用算法"
+
+card4_title: "全量综合压缩率"
+card4_val: "{val}"
+card4_sub: "较 C++ ALP 压缩率全面领先 {val}"
+
+sec1_title: "主流算法综合基准对比 (8 种算法)"
+sec1_sub: "基于 31 个公开时序数据集 + 4 大典型工业场景全量同机实测（综合吞吐与压缩率采用几何平均值）"
+
+sec2_title: "35 项工业时序场景与公开测试集全量实测对比 (fastalp vs C++ ALP)"
+sec2_sub: "采用工业时序领域规范分类（各指标优胜者高亮深蓝，次优显示灰色）"
+
+sec3_title: "典型时序工业场景对比"
+sec3_sub: "涵盖十进制传感、平滑趋势波形、高频量化行情与极低熵稳态流"
+
+legend_dec_speed: "解压吞吐 (GB/s)"
+legend_enc_speed: "压缩吞吐 (GB/s)"
+
+col_algo: "算法名称"
+col_type: "分类"
+col_dec: "解压吞吐 (几何均值)"
+col_dec_vs: "解压对比"
+col_enc: "压缩吞吐 (几何均值)"
+col_enc_vs: "压缩对比"
+col_ratio: "压缩率 (几何均值)"
+
+col_dataset: "工业时序场景 / 数据集"
+col_f_ratio: "fastalp 比"
+col_c_ratio: "C++ 比"
+col_f_dec: "fastalp 解压"
+col_c_dec: "C++ 解压"
+col_speedup: "加速比"
+
+badge_leader: "领先"
+baseline_text: "基准"
+
+type_specialized: "专用浮点"
+type_general: "通用字节"
+
+scene_sensor_title: "十进制环境传感"
+scene_sensor_sub: "NEON/NOAA 气压、气温、地表时序 (1024 点)"
+scene_sensor_badge: "十进制传感"
+
+scene_ramp_title: "物理波形与单调趋势时序"
+scene_ramp_sub: "平滑升降坡道、河流径流与水位 (1024 点)"
+scene_ramp_badge: "差分时序"
+
+scene_stock_title: "高频金融量化交易行情"
+scene_stock_sub: "美/德/英 股市高频交易成交价 (1024 点)"
+scene_stock_badge: "量化金融"
+
+scene_const_title: "稳态常数与极低熵监控流"
+scene_const_sub: "恒定传感器、无故障监控与常量流 (1024 点)"
+scene_const_badge: "稳态常数"
+
+sc_col_algo: "算法名称"
+sc_col_dec: "解压吞吐"
+sc_col_enc: "压缩吞吐"
+sc_col_ratio: "压缩率"
+sc_col_speedup: "相对对比"
+
+footer_left: "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均严格采用各数据集的几何平均值 (Geometric Mean)。在 {cpu} 实机与 C++ ALP 官方源码同机全量实测。保证 IEEE 754 浮点二进制严格无损。"
+footer_right: "开源实现 fastalp @ crates.io/crates/fastalp"

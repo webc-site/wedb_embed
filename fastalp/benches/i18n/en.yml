@@ -1,0 +1,80 @@
+title: "fastalp Floating-Point Compression Benchmark"
+subtitle: "Comprehensive Side-by-Side Benchmark: Decompression & Compression Throughput and Ratios"
+env_title: "Benchmark Environment"
+env_badge_title: "HARDWARE & RUNTIME ENVIRONMENT"
+
+hero_alt: "fastalp Floating-Point Compression Performance & Ratio Benchmark"
+
+card1_title: "Peak Decode Speed"
+card1_val: "{val}"
+card1_sub: "{val} vs C++ ALP (steady heartbeat)"
+
+card2_title: "Ramp Waveform Ratio"
+card2_val: "{val}"
+card2_sub: "Delta-ALP, {val} vs C++ ALP"
+
+card3_title: "Comprehensive Avg Decode"
+card3_val: "{val}"
+card3_sub: "Geometric mean solidly leads mainstream codecs"
+
+card4_title: "Comprehensive Avg Ratio"
+card4_val: "{val}"
+card4_sub: "{val} higher compression ratio vs C++ ALP"
+
+sec1_title: "Comprehensive Benchmark Across 8 Codecs"
+sec1_sub: "Evaluated across 31 public datasets + 4 industrial scenarios (Metrics calculated using Geometric Mean)"
+
+sec2_title: "All 35 Industrial Scenarios & Public Datasets (fastalp vs C++ ALP)"
+sec2_sub: "Classified by industrial domain specifications (Superior metric highlighted in deep blue, lower in slate gray)"
+
+sec3_title: "Industrial Time-Series Scenario Evaluation"
+sec3_sub: "Covering IoT telemetry, physical monotonic waveforms, high-frequency finance, and steady constants"
+
+legend_dec_speed: "Decode Speed (GB/s)"
+legend_enc_speed: "Encode Speed (GB/s)"
+
+col_algo: "Algorithm"
+col_type: "Type"
+col_dec: "Decode Speed (Geomean)"
+col_dec_vs: "Decode vs Base"
+col_enc: "Encode Speed (Geomean)"
+col_enc_vs: "Encode vs Base"
+col_ratio: "Ratio (Geomean)"
+
+col_dataset: "Industrial Scenario / Dataset"
+col_f_ratio: "fastalp Ratio"
+col_c_ratio: "C++ Ratio"
+col_f_dec: "fastalp Dec"
+col_c_dec: "C++ Dec"
+col_speedup: "Speedup"
+
+badge_leader: "LEADER"
+baseline_text: "Baseline"
+
+type_specialized: "Float Specialized"
+type_general: "General Bytes"
+
+scene_sensor_title: "IoT & Environmental Telemetry"
+scene_sensor_sub: "NEON/NOAA air pressure, temperature, water level (1024 pts)"
+scene_sensor_badge: "Telemetry"
+
+scene_ramp_title: "Physical Waveforms & Trends"
+scene_ramp_sub: "Monotonic ramp, USGS river discharge & river stage (1024 pts)"
+scene_ramp_badge: "Delta-ALP"
+
+scene_stock_title: "Financial Stocks & Quant Trades"
+scene_stock_sub: "High-frequency trade prices: US, DE, UK stocks (1024 pts)"
+scene_stock_badge: "Finance"
+
+scene_const_title: "Steady Constants & Zero-Entropy"
+scene_const_sub: "Fixed-range sensors, error-free health monitoring (1024 pts)"
+scene_const_badge: "Constant"
+
+sc_col_algo: "Algorithm"
+sc_col_dec: "Decode"
+sc_col_enc: "Encode"
+sc_col_ratio: "Ratio"
+sc_col_speedup: "Comparison"
+
+footer_left: "Note: Overall decode/encode speeds and compression ratios are calculated using Geometric Mean across all 31 datasets. Measured directly on {cpu} with C++ ALP official source. Exact IEEE 754 bitwise lossless."
+footer_right: "Open-source fastalp @ crates.io/crates/fastalp"
