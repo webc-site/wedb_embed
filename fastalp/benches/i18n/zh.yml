@@ -76,5 +76,5 @@ sc_col_enc: "压缩吞吐"
 sc_col_ratio: "压缩率"
 sc_col_speedup: "相对对比"
 
-footer_left: "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均严格采用各数据集的几何平均值 (Geometric Mean)。在 {cpu} 实机与 C++ ALP 官方源码同机全量实测。保证 IEEE 754 浮点二进制严格无损。"
+footer_left: "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均严格采用 35 项公开时序测试集与工业场景的几何平均值 (Geometric Mean)。在 {cpu} 实机与 C++ ALP 官方源码同机全量实测。保证 IEEE 754 浮点二进制严格无损。"
 footer_right: "开源实现 fastalp @ crates.io/crates/fastalp"

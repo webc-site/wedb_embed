@@ -76,5 +76,5 @@ sc_col_enc: "Encode"
 sc_col_ratio: "Ratio"
 sc_col_speedup: "Comparison"
 
-footer_left: "Note: Overall decode/encode speeds and compression ratios are calculated using Geometric Mean across all 31 datasets. Measured directly on {cpu} with C++ ALP official source. Exact IEEE 754 bitwise lossless."
+footer_left: "Note: Overall decode/encode speeds and compression ratios are calculated using Geometric Mean across all 35 time-series datasets and scenarios. Measured directly on {cpu} with C++ ALP official source. Exact IEEE 754 bitwise lossless."
 footer_right: "Open-source fastalp @ crates.io/crates/fastalp"
