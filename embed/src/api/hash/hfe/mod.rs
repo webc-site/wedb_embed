@@ -8,8 +8,8 @@ use crate::{
   api::{
     hash::{
       CachedFieldState,
-      meta::{HashFieldStateKind, HashMeta, decode_field_state},
       r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+      meta::{HashFieldStateKind, HashMeta, decode_field_state},
     },
     key::get_meta_checked,
   },

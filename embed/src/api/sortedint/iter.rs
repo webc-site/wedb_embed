@@ -1,7 +1,4 @@
-use super::{
-  compose_si_meta_key, compose_si_prefix_stack, extract_id,
-  meta::SortedintMeta,
-};
+use super::{compose_si_meta_key, compose_si_prefix_stack, extract_id, meta::SortedintMeta};
 use crate::{
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},

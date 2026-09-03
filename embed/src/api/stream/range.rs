@@ -3,12 +3,13 @@ use std::ops::Bound;
 use crate::{
   api::stream::{
     StreamEntry,
-    decode_stream_entry_fields, key,
+    r#const::{ERR_INVALID_END_ID_INTERVAL, ERR_INVALID_START_ID_INTERVAL},
+    decode_stream_entry_fields,
+    r#impl::get_stream_meta,
+    key,
     meta::StreamId,
     opt::StreamRange,
     parse_stream_id_from_subkey,
-    r#const::{ERR_INVALID_END_ID_INTERVAL, ERR_INVALID_START_ID_INTERVAL},
-    r#impl::get_stream_meta,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},

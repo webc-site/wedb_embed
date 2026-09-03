@@ -3,8 +3,8 @@ use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 use crate::{
   api::zset::{
     compose_zset_key, compose_zset_prefix,
-    meta::decode_sortable_f64_slice,
     r#impl::{compose_zset_meta_key, get_zset_meta},
+    meta::decode_sortable_f64_slice,
   },
   engine::{Engine, Partition},
   error::{Error, Result},
@@ -31,7 +31,12 @@ where
     }
 
     let m_key = compose_zset_key(&kc, k_bytes, member.as_ref());
-    Ok(self.data().get(m_key.as_slice())?.and_then(|sb| decode_sortable_f64_slice(&sb)))
+    Ok(
+      self
+        .data()
+        .get(m_key.as_slice())?
+        .and_then(|sb| decode_sortable_f64_slice(&sb)),
+    )
   }
 
   /// ZMSCORE key member [member ...] (multi-score lookup with single metadata check).
@@ -63,7 +68,9 @@ where
 
     for m in members {
       let m_key = composer.compose_sub(m.as_ref());
-      let score = data_ks.get(m_key)?.and_then(|sb| decode_sortable_f64_slice(&sb));
+      let score = data_ks
+        .get(m_key)?
+        .and_then(|sb| decode_sortable_f64_slice(&sb));
       scores.push(score);
     }
     Ok(scores)

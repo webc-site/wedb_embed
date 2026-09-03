@@ -306,16 +306,20 @@ where
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
 
-    if fields.len() == 1 {
-      let f_bytes = fields[0].as_ref();
+    let mut seen = HashSet::with_capacity(fields.len());
+    for f in fields {
+      let f_bytes = f.as_ref();
+      if !seen.insert(f_bytes) {
+        continue;
+      }
       let item_k = composer.key_for_field(f_bytes);
       if let Some(raw) = data_ks.get(item_k)?
         && let Some((exp, _)) = meta.decode_subkey_value(&raw)
       {
         batch.rm_weak_data(item_k);
-        physical_removed = 1;
+        physical_removed += 1;
         if !is_field_expired(exp, now_ms) {
-          deleted = 1;
+          deleted += 1;
           if exp == 0 {
             meta.apply_persistent_to_deleted();
           } else {
@@ -323,31 +327,6 @@ where
           }
         } else {
           meta.apply_ttl_to_deleted();
-        }
-      }
-    } else {
-      let mut seen = HashSet::with_capacity(fields.len());
-      for f in fields {
-        let f_bytes = f.as_ref();
-        if !seen.insert(f_bytes) {
-          continue;
-        }
-        let item_k = composer.key_for_field(f_bytes);
-        if let Some(raw) = data_ks.get(item_k)?
-          && let Some((exp, _)) = meta.decode_subkey_value(&raw)
-        {
-          batch.rm_weak_data(item_k);
-          physical_removed += 1;
-          if !is_field_expired(exp, now_ms) {
-            deleted += 1;
-            if exp == 0 {
-              meta.apply_persistent_to_deleted();
-            } else {
-              meta.apply_ttl_to_deleted();
-            }
-          } else {
-            meta.apply_ttl_to_deleted();
-          }
         }
       }
     }
@@ -364,4 +343,3 @@ where
     Ok(deleted)
   }
 }
-

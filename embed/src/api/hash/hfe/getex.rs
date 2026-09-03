@@ -4,9 +4,7 @@ use crate::{
   api::hash::{
     CachedFieldState,
     hfe::{get_hfe_meta, load_field_state},
-    meta::{
-      HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire,
-    },
+    meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire},
     opt::{HGetEx, HashGetEx, TTLAction},
   },
   engine::Engine,

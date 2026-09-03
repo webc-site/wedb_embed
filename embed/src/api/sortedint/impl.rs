@@ -2,11 +2,8 @@ use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
   api::sortedint::{
-    compose_si_key, compose_si_meta_key, compose_si_prefix_stack,
-    r#const::BE_LEN,
-    extract_id,
-    meta::SortedintMeta,
-    opt::encode_be_u64,
+    compose_si_key, compose_si_meta_key, compose_si_prefix_stack, r#const::BE_LEN, extract_id,
+    meta::SortedintMeta, opt::encode_be_u64,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},

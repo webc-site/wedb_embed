@@ -11,13 +11,10 @@ use crate::{
   },
   engine::{Engine, Partition},
   error::{Error, Result},
-  key::{
-    check_key_not_other_type, clear_prefix_in_batch, get_meta_checked, prefix_upper_bound,
-  },
+  key::{check_key_not_other_type, clear_prefix_in_batch, get_meta_checked, prefix_upper_bound},
   key_composer::{KeyComposer, KeyTag, SmallKey},
   meta::{
-    current_now_ms, encode_sortable_f64, generate_version,
-    normalize_range as meta_normalize_range,
+    current_now_ms, encode_sortable_f64, generate_version, normalize_range as meta_normalize_range,
   },
   wedb::{Db, DbBatch},
 };
@@ -626,4 +623,3 @@ where
     Ok(count as usize)
   }
 }
-

@@ -10,9 +10,6 @@ pub mod range;
 pub mod trim;
 use std::str;
 
-pub use range::{stream_range, stream_range_with_options, stream_revrange};
-pub use trim::{stream_del, stream_setid, stream_trim};
-
 pub use r#const::*;
 pub use group::check_lag_valid;
 pub use key::{
@@ -36,6 +33,8 @@ pub use opt::{
 pub use pel::{
   stream_ack, stream_autoclaim, stream_claim, stream_pending_range, stream_pending_summary,
 };
+pub use range::{stream_range, stream_range_with_options, stream_revrange};
+pub use trim::{stream_del, stream_setid, stream_trim};
 /// Stream message entry type containing StreamId and field-value pairs.
 /// 流消息项 (StreamId, Fields)
 pub type StreamEntry = (StreamId, Vec<(String, String)>);

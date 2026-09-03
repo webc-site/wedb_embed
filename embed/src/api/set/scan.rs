@@ -129,37 +129,24 @@ where
     let mut matched = Vec::with_capacity(limit);
     let mut next_cursor = None;
 
-    if let Some(cursor_bytes) = cursor {
-      let start_k = compose_set_key(&kc, k_bytes, cursor_bytes);
-      for guard in data_ks.range((Bound::Excluded(start_k.as_slice()), Bound::Unbounded)) {
-        let entry = guard?;
-        let k = entry.key();
-        if !k.starts_with(prefix_bytes) {
-          break;
-        }
-        let member = &k[prefix_len..];
-        if is_match_all || matches_glob_bytes(pat_bytes, member) {
-          matched.push(member.to_vec());
-          if matched.len() >= limit {
-            next_cursor = Some(member.to_vec());
-            break;
-          }
-        }
+    let start_bound = cursor
+      .map(|c| compose_set_key(&kc, k_bytes, c))
+      .map(|k| Bound::Excluded(k.to_vec()))
+      .unwrap_or(Bound::Included(prefix_bytes.to_vec()));
+    let start_ref = Bound::as_ref(&start_bound).map(|v| v.as_slice());
+
+    for guard in data_ks.range((start_ref, Bound::Unbounded)) {
+      let entry = guard?;
+      let k = entry.key();
+      if !k.starts_with(prefix_bytes) {
+        break;
       }
-    } else {
-      for guard in data_ks.prefix(prefix_bytes) {
-        let entry = guard?;
-        let k = entry.key();
-        if !k.starts_with(prefix_bytes) {
+      let member = &k[prefix_len..];
+      if is_match_all || matches_glob_bytes(pat_bytes, member) {
+        matched.push(member.to_vec());
+        if matched.len() >= limit {
+          next_cursor = Some(member.to_vec());
           break;
-        }
-        let member = &k[prefix_len..];
-        if is_match_all || matches_glob_bytes(pat_bytes, member) {
-          matched.push(member.to_vec());
-          if matched.len() >= limit {
-            next_cursor = Some(member.to_vec());
-            break;
-          }
         }
       }
     }

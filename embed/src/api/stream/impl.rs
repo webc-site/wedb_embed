@@ -1,10 +1,10 @@
 use crate::{
   api::stream::{
+    r#const::*,
     encode_stream_entry_pairs, key,
     meta::{StreamId, StreamMeta},
     opt::{StreamAdd, StreamLen, StreamTrimStrategy},
     parse_stream_id_from_subkey,
-    r#const::*,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -253,4 +253,3 @@ where
     stream_len(self, key)
   }
 }
-

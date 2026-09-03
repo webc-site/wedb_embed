@@ -1,10 +1,10 @@
 use crate::{
   api::timeseries::{
+    r#const::*,
     filter::TimeSeriesLabelFilter,
     key,
-    meta::TimeSeriesMeta,
+    meta::{DuplicatePolicy, TimeSeriesMeta},
     opt::{AggregationType, Aggregator, TSDownStreamMeta},
-    r#const::*,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -21,23 +21,13 @@ where
   #[inline]
   pub fn ts_queryindex(&self, filters: &[String]) -> Result<Vec<String>> {
     let filter = TimeSeriesLabelFilter::parse(filters);
-    let prefix = key::meta_prefix_stack(&self.kc());
-    let meta_ks = self.meta();
     let now_ms = current_now_ms();
 
     let mut keys = Vec::new();
-    for g in meta_ks.prefix(&prefix) {
-      let entry = g?;
-      let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(prefix.as_slice())
-        && TimeSeriesMeta::matches_labels_raw(v, &filter)
-        && let Some(meta) = TimeSeriesMeta::decode(v)
-        && !meta.is_expired(now_ms)
-      {
-        let name = String::from_utf8_lossy(&k[prefix.len()..]).into_owned();
-        keys.push(name);
-      }
-    }
+    super::mrange::iter_matching_series(self, &filter, now_ms, |name_bytes, _| {
+      keys.push(String::from_utf8_lossy(name_bytes).into_owned());
+      Ok(())
+    })?;
     keys.sort_unstable();
     Ok(keys)
   }
@@ -143,4 +133,86 @@ where
     batch.commit()?;
     Ok(())
   }
+}
+
+pub(crate) fn trigger_downstream_upsert<E: Engine>(
+  db: &Db<E>,
+  src_key: &[u8],
+  ts: u64,
+  val: f64,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  let kc = db.kc();
+  let meta_ks = db.meta();
+  let ds_prefix_k = key::downstream_prefix_stack(&kc, src_key);
+
+  for g in meta_ks.prefix(&ds_prefix_k) {
+    let entry = g?;
+    let (k, v) = (entry.key(), entry.value());
+    if let Some(dst_key) = k.strip_prefix(ds_prefix_k.as_slice())
+      && let Some(mut ds_meta) = TSDownStreamMeta::decode(v)
+    {
+      let bkt_left = ds_meta.aggregator.calculate_aligned_bucket_left(ts);
+      let agg = &ds_meta.aggregator;
+
+      if agg.agg_type.is_incremental() {
+        let (inc_val, inc_policy) = match agg.agg_type {
+          AggregationType::Sum => (val, DuplicatePolicy::Sum),
+          AggregationType::Count => (1.0, DuplicatePolicy::Sum),
+          AggregationType::Min => (val, DuplicatePolicy::Min),
+          AggregationType::Max => (val, DuplicatePolicy::Max),
+          _ => (val, DuplicatePolicy::Last),
+        };
+        let _ = db.ts_add(dst_key, bkt_left, inc_val, Some(inc_policy), None);
+      } else {
+        let bkt_right = ds_meta.aggregator.calculate_aligned_bucket_right(bkt_left);
+        let end_bound = if bkt_right > 0 { bkt_right - 1 } else { 0 };
+        let bucket_samples = db.ts_range_raw(src_key, bkt_left, end_bound)?;
+        if !bucket_samples.is_empty() {
+          let agg_val = agg.aggregate_samples(&bucket_samples);
+          let _ = db.ts_add(
+            dst_key,
+            bkt_left,
+            agg_val,
+            Some(DuplicatePolicy::Last),
+            None,
+          );
+        }
+      }
+
+      ds_meta.latest_bucket_idx = ds_meta.latest_bucket_idx.max(bkt_left);
+      meta_ks.insert(k, &ds_meta.encode())?;
+    }
+  }
+  Ok(())
+}
+
+pub(crate) fn cascade_downstream_del<E: Engine>(
+  db: &Db<E>,
+  src_key: &[u8],
+  from_ts: u64,
+  to_ts: u64,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  let kc = db.kc();
+  let meta_ks = db.meta();
+  let ds_prefix_k = key::downstream_prefix_stack(&kc, src_key);
+
+  for g in meta_ks.prefix(&ds_prefix_k) {
+    let entry = g?;
+    let (k, v) = (entry.key(), entry.value());
+    if let Some(dst_key) = k.strip_prefix(ds_prefix_k.as_slice())
+      && let Some(ds_meta) = TSDownStreamMeta::decode(v)
+    {
+      let bkt_left = ds_meta.aggregator.calculate_aligned_bucket_left(from_ts);
+      let bkt_right = ds_meta.aggregator.calculate_aligned_bucket_right(to_ts);
+      let end_bound = if bkt_right > 0 { bkt_right - 1 } else { 0 };
+      let _ = db.ts_del(dst_key, (bkt_left, end_bound));
+    }
+  }
+  Ok(())
 }

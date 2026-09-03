@@ -3,13 +3,11 @@ use rapidhash::{HashMapExt, HashSetExt, RapidHashMap as HashMap, RapidHashSet as
 use crate::{
   api::hash::{
     CachedFieldState,
+    r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
     hfe::load_field_state,
-    meta::{
-      HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire,
-    },
+    meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire},
     opt::{HSet, HashFieldSetCondition, HashSetEx, TTLAction},
     prepare_hash_meta_for_write,
-    r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
   },
   engine::Engine,
   error::{Error, Result},

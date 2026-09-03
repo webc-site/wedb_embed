@@ -8,7 +8,6 @@ use crate::{
       r#const::*,
       decode_stream_entry_fields,
       r#impl::{clean_stream_residue, get_stream_meta},
-      range::stream_range_with_options,
       key,
       meta::{
         StreamConsumerGroupMeta, StreamConsumerMeta, StreamId, StreamMeta, StreamPelEntry,
@@ -16,6 +15,7 @@ use crate::{
       },
       opt::StreamRange,
       parse_stream_id_from_subkey,
+      range::stream_range_with_options,
     },
   },
   engine::{Engine, KvEntry, Partition},

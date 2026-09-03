@@ -2,8 +2,7 @@ use std::ops::Bound;
 
 use super::{
   compose_si_item_key, compose_si_meta_key, compose_si_prefix_stack, extract_id,
-  meta::SortedintMeta,
-  opt::IntoSortedintRange,
+  meta::SortedintMeta, opt::IntoSortedintRange,
 };
 use crate::{
   engine::{Engine, KvEntry, Partition},

@@ -3,14 +3,13 @@ use sonic_rs::{JsonValueMutTrait, JsonValueTrait, Value};
 
 use crate::{
   api::json::{
+    r#const::{
+      ERR_CORRUPTED_JSON, ERR_INVALID_JSON, ERR_NEW_OBJECTS_MUST_BE_CREATED_AT_ROOT, JSON_ROOT_PATH,
+    },
     key,
     meta::{JsonMeta, JsonStorageFormat},
     opt::{JsonGet, JsonSet},
     path::{delete_path_values, format_json, get_path_values, json_set_path},
-    r#const::{
-      ERR_CORRUPTED_JSON, ERR_INVALID_JSON, ERR_NEW_OBJECTS_MUST_BE_CREATED_AT_ROOT,
-      JSON_ROOT_PATH,
-    },
   },
   engine::{Engine, Partition},
   error::{Error, Result},

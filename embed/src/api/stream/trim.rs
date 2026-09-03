@@ -2,15 +2,15 @@ use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
   api::stream::{
+    r#const::{
+      ERR_EMPTY_STREAM_ENTRIES_ADDED, ERR_EMPTY_STREAM_MAX_DELETED,
+      ERR_SET_ID_ENTRIES_ADDED_SMALLER, ERR_SET_ID_MAX_DEL_GREATER, ERR_SET_ID_SMALLER_THAN_TOP,
+    },
+    r#impl::get_stream_meta,
     key,
     meta::{StreamId, StreamMeta},
     opt::{StreamTrim, StreamTrimStrategy},
     parse_stream_id_from_subkey,
-    r#const::{
-      ERR_EMPTY_STREAM_ENTRIES_ADDED, ERR_EMPTY_STREAM_MAX_DELETED, ERR_SET_ID_ENTRIES_ADDED_SMALLER,
-      ERR_SET_ID_MAX_DEL_GREATER, ERR_SET_ID_SMALLER_THAN_TOP,
-    },
-    r#impl::get_stream_meta,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -324,12 +324,6 @@ where
     entries_added: Option<u64>,
     max_deleted_id: Option<StreamId>,
   ) -> Result<()> {
-    stream_setid(
-      self,
-      key,
-      last_generated_id,
-      entries_added,
-      max_deleted_id,
-    )
+    stream_setid(self, key, last_generated_id, entries_added, max_deleted_id)
   }
 }

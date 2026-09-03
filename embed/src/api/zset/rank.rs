@@ -1,7 +1,7 @@
 use crate::{
   api::zset::{
-    opt::{IntoRangeLex, IntoRangeScore},
     r#impl::{compose_zset_meta_key, get_zset_meta},
+    opt::{IntoRangeLex, IntoRangeScore},
   },
   engine::Engine,
   error::{Error, Result},

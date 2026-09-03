@@ -12,7 +12,6 @@ pub fn decode_sortable_f64_slice(bytes: &[u8]) -> Option<f64> {
   }
 }
 
-
 impl_simple_meta!(
   /// 有序集合结构元数据（对标 Apache Kvrocks ZSetMetadata 26字节 / 紧凑25字节）
   ZSetMeta,

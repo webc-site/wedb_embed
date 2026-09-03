@@ -1,9 +1,9 @@
 use crate::{
   api::string::{
+    r#const::{ERR_INCREMENT_NAN_OR_INFINITY, ERR_INCREMENT_OVERFLOW},
     format_float_bytes, get_string_raw, key,
     meta::with_encoded_string_value,
     parse_redis_float, parse_redis_integer,
-    r#const::{ERR_INCREMENT_NAN_OR_INFINITY, ERR_INCREMENT_OVERFLOW},
   },
   engine::{Engine, Partition},
   error::{Error, Result},

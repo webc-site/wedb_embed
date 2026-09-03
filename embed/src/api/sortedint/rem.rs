@@ -1,8 +1,7 @@
 use std::ops::Bound;
 
 use super::{
-  compose_si_item_key, compose_si_meta_key, compose_si_prefix_stack,
-  meta::SortedintMeta,
+  compose_si_item_key, compose_si_meta_key, compose_si_prefix_stack, meta::SortedintMeta,
   opt::IntoSortedintRange,
 };
 use crate::{

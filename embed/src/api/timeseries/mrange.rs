@@ -14,6 +14,79 @@ use crate::{
 
 type GroupedSeriesEntry = (Vec<Vec<(u64, f64)>>, Vec<String>);
 
+#[inline]
+pub(crate) fn project_labels(
+  labels: &[(String, String)],
+  selected_labels: &[String],
+  with_labels: bool,
+  group_by_label: Option<&String>,
+) -> Vec<(String, String)> {
+  if with_labels {
+    return labels.to_vec();
+  }
+  if let Some(gl) = group_by_label {
+    let mut res_labels = Vec::new();
+    if let Some((_, v)) = labels.iter().find(|(lk, _)| lk == gl) {
+      res_labels.push((gl.clone(), v.clone()));
+    }
+    for sel_k in selected_labels {
+      if sel_k != gl {
+        let val = labels
+          .iter()
+          .find(|(lk, _)| lk == sel_k)
+          .map(|(_, lv)| lv.as_str())
+          .unwrap_or("");
+        res_labels.push((sel_k.clone(), val.to_string()));
+      }
+    }
+    res_labels
+  } else if !selected_labels.is_empty() {
+    selected_labels
+      .iter()
+      .map(|sel_k| {
+        let val = labels
+          .iter()
+          .find(|(k, _)| k == sel_k)
+          .map(|(_, v)| v.as_str())
+          .unwrap_or("");
+        (sel_k.clone(), val.to_string())
+      })
+      .collect()
+  } else {
+    Vec::new()
+  }
+}
+
+#[inline]
+pub(crate) fn iter_matching_series<E: Engine, F>(
+  db: &Db<E>,
+  filter: &TimeSeriesLabelFilter,
+  now_ms: u64,
+  mut f: F,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+  F: FnMut(&[u8], TimeSeriesMeta) -> Result<()>,
+{
+  let kc = db.kc();
+  let prefix = key::meta_prefix_stack(&kc);
+  let meta_ks = db.meta();
+
+  for g in meta_ks.prefix(&prefix) {
+    let entry = g?;
+    let (k, v) = (entry.key(), entry.value());
+    if k.starts_with(prefix.as_slice())
+      && TimeSeriesMeta::matches_labels_raw(v, filter)
+      && let Some(meta) = TimeSeriesMeta::decode(v)
+      && !meta.is_expired(now_ms)
+    {
+      let name_bytes = &k[prefix.len()..];
+      f(name_bytes, meta)?;
+    }
+  }
+  Ok(())
+}
+
 /// Cross-series multi-key range query and filtering engine.
 /// 跨序列多键范围检索与聚合引擎 (TS.MGET, TS.MRANGE, TS.MREVRANGE)
 impl<E: Engine> Db<E>
@@ -35,66 +108,39 @@ where
     }
 
     let kc = self.kc();
-    let meta_ks = self.meta();
     let data_ks = self.data();
     let now_ms = current_now_ms();
     let filter = TimeSeriesLabelFilter::parse(&filters);
-    let prefix = key::meta_prefix_stack(&kc);
 
     let mut results = Vec::new();
-    for g in meta_ks.prefix(&prefix) {
-      let entry = g?;
-      let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(prefix.as_slice())
-        && TimeSeriesMeta::matches_labels_raw(v, &filter)
-        && let Some(meta) = TimeSeriesMeta::decode(v)
-        && !meta.is_expired(now_ms)
-      {
-        let name_bytes = &k[prefix.len()..];
-        let name = String::from_utf8_lossy(name_bytes).into_owned();
+    iter_matching_series(self, &filter, now_ms, |name_bytes, meta| {
+      let name = String::from_utf8_lossy(name_bytes).into_owned();
 
-        let latest_sample = if meta.total_samples > 0 {
-          let data_prefix = key::prefix_stack(&kc, name_bytes);
-          if let Some(chunk_entry) = data_ks.prefix(&data_prefix).next_back() {
-            let chunk = chunk_entry?;
-            if chunk.key().starts_with(data_prefix.as_slice()) {
-              TSChunk::get_latest_sample(chunk.value()).ok().flatten()
-            } else {
-              None
-            }
+      let latest_sample = if meta.total_samples > 0 {
+        let data_prefix = key::prefix_stack(&kc, name_bytes);
+        if let Some(chunk_entry) = data_ks.prefix(&data_prefix).next_back() {
+          let chunk = chunk_entry?;
+          if chunk.key().starts_with(data_prefix.as_slice()) {
+            TSChunk::get_latest_sample(chunk.value()).ok().flatten()
           } else {
             None
           }
         } else {
           None
-        };
+        }
+      } else {
+        None
+      };
 
-        let labels = if with_labels {
-          meta.labels
-        } else if !selected_labels.is_empty() {
-          selected_labels
-            .iter()
-            .map(|sel_k| {
-              let val = meta
-                .labels
-                .iter()
-                .find(|(k, _)| k == sel_k)
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("");
-              (sel_k.clone(), val.to_string())
-            })
-            .collect()
-        } else {
-          Vec::new()
-        };
+      let labels = project_labels(&meta.labels, &selected_labels, with_labels, None);
 
-        results.push(TsMGetResult {
-          name,
-          labels,
-          sample: latest_sample,
-        });
-      }
-    }
+      results.push(TsMGetResult {
+        name,
+        labels,
+        sample: latest_sample,
+      });
+      Ok(())
+    })?;
 
     results.sort_unstable_by(|a, b| a.name.cmp(&b.name));
     Ok(results)
@@ -144,11 +190,8 @@ where
       }
     }
 
-    let kc = self.kc();
-    let meta_ks = self.meta();
     let now_ms = current_now_ms();
     let filter = TimeSeriesLabelFilter::parse(&filters);
-    let prefix = key::meta_prefix_stack(&kc);
 
     let query = TsRangeQuery {
       start_ts,
@@ -165,57 +208,20 @@ where
 
     let mut series_results = Vec::new();
 
-    for g in meta_ks.prefix(&prefix) {
-      let entry = g?;
-      let (k, v) = (entry.key(), entry.value());
-      if k.starts_with(prefix.as_slice())
-        && TimeSeriesMeta::matches_labels_raw(v, &filter)
-        && let Some(meta) = TimeSeriesMeta::decode(v)
-        && !meta.is_expired(now_ms)
-      {
-        let name_bytes = &k[prefix.len()..];
-        let name = String::from_utf8_lossy(name_bytes).into_owned();
+    iter_matching_series(self, &filter, now_ms, |name_bytes, meta| {
+      let name = String::from_utf8_lossy(name_bytes).into_owned();
 
-        let labels = if with_labels {
-          meta.labels.clone()
-        } else if let Some(ref gl) = group_by_label {
-          let mut res_labels = Vec::new();
-          if let Some((_, v)) = meta.labels.iter().find(|(lk, _)| lk == gl) {
-            res_labels.push((gl.clone(), v.clone()));
-          }
-          for sel_k in &selected_labels {
-            if sel_k != gl {
-              let val = meta
-                .labels
-                .iter()
-                .find(|(lk, _)| lk == sel_k)
-                .map(|(_, lv)| lv.as_str())
-                .unwrap_or("");
-              res_labels.push((sel_k.clone(), val.to_string()));
-            }
-          }
-          res_labels
-        } else if !selected_labels.is_empty() {
-          selected_labels
-            .iter()
-            .map(|sel_k| {
-              let val = meta
-                .labels
-                .iter()
-                .find(|(k, _)| k == sel_k)
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("");
-              (sel_k.clone(), val.to_string())
-            })
-            .collect()
-        } else {
-          Vec::new()
-        };
+      let labels = project_labels(
+        &meta.labels,
+        &selected_labels,
+        with_labels,
+        group_by_label.as_ref(),
+      );
 
-        let samples = self.ts_range_internal_with_meta(name_bytes, Some(&meta), &query)?;
-        series_results.push((name, labels, samples));
-      }
-    }
+      let samples = self.ts_range_internal_with_meta(name_bytes, Some(&meta), &query)?;
+      series_results.push((name, labels, samples));
+      Ok(())
+    })?;
 
     if let Some(ref group_label) = group_by_label
       && reducer != GroupReducerType::None

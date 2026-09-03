@@ -62,27 +62,18 @@ where
 
     let mut added = 0usize;
 
-    if members.len() == 1 {
-      let m_bytes = members[0].as_ref();
-      let item_k = compose_set_key(&kc, k_bytes, m_bytes);
-      if is_new || !data_ks.contains_key(item_k.as_slice())? {
-        batch.insert_data(item_k.as_slice(), b"");
-        added = 1;
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+    let mut seen = HashSet::with_capacity(members.len());
+    for m in members {
+      let m_bytes = m.as_ref();
+      if !seen.insert(m_bytes) {
+        continue;
       }
-    } else {
-      let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
-      let mut seen = HashSet::with_capacity(members.len());
-      for m in members {
-        let m_bytes = m.as_ref();
-        if !seen.insert(m_bytes) {
-          continue;
-        }
 
-        let item_k = composer.key_for_member(m_bytes);
-        if is_new || !data_ks.contains_key(item_k)? {
-          batch.insert_data(item_k, b"");
-          added += 1;
-        }
+      let item_k = composer.key_for_member(m_bytes);
+      if is_new || !data_ks.contains_key(item_k)? {
+        batch.insert_data(item_k, b"");
+        added += 1;
       }
     }
 
@@ -119,27 +110,18 @@ where
     let mut batch = self.batch_with_capacity(members.len() + 1);
     let data_ks = self.data();
 
-    if members.len() == 1 {
-      let m_bytes = members[0].as_ref();
-      let item_k = compose_set_key(&kc, k_bytes, m_bytes);
-      if data_ks.contains_key(item_k.as_slice())? {
-        batch.rm_weak_data(item_k.as_slice());
-        removed = 1;
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+    let mut seen = HashSet::with_capacity(members.len());
+    for m in members {
+      let m_bytes = m.as_ref();
+      if !seen.insert(m_bytes) {
+        continue;
       }
-    } else {
-      let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
-      let mut seen = HashSet::with_capacity(members.len());
-      for m in members {
-        let m_bytes = m.as_ref();
-        if !seen.insert(m_bytes) {
-          continue;
-        }
 
-        let item_k = composer.key_for_member(m_bytes);
-        if data_ks.contains_key(item_k)? {
-          batch.rm_weak_data(item_k);
-          removed += 1;
-        }
+      let item_k = composer.key_for_member(m_bytes);
+      if data_ks.contains_key(item_k)? {
+        batch.rm_weak_data(item_k);
+        removed += 1;
       }
     }
 
