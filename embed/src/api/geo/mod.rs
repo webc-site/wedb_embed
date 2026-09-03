@@ -2,6 +2,7 @@ pub mod codec;
 pub mod r#const;
 pub mod r#impl;
 pub mod opt;
+pub mod search;
 
 pub use codec::{
   GEO_LAT_MAX, GEO_LAT_MIN, GEO_LON_MAX, GEO_LON_MIN, GEO_STEP_MAX, align_52bits, base32_to_coords,
