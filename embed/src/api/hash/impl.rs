@@ -15,7 +15,7 @@ use crate::{
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
-  key::{clear_prefix_in_batch, get_meta_checked},
+  key::{clear_prefix_in_batch, get_meta_checked, prefix_upper_bound},
   key_composer::{KeyComposer, matches_glob_bytes},
   meta::current_now_ms,
   string::format_float_bytes,
@@ -104,18 +104,6 @@ where
   batch.commit()?;
   *meta = repaired;
   Ok(repaired.base.size as usize)
-}
-
-#[inline]
-fn prefix_upper_bound(prefix: &[u8]) -> Bound<Vec<u8>> {
-  let mut bound = prefix.to_vec();
-  while let Some(last) = bound.pop() {
-    if last < 0xFF {
-      bound.push(last + 1);
-      return Bound::Excluded(bound);
-    }
-  }
-  Bound::Unbounded
 }
 
 #[inline]

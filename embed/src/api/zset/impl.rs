@@ -11,7 +11,7 @@ use crate::{
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
-  key::{check_key_not_other_type, clear_prefix_in_batch, get_meta_checked},
+  key::{check_key_not_other_type, clear_prefix_in_batch, get_meta_checked, prefix_upper_bound},
   key_composer::{KeyComposer, KeyTag, SmallKey, SubkeyComposer, matches_glob_bytes},
   meta::{
     current_now_ms, decode_sortable_f64, encode_sortable_f64, generate_version,
@@ -66,20 +66,6 @@ pub(crate) fn normalize_range(card: usize, start: i64, stop: i64) -> Option<(usi
   } else {
     Some((s as usize, e as usize))
   }
-}
-
-/// Calculates exclusive prefix upper bound safely without overflow or panic.
-/// 安全计算前缀排他上界（单次反向迭代，彻底杜绝 0xFF 溢出与 panic 隐患，支持任意二进制键）
-#[inline]
-pub(crate) fn prefix_upper_bound(prefix: &[u8]) -> Bound<Vec<u8>> {
-  let mut bound = prefix.to_vec();
-  while let Some(last) = bound.pop() {
-    if last < 0xFF {
-      bound.push(last + 1);
-      return Bound::Excluded(bound);
-    }
-  }
-  Bound::Unbounded
 }
 
 /// Constructs start and end bounds from RangeScore using 8-byte big-endian encoding.

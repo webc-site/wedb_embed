@@ -73,20 +73,20 @@ fn as_u8_slice(data: &[f64]) -> &[u8] {
 /// 通过 `compress_into` 和 `decompress_into` 复用预分配内存切片，
 /// 实现零冗余堆内存分配的纯算法性能测量。
 fn bench_fastalp(data: &[f64]) -> CodecResult {
-  let iters = 500;
+  let iters = 10_000;
   let mut compressed = Vec::with_capacity(data.len() * 2 + 64);
   let mut restored: Vec<f64> = Vec::with_capacity(data.len());
   let mut encoder = fastalp::Encoder::new();
 
-  // 预热缓存并完成参数探测 (与 C++ ALP init 对齐)
-  for _ in 0..20 {
+  // 充分预热缓存并让 CPU 频率饱和（与 C++ ALP 架构完全对齐）
+  for _ in 0..100 {
     compressed.clear();
     encoder.compress_into(data, &mut compressed);
     restored.clear();
     decompress_into(&compressed, &mut restored).unwrap();
   }
 
-  // 测量编码吞吐 (与 C++ ALP 对齐：复用状态参数进行纯高速向量打包)
+  // 测量编码吞吐 (10,000 循环平滑消除抖动，测试纯高速向量流水线)
   let t0 = Instant::now();
   for _ in 0..iters {
     compressed.clear();
@@ -95,7 +95,7 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
-  // 测量解码吞吐 (零冗余堆分配)
+  // 测量解码吞吐 (10,000 循环平滑消除抖动)
   let t1 = Instant::now();
   for _ in 0..iters {
     restored.clear();

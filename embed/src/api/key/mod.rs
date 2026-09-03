@@ -5,6 +5,8 @@ pub mod scan;
 pub mod sort;
 pub mod stats;
 
+use std::ops::Bound;
+
 pub use copy::copy_impl;
 pub use r#impl::{
   del_impl, exists_impl, get_key_expire_at_impl, key_type_impl, set_key_expire_at_impl,
@@ -45,6 +47,20 @@ where
     batch.rm(partition, k);
   }
   Ok(())
+}
+
+/// Calculates exclusive prefix upper bound safely without overflow or panic.
+/// 安全计算前缀排他上界（单次反向迭代，彻底杜绝 0xFF 溢出与 panic 隐患，支持任意二进制键）
+#[inline]
+pub fn prefix_upper_bound(prefix: &[u8]) -> Bound<Vec<u8>> {
+  let mut bound = prefix.to_vec();
+  while let Some(last) = bound.pop() {
+    if last < 0xFF {
+      bound.push(last + 1);
+      return Bound::Excluded(bound);
+    }
+  }
+  Bound::Unbounded
 }
 
 /// Cleans up composite subkey data using single reusable buffer.
