@@ -20,7 +20,27 @@ where
   Error: From<E::Error>,
 {
   #[inline]
-  pub fn siter<K: AsRef<[u8]>, F>(&self, key: K, mut f: F) -> Result<()>
+  pub(crate) fn siter_prefix<F>(&self, prefix_bytes: &[u8], mut f: F) -> Result<()>
+  where
+    F: FnMut(&[u8]) -> bool,
+  {
+    let prefix_len = prefix_bytes.len();
+    for guard in self.data().prefix(prefix_bytes) {
+      let entry = guard?;
+      let k = entry.key();
+      if !k.starts_with(prefix_bytes) {
+        break;
+      }
+      let member = &k[prefix_len..];
+      if !f(member) {
+        break;
+      }
+    }
+    Ok(())
+  }
+
+  #[inline]
+  pub fn siter<K: AsRef<[u8]>, F>(&self, key: K, f: F) -> Result<()>
   where
     F: FnMut(&[u8]) -> bool,
   {
@@ -36,22 +56,7 @@ where
     let _ = meta;
 
     let prefix = compose_set_prefix_stack(&kc, k_bytes);
-    let prefix_bytes = prefix.as_slice();
-    let prefix_len = prefix_bytes.len();
-
-    for guard in self.data().prefix(prefix_bytes) {
-      let entry = guard?;
-      let k = entry.key();
-      if !k.starts_with(prefix_bytes) {
-        break;
-      }
-      let member = &k[prefix_len..];
-      if !f(member) {
-        break;
-      }
-    }
-
-    Ok(())
+    self.siter_prefix(prefix.as_slice(), f)
   }
 
   #[inline]

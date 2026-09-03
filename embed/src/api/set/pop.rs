@@ -243,6 +243,50 @@ where
   }
 
   #[inline]
+  pub fn overwrite_set_iter<K: AsRef<[u8]>, M: AsRef<[u8]>>(
+    &self,
+    key: K,
+    members: impl IntoIterator<Item = M>,
+  ) -> Result<usize> {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, key_bytes);
+    let prefix = compose_set_prefix_stack(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    check_key_not_other_type(self, key_bytes, KeyTag::SetMeta.as_slice(), now_ms)?;
+
+    let data_ks = self.data();
+
+    let mut batch = self.batch();
+    clear_prefix_in_batch(data_ks, &prefix, &mut batch)?;
+    batch.rm_meta(&meta_k);
+
+    let mut seen = HashSet::default();
+    let mut count = 0u64;
+    let mut composer = SetItemKeyComposer::new(&kc, key_bytes);
+
+    for m in members {
+      let m_bytes = m.as_ref();
+      if !seen.insert(m_bytes.to_vec()) {
+        continue;
+      }
+      let item_k = composer.key_for_member(m_bytes);
+      batch.insert_data(item_k, b"");
+      count += 1;
+    }
+
+    if count > 0 {
+      let mut meta = SetMeta::new_with_version(0, 0);
+      meta.base.size = count;
+      batch.insert_meta(&meta_k, &meta.encode());
+    }
+
+    batch.commit()?;
+    Ok(count as usize)
+  }
+
+  #[inline]
   pub fn overwrite_set<K: AsRef<[u8]>, M: AsRef<[u8]>>(
     &self,
     key: K,

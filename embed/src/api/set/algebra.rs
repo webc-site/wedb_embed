@@ -78,8 +78,10 @@ where
 
   #[inline]
   pub fn sinterstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
-    let inter_res = self.sinter(keys)?;
-    self.overwrite_set(dst, &inter_res)
+    match self.compute_sinter_set(keys)? {
+      Some(set) => self.overwrite_set_iter(dst, set),
+      None => self.overwrite_set(dst, &[b""; 0]),
+    }
   }
 
   #[inline]
@@ -102,14 +104,10 @@ where
   }
 
   #[inline]
-  pub fn sunion<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+  fn compute_sunion_set<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<HashSet<Vec<u8>>> {
     if keys.is_empty() {
-      return Ok(Vec::new());
+      return Ok(HashSet::default());
     }
-    if keys.len() == 1 {
-      return self.smembers(&keys[0]);
-    }
-
     let first_card = self.scard(&keys[0])? as usize;
     let mut union_set = HashSet::with_capacity(first_card);
 
@@ -121,14 +119,24 @@ where
         true
       })?;
     }
+    Ok(union_set)
+  }
 
-    Ok(union_set.into_iter().collect())
+  #[inline]
+  pub fn sunion<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<Vec<u8>>> {
+    if keys.is_empty() {
+      return Ok(Vec::new());
+    }
+    if keys.len() == 1 {
+      return self.smembers(&keys[0]);
+    }
+    Ok(self.compute_sunion_set(keys)?.into_iter().collect())
   }
 
   #[inline]
   pub fn sunionstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
-    let union_res = self.sunion(keys)?;
-    self.overwrite_set(dst, &union_res)
+    let union_set = self.compute_sunion_set(keys)?;
+    self.overwrite_set_iter(dst, union_set)
   }
 
   #[inline]
@@ -211,8 +219,10 @@ where
 
   #[inline]
   pub fn sdiffstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
-    let diff = self.sdiff(keys)?;
-    self.overwrite_set(dst, &diff)
+    match self.compute_sdiff_set(keys)? {
+      Some(diff) => self.overwrite_set_iter(dst, diff),
+      None => self.overwrite_set(dst, &[b""; 0]),
+    }
   }
 
   #[inline]

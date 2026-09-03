@@ -174,33 +174,46 @@ where
   }
 
   #[inline]
-  pub fn hgetall<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-    let mut results = Vec::new();
-    self.hiter(key, |f, v| {
-      results.push((f.to_vec(), v.to_vec()));
+  fn fetch_hash_items<K: AsRef<[u8]>, T>(
+    &self,
+    key: K,
+    mut transform: impl FnMut(&[u8], &[u8]) -> T,
+  ) -> Result<Vec<T>> {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(Vec::new());
+    }
+
+    let mut results = Vec::with_capacity(meta.base.size as usize);
+    self.hiter_with_meta(&kc, key_bytes, &meta, now_ms, |f, v| {
+      results.push(transform(f, v));
       true
     })?;
     Ok(results)
   }
 
   #[inline]
+  pub fn hgetall<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    self.fetch_hash_items(key, |f, v| (f.to_vec(), v.to_vec()))
+  }
+
+  #[inline]
   pub fn hkeys<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let mut keys = Vec::new();
-    self.hiter(key, |f, _| {
-      keys.push(f.to_vec());
-      true
-    })?;
-    Ok(keys)
+    self.fetch_hash_items(key, |f, _| f.to_vec())
   }
 
   #[inline]
   pub fn hvals<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let mut vals = Vec::new();
-    self.hiter(key, |_, v| {
-      vals.push(v.to_vec());
-      true
-    })?;
-    Ok(vals)
+    self.fetch_hash_items(key, |_, v| v.to_vec())
   }
 
   #[inline]

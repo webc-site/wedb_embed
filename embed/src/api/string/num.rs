@@ -1,13 +1,12 @@
 use crate::{
   api::string::{
-    r#const::{ERR_INCREMENT_NAN_OR_INFINITY, ERR_INCREMENT_OVERFLOW},
     format_float_bytes, get_string_raw, key,
-    meta::with_encoded_string_value,
+    meta::{with_encoded_string_value, write_string_val},
     parse_redis_float, parse_redis_integer,
+    r#const::{ERR_INCREMENT_NAN_OR_INFINITY, ERR_INCREMENT_OVERFLOW},
   },
-  engine::{Engine, Partition},
+  engine::Engine,
   error::{Error, Result},
-  key::cleanup_all_composite_data,
   wedb::Db,
 };
 
@@ -49,17 +48,7 @@ where
       formatted_bytes,
       target_expire,
       &mut dyn_buf,
-      |enc_val| -> Result<()> {
-        if old_raw.is_none() && !self.meta().is_empty()? {
-          let mut batch = self.batch();
-          batch.insert_data(&raw_k, enc_val);
-          cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-          batch.commit()?;
-        } else {
-          self.data().insert(&raw_k, enc_val)?;
-        }
-        Ok(())
-      },
+      |enc_val| write_string_val(self, &raw_k, key_bytes, enc_val, old_raw.is_none()),
     )?;
     Ok(new_num)
   }
@@ -123,17 +112,7 @@ where
       formatted_bytes,
       target_expire,
       &mut dyn_buf,
-      |enc_val| -> Result<()> {
-        if old_raw.is_none() && !self.meta().is_empty()? {
-          let mut batch = self.batch();
-          batch.insert_data(&raw_k, enc_val);
-          cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-          batch.commit()?;
-        } else {
-          self.data().insert(&raw_k, enc_val)?;
-        }
-        Ok(())
-      },
+      |enc_val| write_string_val(self, &raw_k, key_bytes, enc_val, old_raw.is_none()),
     )?;
     Ok(new_num)
   }

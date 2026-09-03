@@ -1,5 +1,11 @@
 pub use crate::meta::KeyMeta as StringMeta;
-use crate::meta::{KeyMeta, RedisType};
+use crate::{
+  engine::{Engine, Partition},
+  error::{Error, Result},
+  key::cleanup_all_composite_data,
+  meta::{KeyMeta, RedisType},
+  wedb::Db,
+};
 
 /// SingleKV string header size (1-byte flags + 8-byte expire timestamp, aligned with Kvrocks 9-byte header).
 /// 单 KV 字符串头部大小（1字节flags + 8字节过期时间，对标 Apache Kvrocks SingleKV 9字节头）
@@ -109,4 +115,27 @@ pub fn with_encoded_string_value<R>(
     encode_string_value_into(val_bytes, expire_at_ms, dyn_buf);
     f(dyn_buf)
   }
+}
+/// Atomically writes encoded string value, cleaning up composite meta if replacing a nonexistent SingleKV.
+/// 写入 SingleKV 编码数据（原子写；若替换不存在的键则级联清理复合元数据）
+#[inline]
+pub fn write_string_val<E: Engine>(
+  db: &Db<E>,
+  raw_k: &[u8],
+  key_bytes: &[u8],
+  enc_val: &[u8],
+  old_is_none: bool,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  if old_is_none && !db.meta().is_empty()? {
+    let mut batch = db.batch();
+    batch.insert_data(raw_k, enc_val);
+    cleanup_all_composite_data(db, key_bytes, &mut batch)?;
+    batch.commit()?;
+  } else {
+    db.data().insert(raw_k, enc_val)?;
+  }
+  Ok(())
 }

@@ -336,8 +336,34 @@ fn list_pop_one_internal<E: Engine>(
 where
   Error: From<E::Error>,
 {
-  let mut res = list_pop_internal(db, key_bytes, 1, pop_left)?;
-  Ok(res.pop())
+  let kc = db.kc();
+  let meta_k = compose_list_meta_key(&kc, key_bytes);
+  let now_ms = current_now_ms();
+
+  let mut meta = match get_meta_checked::<ListMeta, _>(db, key_bytes, &meta_k, now_ms)? {
+    Some(m) if m.base.size > 0 => m,
+    _ => return Ok(None),
+  };
+
+  let target_idx = meta.pop_index(pop_left);
+  let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
+  let item_k = composer.key_for_idx(target_idx);
+  let val = match db.data().get(item_k)? {
+    Some(v) => v.to_vec(),
+    None => return Ok(None),
+  };
+
+  meta.base.size -= 1;
+  let mut batch = db.batch_with_capacity(2);
+  batch.rm_weak_data(item_k);
+  if meta.base.size == 0 {
+    batch.rm_meta(&meta_k);
+  } else {
+    batch.insert_meta(&meta_k, &meta.encode());
+  }
+  batch.commit()?;
+
+  Ok(Some(val))
 }
 
 fn list_pop_internal<E: Engine>(

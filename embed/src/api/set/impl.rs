@@ -140,9 +140,19 @@ where
 
   #[inline]
   pub fn smembers<K: AsRef<[u8]>>(&self, key: K) -> Result<Vec<Vec<u8>>> {
-    let card = self.scard(&key)? as usize;
-    let mut results = Vec::with_capacity(card.min(4096));
-    self.siter(key, |m| {
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<SetMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
+    };
+
+    let mut results = Vec::with_capacity(meta.base.size as usize);
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
+    self.siter_prefix(prefix.as_slice(), |m| {
       results.push(m.to_vec());
       true
     })?;

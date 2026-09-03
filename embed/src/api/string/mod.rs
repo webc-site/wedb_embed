@@ -17,7 +17,7 @@ pub use r#const::{
 };
 pub use meta::{
   STRING_HDR_SIZE, StringMeta, decode_live_string_value, decode_string_value, encode_string_header,
-  encode_string_value, encode_string_value_into, is_string_expired,
+  encode_string_value, encode_string_value_into, is_string_expired, write_string_val,
 };
 pub use opt::{
   DelEx, GetEx, Lcs, Set, StringLCS, StringLCSIdxResult, StringLCSMatchedRange, StringLCSRange,

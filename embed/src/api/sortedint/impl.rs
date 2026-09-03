@@ -206,13 +206,13 @@ where
     let now_ms = current_now_ms();
 
     let meta = match get_meta_checked::<SortedintMeta, _>(self, k_bytes, &meta_k, now_ms)? {
-      Some(m) => m,
-      None => return Ok(Vec::new()),
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(Vec::new()),
     };
 
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
     let prefix_len = prefix.len();
-    let mut results = Vec::with_capacity((meta.base.size as usize).min(4096));
+    let mut results = Vec::with_capacity(meta.base.size as usize);
 
     for g in self.data().prefix(&prefix) {
       let entry = g?;

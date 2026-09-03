@@ -529,7 +529,7 @@ where
       None
     };
 
-    let final_score = if let Some(old_sb) = old_score_bytes {
+    let (final_score, needs_write) = if let Some(old_sb) = old_score_bytes {
       let old_score = decode_sortable_f64_slice(&old_sb).unwrap_or(0.0);
       let score = old_score + increment;
       if score.is_nan() {
@@ -540,26 +540,23 @@ where
       if score != old_score {
         let old_s_key = compose_zset_score_key(&kc, k_bytes, old_score, m_bytes);
         batch.rm_weak_data(old_s_key.as_slice());
-
-        let new_enc = encode_sortable_f64(score);
-        let new_s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
-        batch.insert_data(new_s_key.as_slice(), b"");
-        batch.insert_data(m_key.as_slice(), &new_enc);
-        batch.insert_meta(&meta_k, &meta.encode());
-        batch.commit()?;
+        (score, true)
+      } else {
+        (score, false)
       }
-      score
     } else {
-      let score = increment;
       meta.base.size = meta.base.size.saturating_add(1);
-      let new_enc = encode_sortable_f64(score);
-      let new_s_key = compose_zset_score_key(&kc, k_bytes, score, m_bytes);
+      (increment, true)
+    };
+
+    if needs_write {
+      let new_enc = encode_sortable_f64(final_score);
+      let new_s_key = compose_zset_score_key(&kc, k_bytes, final_score, m_bytes);
       batch.insert_data(new_s_key.as_slice(), b"");
       batch.insert_data(m_key.as_slice(), &new_enc);
       batch.insert_meta(&meta_k, &meta.encode());
       batch.commit()?;
-      score
-    };
+    }
 
     Ok(final_score)
   }

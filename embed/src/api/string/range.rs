@@ -6,13 +6,13 @@ use crate::{
     get_string_raw, key,
     meta::{
       STRING_HDR_SIZE, STRING_NO_EXPIRY_HEADER, encode_string_header, with_encoded_string_value,
+      write_string_val,
     },
     opt::{Lcs, StringLCSResult},
     string_digest,
   },
   engine::{Engine, Partition},
   error::{Error, Result},
-  key::cleanup_all_composite_data,
   meta::normalize_range,
   wedb::Db,
 };
@@ -69,14 +69,7 @@ where
       pos += val_bytes.len();
       let enc_val = &stack_buf[..pos];
 
-      if old_raw.is_none() && !self.meta().is_empty()? {
-        let mut batch = self.batch();
-        batch.insert_data(&raw_k, enc_val);
-        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-        batch.commit()?;
-      } else {
-        self.data().insert(&raw_k, enc_val)?;
-      }
+      write_string_val(self, &raw_k, key_bytes, enc_val, old_raw.is_none())?;
       return Ok(new_len);
     }
 
@@ -87,14 +80,7 @@ where
     }
     enc_val.extend_from_slice(val_bytes);
 
-    if old_raw.is_none() && !self.meta().is_empty()? {
-      let mut batch = self.batch();
-      batch.insert_data(&raw_k, &enc_val);
-      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-      batch.commit()?;
-    } else {
-      self.data().insert(&raw_k, &enc_val)?;
-    }
+    write_string_val(self, &raw_k, key_bytes, &enc_val, old_raw.is_none())?;
     Ok(new_len)
   }
 
@@ -193,14 +179,7 @@ where
         .copy_from_slice(val_bytes);
 
       let enc_val = &stack_buf[..payload_start + new_total_len];
-      if old_raw.is_none() && !self.meta().is_empty()? {
-        let mut batch = self.batch();
-        batch.insert_data(&raw_k, enc_val);
-        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-        batch.commit()?;
-      } else {
-        self.data().insert(&raw_k, enc_val)?;
-      }
+      write_string_val(self, &raw_k, key_bytes, enc_val, old_raw.is_none())?;
       return Ok(new_total_len);
     }
 
@@ -227,14 +206,7 @@ where
       enc_val.extend_from_slice(&old_payload[required_len..]);
     }
 
-    if old_raw.is_none() && !self.meta().is_empty()? {
-      let mut batch = self.batch();
-      batch.insert_data(&raw_k, &enc_val);
-      cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-      batch.commit()?;
-    } else {
-      self.data().insert(&raw_k, &enc_val)?;
-    }
+    write_string_val(self, &raw_k, key_bytes, &enc_val, old_raw.is_none())?;
     Ok(new_total_len)
   }
 

@@ -3,7 +3,7 @@ use crate::{
     MAX_STRING_SIZE,
     r#const::{ERR_DIGEST_INVALID_LEN, ERR_STRING_EXCEEDS_MAX_SIZE},
     get_string_raw, key,
-    meta::{encode_string_value, with_encoded_string_value},
+    meta::{encode_string_value, with_encoded_string_value, write_string_val},
     opt::{DelEx, GetEx, Set, StringSet, StringSetType},
     string_digest_bytes,
   },
@@ -90,25 +90,10 @@ where
     let data_ks = self.data();
     // 极速直写快速通道 (Fast Path)
     if args.is_fast_path() {
-      let meta_ks = self.meta();
-      let meta_is_empty = meta_ks.is_empty()?;
       let mut dyn_buf = Vec::new();
-      with_encoded_string_value(
-        val_bytes,
-        args.expire,
-        &mut dyn_buf,
-        |enc_val| -> Result<()> {
-          if meta_is_empty {
-            data_ks.insert(&raw_k, enc_val)?;
-          } else {
-            let mut batch = self.batch();
-            batch.insert_data(&raw_k, enc_val);
-            cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-            batch.commit()?;
-          }
-          Ok(())
-        },
-      )?;
+      with_encoded_string_value(val_bytes, args.expire, &mut dyn_buf, |enc_val| {
+        write_string_val(self, &raw_k, key_bytes, enc_val, true)
+      })?;
       return Ok(Some(Vec::new()));
     }
 

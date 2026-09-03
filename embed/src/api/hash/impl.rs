@@ -320,11 +320,9 @@ where
         physical_removed += 1;
         if !is_field_expired(exp, now_ms) {
           deleted += 1;
-          if exp == 0 {
-            meta.apply_persistent_to_deleted();
-          } else {
-            meta.apply_ttl_to_deleted();
-          }
+        }
+        if exp == 0 {
+          meta.apply_persistent_to_deleted();
         } else {
           meta.apply_ttl_to_deleted();
         }
