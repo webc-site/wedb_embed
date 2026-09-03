@@ -18,6 +18,22 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
     let unroll_len = len & !3;
     let mut i = 0;
 
+    macro_rules! handle_one {
+      ($idx:expr, $val:expr, $enc:expr, $ok:expr) => {
+        if $ok {
+          enc_ptr.add($idx).write($enc);
+          min_val = min_val.min($enc);
+          max_val = max_val.max($enc);
+        } else {
+          enc_ptr.add($idx).write(F::ZERO_INT);
+          exceptions.push(Exception {
+            pos: $idx,
+            bits: $val.to_raw_bits(),
+          });
+        }
+      };
+    }
+
     while i < unroll_len {
       // SAFETY: i + 3 < unroll_len <= len, within slice bounds
       let v0 = *slice.get_unchecked(i);
@@ -50,21 +66,6 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
         min_val = min_val.min(l_min);
         max_val = max_val.max(l_max);
       } else {
-        macro_rules! handle_one {
-          ($idx:expr, $val:expr, $enc:expr, $ok:expr) => {
-            if $ok {
-              enc_ptr.add($idx).write($enc);
-              min_val = min_val.min($enc);
-              max_val = max_val.max($enc);
-            } else {
-              enc_ptr.add($idx).write(F::ZERO_INT);
-              exceptions.push(Exception {
-                pos: $idx,
-                bits: $val.to_raw_bits(),
-              });
-            }
-          };
-        }
         handle_one!(i, v0, enc0, ok0);
         handle_one!(i + 1, v1, enc1, ok1);
         handle_one!(i + 2, v2, enc2, ok2);
@@ -81,19 +82,9 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
       let val = *slice.get_unchecked(i);
       let enc = val.fast_round_to_int(exp_factor);
       let d = decode(enc);
-      if d.is_exact_same(val) {
-        enc_ptr.add(i).write(enc);
-        min_val = min_val.min(enc);
-        max_val = max_val.max(enc);
-      } else {
-        enc_ptr.add(i).write(F::ZERO_INT);
-        exceptions.push(Exception {
-          pos: i,
-          bits: val.to_raw_bits(),
-        });
-        if exceptions.len() > MAX_EXCEPTIONS {
-          return (F::MAX_INT, F::MIN_INT);
-        }
+      handle_one!(i, val, enc, d.is_exact_same(val));
+      if exceptions.len() > MAX_EXCEPTIONS {
+        return (F::MAX_INT, F::MIN_INT);
       }
       i += 1;
     }

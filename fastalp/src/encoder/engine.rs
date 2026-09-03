@@ -18,6 +18,14 @@ use crate::{
   sampler::{BestParams, find_best_params, find_identical_base},
 };
 
+#[inline(always)]
+fn check_roundtrip<F: AlpFloat>(slice: &[F], exp_factor: F, decode: impl Fn(F::Int) -> F) -> bool {
+  slice.iter().all(|&v| {
+    let enc = v.fast_round_to_int(exp_factor);
+    decode(enc).is_exact_same(v)
+  })
+}
+
 /// 检查并快筛缓存参数是否继续适用于新样本
 #[inline]
 pub(crate) fn validate_cached_params<F: AlpFloat>(params: BestParams, sample: &[F]) -> bool {
@@ -28,19 +36,16 @@ pub(crate) fn validate_cached_params<F: AlpFloat>(params: BestParams, sample: &[
   let check_slice = &sample[..check_n];
 
   if params.use_div {
-    check_slice.iter().all(|&v| {
-      let enc = v.fast_round_to_int(exp_factor);
-      F::decode_from_int_div(enc, exp_factor).is_exact_same(v)
+    check_roundtrip(check_slice, exp_factor, |enc| {
+      F::decode_from_int_div(enc, exp_factor)
     })
   } else if fac_int == 1 {
-    check_slice.iter().all(|&v| {
-      let enc = v.fast_round_to_int(exp_factor);
-      F::decode_from_int_fac1(enc, frac_exp).is_exact_same(v)
+    check_roundtrip(check_slice, exp_factor, |enc| {
+      F::decode_from_int_fac1(enc, frac_exp)
     })
   } else {
-    check_slice.iter().all(|&v| {
-      let enc = v.fast_round_to_int(exp_factor);
-      F::decode_from_int(enc, fac_int, frac_exp).is_exact_same(v)
+    check_roundtrip(check_slice, exp_factor, |enc| {
+      F::decode_from_int(enc, fac_int, frac_exp)
     })
   }
 }
@@ -55,6 +60,29 @@ fn write_raw_fallback<F: AlpFloat>(slice: &[F], count: usize, dst: &mut Vec<u8>)
   // SAFETY: slice 是有效且连续的浮点内存切片，转换为底层紧凑字节序列安全无误
   let raw_slice = unsafe { from_raw_parts(slice.as_ptr().cast::<u8>(), raw_len) };
   dst.extend_from_slice(raw_slice);
+}
+
+#[inline(always)]
+unsafe fn encode_pass<F: AlpFloat>(
+  slice: &[F],
+  enc_ptr: *mut F::Int,
+  params: BestParams,
+  exceptions: &mut Vec<Exception<F::RawBits>>,
+) -> (F::Int, F::Int) {
+  let exp_factor = F::exp_factor(params.exp, params.fac);
+  let fac_int = F::fac_int(params.fac);
+  let frac_exp = F::frac_exp(params.exp);
+  unsafe {
+    encode_slice(
+      slice,
+      enc_ptr,
+      exp_factor,
+      fac_int,
+      frac_exp,
+      params.use_div,
+      exceptions,
+    )
+  }
 }
 
 /// 核心压缩引擎：执行参数快筛、编码展开、离群值剪枝、FOR/Delta 调度与 RAW 回退保底
@@ -115,41 +143,14 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   };
 
   // 2. 主编码内核执行
-  let mut exp_factor = F::exp_factor(best_params.exp, best_params.fac);
-  let mut fac_int = F::fac_int(best_params.fac);
-  let mut frac_exp = F::frac_exp(best_params.exp);
-
-  let (mut min_val, mut max_val) = unsafe {
-    encode_slice(
-      slice,
-      enc_ptr,
-      exp_factor,
-      fac_int,
-      frac_exp,
-      best_params.use_div,
-      exceptions,
-    )
-  };
+  let (mut min_val, mut max_val) = unsafe { encode_pass(slice, enc_ptr, best_params, exceptions) };
 
   // 3. 缓存失效挽救机制：若使用了缓存参数但异常 > MAX_EXCEPTIONS，重新采样尝试挽救
   if exceptions.len() > MAX_EXCEPTIONS && cached_params.is_some() {
     let fresh_params = find_best_params(slice);
     if fresh_params != best_params {
       exceptions.clear();
-      exp_factor = F::exp_factor(fresh_params.exp, fresh_params.fac);
-      fac_int = F::fac_int(fresh_params.fac);
-      frac_exp = F::frac_exp(fresh_params.exp);
-      let (fresh_min, fresh_max) = unsafe {
-        encode_slice(
-          slice,
-          enc_ptr,
-          exp_factor,
-          fac_int,
-          frac_exp,
-          fresh_params.use_div,
-          exceptions,
-        )
-      };
+      let (fresh_min, fresh_max) = unsafe { encode_pass(slice, enc_ptr, fresh_params, exceptions) };
       if exceptions.len() <= MAX_EXCEPTIONS {
         best_params = fresh_params;
         min_val = fresh_min;
