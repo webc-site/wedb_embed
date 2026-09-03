@@ -77,6 +77,6 @@ sc_col_speedup: "Comparison"
 footer_lines:
   - "Note: Overall decode/encode speeds and compression ratios are calculated using Geometric Mean across all 37 benchmarks and industrial scenarios."
   - "Measured directly on {cpu} with C++ ALP fork (github.com/x-at-01/ALP) in full end-to-end mode."
-  - "Strictly guarantees 100% exact bitwise IEEE 754 lossless reproduction."
+  - "Guarantees IEEE 754 bitwise lossless reproduction."
 footer_left: "Note: Overall decode/encode speeds and compression ratios are calculated using Geometric Mean across all 37 benchmarks and industrial scenarios. Measured directly on {cpu} with C++ ALP fork (github.com/x-at-01/ALP). Exact IEEE 754 bitwise lossless."
 footer_right: "Open-source fastalp @ crates.io/crates/fastalp"

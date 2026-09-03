@@ -12,7 +12,7 @@
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Eb/hW_KNwTDwZuq1iSOQ-5w.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@es/RMGE_J8pM_pZJmNoekXg.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -308,7 +308,7 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 
 ### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
 
-This benchmark strictly adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial extreme-load scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
+This benchmark adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
 
 | Domain | Dataset Name | Physical Description & Data Characteristics | Official Data Source & Link |
 |---|---|---|---|
@@ -404,7 +404,7 @@ fastalp is not a literal translation, but an engineering overhaul engineered to 
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@29/2gP6YfIV-1aAnMucU0-Q.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@P1/suI3FnPjZvEOg447kmPA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -700,7 +700,7 @@ fastalp/
 
 ### 评测数据集全景与公开数据源 (37 项工业与学术全集)
 
-本评测严格采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业真实极端负载场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
+本评测采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
 
 | 领域分类 | 数据集名称 | 数据特征与物理意义 | 官方数据源与权威链接 |
 |---|---|---|---|

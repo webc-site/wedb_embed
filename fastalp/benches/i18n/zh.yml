@@ -75,8 +75,8 @@ sc_col_ratio: "压缩率"
 sc_col_speedup: "相对对比"
 
 footer_lines:
-  - "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均严格采用 37 项公开测试集与工业场景的几何平均值 (Geometric Mean)。"
+  - "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均采用 37 项公开测试集与工业场景的几何平均值 (Geometric Mean)。"
   - "在 {cpu} 实机与 C++ ALP Fork 源码 (github.com/x-at-01/ALP) 同机全量端到端实测。"
-  - "严格保证 IEEE 754 浮点二进制 100% 精确无损。"
-footer_left: "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均严格采用 37 项公开测试集与工业场景的几何平均值 (Geometric Mean)。在 {cpu} 实机与 C++ ALP Fork 源码 (github.com/x-at-01/ALP) 同机全量端到端实测。保证 IEEE 754 浮点二进制严格无损。"
+  - "保证 IEEE 754 浮点二进制精确无损。"
+footer_left: "实测备注：综合解压吞吐量、压缩吞吐量与压缩率均采用 37 项公开测试集与工业场景的几何平均值 (Geometric Mean)。在 {cpu} 实机与 C++ ALP Fork 源码 (github.com/x-at-01/ALP) 同机全量端到端实测。保证 IEEE 754 浮点二进制精确无损。"
 footer_right: "开源实现 fastalp @ crates.io/crates/fastalp"

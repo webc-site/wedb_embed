@@ -3,7 +3,7 @@
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Eb/hW_KNwTDwZuq1iSOQ-5w.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@es/RMGE_J8pM_pZJmNoekXg.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -279,7 +279,7 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 
 ### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
 
-This benchmark strictly adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial extreme-load scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
+This benchmark adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
 
 | Domain | Dataset Name | Physical Description & Data Characteristics | Official Data Source & Link |
 |---|---|---|---|

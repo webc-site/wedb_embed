@@ -3,7 +3,7 @@
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@29/2gP6YfIV-1aAnMucU0-Q.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@P1/suI3FnPjZvEOg447kmPA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -279,7 +279,7 @@ fastalp/
 
 ### 评测数据集全景与公开数据源 (37 项工业与学术全集)
 
-本评测严格采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业真实极端负载场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
+本评测采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
 
 | 领域分类 | 数据集名称 | 数据特征与物理意义 | 官方数据源与权威链接 |
 |---|---|---|---|
