@@ -54,14 +54,12 @@ impl<F: AlpFloat> Encoder<F> {
 
   /// Compress with parameter caching.
   pub fn compress_into(&mut self, data: &[F], dst: &mut Vec<u8>) {
-    let params = compress_impl(data, dst, false, self.cached_params);
-    self.cached_params = Some(params);
+    self.cached_params = compress_impl(data, dst, false, self.cached_params);
   }
 
   /// Compress with parameter caching and forced Delta differential encoding.
   pub fn compress_delta_into(&mut self, data: &[F], dst: &mut Vec<u8>) {
-    let params = compress_impl(data, dst, true, self.cached_params);
-    self.cached_params = Some(params);
+    self.cached_params = compress_impl(data, dst, true, self.cached_params);
   }
 }
 
@@ -82,17 +80,13 @@ fn compress_impl<F: AlpFloat>(
   dst: &mut Vec<u8>,
   force_delta: bool,
   cached_params: Option<BestParams>,
-) -> BestParams {
+) -> Option<BestParams> {
   let count = data.len();
   if count == 0 {
     let raw_hdr = raw_header_len(0);
     dst.reserve(raw_hdr);
     write_header(F::TYPE_BYTE, 0, None, dst);
-    return BestParams {
-      exp: 0,
-      fac: 0,
-      use_div: false,
-    };
+    return None;
   }
 
   let slice = data;
@@ -107,14 +101,14 @@ fn compress_impl<F: AlpFloat>(
     let packed_params = pack_params(exp, 0, 0);
     write_header(F::TYPE_BYTE, count, Some(packed_params), dst);
     F::write_base(base, dst);
-    return BestParams {
+    return Some(BestParams {
       exp,
       fac: 0,
       use_div: false,
-    };
+    });
   }
 
-  let best_params = if let Some(p) = cached_params {
+  let mut best_params = if let Some(p) = cached_params {
     let exp_factor = F::exp_factor(p.exp, p.fac);
     let fac_int = F::fac_int(p.fac);
     let frac_exp = F::frac_exp(p.exp);
@@ -139,19 +133,23 @@ fn compress_impl<F: AlpFloat>(
     find_best_params(slice)
   };
 
-  let BestParams { exp, fac, use_div } = best_params;
+  let mut exp_factor = F::exp_factor(best_params.exp, best_params.fac);
+  let mut fac_int = F::fac_int(best_params.fac);
+  let mut frac_exp = F::frac_exp(best_params.exp);
 
-  let exp_factor = F::exp_factor(exp, fac);
-  let fac_int = F::fac_int(fac);
-  let frac_exp = F::frac_exp(exp);
+  let mut stack_encoded = [F::ZERO_INT; 1024];
+  let mut heap_encoded: Vec<F::Int> = Vec::new();
+  let mut exceptions: Vec<Exception<F::RawBits>> = Vec::with_capacity(16);
 
-  let mut encoded_ints: Vec<F::Int> = Vec::with_capacity(slice.len());
-  let mut exceptions = Vec::new();
+  let enc_ptr: *mut F::Int = if slice.len() <= 1024 {
+    stack_encoded.as_mut_ptr()
+  } else {
+    heap_encoded.resize(slice.len(), F::ZERO_INT);
+    heap_encoded.as_mut_ptr()
+  };
 
-  // SAFETY: encoded_ints 已分配 slice.len() 个插槽，encode_loop 通过指针直接写入，最后 set_len 安全更新长度
-  let (min_val, max_val) = unsafe {
-    let enc_ptr: *mut F::Int = encoded_ints.as_mut_ptr();
-    let bounds = if use_div {
+  let (mut min_val, mut max_val) = unsafe {
+    if best_params.use_div {
       encode_loop(
         slice,
         enc_ptr,
@@ -167,10 +165,43 @@ fn compress_impl<F: AlpFloat>(
         |v| v.try_encode_fast(exp_factor, fac_int, frac_exp),
         &mut exceptions,
       )
-    };
-    encoded_ints.set_len(slice.len());
-    bounds
+    }
   };
+
+  // 若使用了缓存参数但遭遇超过 128 异常，说明缓存参数在后续序列失效；重新全量采样探测以挽救压缩率
+  if exceptions.len() > 128 && cached_params.is_some() {
+    let fresh_params = find_best_params(slice);
+    if fresh_params != best_params {
+      exceptions.clear();
+      exp_factor = F::exp_factor(fresh_params.exp, fresh_params.fac);
+      fac_int = F::fac_int(fresh_params.fac);
+      frac_exp = F::frac_exp(fresh_params.exp);
+      let bounds = unsafe {
+        if fresh_params.use_div {
+          encode_loop(
+            slice,
+            enc_ptr,
+            |v| v.try_encode_div(exp_factor),
+            &mut exceptions,
+          )
+        } else if fac_int == 1 {
+          encode_loop_fac1(slice, enc_ptr, exp_factor, frac_exp, &mut exceptions)
+        } else {
+          encode_loop(
+            slice,
+            enc_ptr,
+            |v| v.try_encode_fast(exp_factor, fac_int, frac_exp),
+            &mut exceptions,
+          )
+        }
+      };
+      if exceptions.len() <= 128 {
+        best_params = fresh_params;
+        min_val = bounds.0;
+        max_val = bounds.1;
+      }
+    }
+  }
 
   let raw_len = size_of_val(slice);
   let raw_hdr = raw_header_len(count);
@@ -182,8 +213,14 @@ fn compress_impl<F: AlpFloat>(
     // SAFETY: slice 是连续只读浮点内存，转换为底层紧凑字节序列安全
     let raw_slice = unsafe { from_raw_parts(slice.as_ptr().cast::<u8>(), raw_len) };
     dst.extend_from_slice(raw_slice);
-    return best_params;
+    return None;
   }
+
+  let encoded_ints: &mut [F::Int] = if slice.len() <= 1024 {
+    &mut stack_encoded[..slice.len()]
+  } else {
+    &mut heap_encoded[..]
+  };
 
   let base = if min_val <= max_val {
     min_val
@@ -282,7 +319,7 @@ fn compress_impl<F: AlpFloat>(
       };
 
       let mut extra_exceptions = 0usize;
-      for &val in &encoded_ints {
+      for &val in encoded_ints.iter() {
         let diff = F::int_diff_to_u64(val, base);
         if diff > max_allowed {
           extra_exceptions += 1;
@@ -350,7 +387,7 @@ fn compress_impl<F: AlpFloat>(
     // SAFETY: slice 是有效且连续的浮点内存切片，转换为底层紧凑字节序列安全无误
     let raw_slice = unsafe { from_raw_parts(slice.as_ptr().cast::<u8>(), raw_len) };
     dst.extend_from_slice(raw_slice);
-    return best_params;
+    return None;
   }
 
   dst.reserve(total_needed);
@@ -358,10 +395,10 @@ fn compress_impl<F: AlpFloat>(
   if use_delta {
     encode_delta::<F>(
       count,
-      exp,
-      fac,
-      use_div,
-      &mut encoded_ints,
+      best_params.exp,
+      best_params.fac,
+      best_params.use_div,
+      encoded_ints,
       min_delta,
       delta_bit_width,
       &exceptions,
@@ -370,10 +407,10 @@ fn compress_impl<F: AlpFloat>(
   } else {
     encode_standard::<F>(
       count,
-      exp,
-      fac,
-      use_div,
-      &encoded_ints,
+      best_params.exp,
+      best_params.fac,
+      best_params.use_div,
+      encoded_ints,
       base,
       for_bit_width,
       &exceptions,
@@ -381,7 +418,7 @@ fn compress_impl<F: AlpFloat>(
     );
   }
 
-  best_params
+  Some(best_params)
 }
 
 /// Generic floating-point slice compression.
@@ -568,6 +605,9 @@ unsafe fn encode_loop<F: AlpFloat, E: Fn(F) -> Option<F::Int>>(
           pos: i,
           bits: val.to_raw_bits(),
         });
+        if exceptions.len() > 128 {
+          return (F::MAX_INT, F::MIN_INT);
+        }
       }
       i += 1;
     }

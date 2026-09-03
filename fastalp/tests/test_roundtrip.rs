@@ -374,3 +374,78 @@ fn test_large_array_delta_u32_roundtrip() -> aok::Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn test_stateful_encoder_roundtrip_and_invalidation() -> aok::Result<()> {
+  use fastalp::Encoder;
+
+  let mut encoder = Encoder::<f64>::new();
+  assert!(encoder.cached_params.is_none());
+
+  // 1. 第一个块：常规 2 位小数时间序列
+  let block1: Vec<f64> = (0..1024).map(|i| (i as f64) * 0.25 + 10.0).collect();
+  let mut c1 = Vec::new();
+  encoder.compress_into(&block1, &mut c1);
+  assert!(encoder.cached_params.is_some());
+  let p1 = encoder.cached_params.unwrap();
+  assert_eq!(p1.exp, 2);
+
+  let d1: Vec<f64> = decompress(&c1)?;
+  assert_eq!(d1.len(), block1.len());
+  for (orig, dec) in block1.iter().zip(&d1) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  // 2. 第二个块：同类型数据，成功复用 cached_params
+  let block2: Vec<f64> = (1024..2048).map(|i| (i as f64) * 0.25 + 10.0).collect();
+  let mut c2 = Vec::new();
+  encoder.compress_into(&block2, &mut c2);
+  assert_eq!(encoder.cached_params, Some(p1));
+
+  let d2: Vec<f64> = decompress(&c2)?;
+  assert_eq!(d2.len(), block2.len());
+  for (orig, dec) in block2.iter().zip(&d2) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  // 3. 第三个块：数据分布突变（6 位小数），但前 4 个元素碰巧为整数
+  // 验证重新探测挽救机制：能自动识别缓存失效并成功以新参数压缩
+  let mut block3: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0];
+  for i in 4..1024 {
+    block3.push(100.0 + (i as f64) * 0.000001);
+  }
+  let mut c3 = Vec::new();
+  encoder.compress_into(&block3, &mut c3);
+  assert!(encoder.cached_params.is_some());
+  let p3 = encoder.cached_params.unwrap();
+  assert_eq!(p3.exp, 6);
+
+  let d3: Vec<f64> = decompress(&c3)?;
+  assert_eq!(d3.len(), block3.len());
+  for (orig, dec) in block3.iter().zip(&d3) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  // 4. 重置编码器缓存
+  encoder.reset();
+  assert!(encoder.cached_params.is_none());
+
+  // 5. 不可压缩随机数据块：验证超过 128 异常保底为 RAW 且清空缓存参数
+  let raw_block: Vec<f64> = (0..1024)
+    .map(|i| f64::from_bits(0x3FF0000000000000u64 | (i as u64).wrapping_mul(0x123456789ABCDEF)))
+    .collect();
+  let mut c_raw = Vec::new();
+  encoder.compress_into(&raw_block, &mut c_raw);
+  assert!(
+    encoder.cached_params.is_none(),
+    "RAW 块不应保留有效缓存参数"
+  );
+
+  let d_raw: Vec<f64> = decompress(&c_raw)?;
+  assert_eq!(d_raw.len(), raw_block.len());
+  for (orig, dec) in raw_block.iter().zip(&d_raw) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  Ok(())
+}

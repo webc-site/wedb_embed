@@ -5,6 +5,7 @@ pub mod info;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod pel;
 use std::str;
 
 pub use r#const::*;
@@ -26,6 +27,9 @@ pub use opt::{
   StreamAdd, StreamAutoClaim, StreamClaim, StreamLen, StreamPending, StreamRange, StreamRead,
   StreamTrim, StreamTrimStrategy, StreamXGroupCreate, XAdd, XAutoClaim, XClaim, XGroupCreate,
   XPending, XRange, XRead, XTrim,
+};
+pub use pel::{
+  stream_ack, stream_autoclaim, stream_claim, stream_pending_range, stream_pending_summary,
 };
 /// Stream message entry type containing StreamId and field-value pairs.
 /// 流消息项 (StreamId, Fields)

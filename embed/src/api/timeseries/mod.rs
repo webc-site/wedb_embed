@@ -5,6 +5,7 @@ pub mod gorilla;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
+pub mod mrange;
 pub mod opt;
 pub mod reducer;
 use std::{cmp::Ordering, collections::BinaryHeap};
