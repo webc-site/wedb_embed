@@ -92,7 +92,9 @@ GIT_CONFIG_GLOBAL=/dev/null git -C /tmp/<repo_name> push "https://x-at-01:$GH_TO
 
 ### 步骤 6：通过 gh pr create 提交 Pull Request
 PR 正文编写硬性标准：
-- 结构清晰：包含背景契合度（Motivation & Fit）、改动概述（Summary of changes）、fastalp 架构特性（Key architectural highlights）、实测基准数据对比（Measured results）以及测试验收（Testing）。
+- 结构清晰：包含背景契合度（Motivation & Fit）、改动概述（Summary of changes）、fastalp 架构特性（Key architectural highlights）、实测基准数据对比（Measured results，必须以清晰表格对比呈现压缩比、编码延迟、解码延迟，统一微秒 µs 单位）以及测试验收（Testing）。
+- 附带评测图：PR 正文结尾必须附上 fastalp 官方 SVG 性能评测矢量图（使用 jsDelivr 加速链接）：
+  `![fastalp benchmark](https://fastly.jsdelivr.net/gh/webc-fs/-@oN/pJJXh-50Uot_3Aqn11kQ.svg)`
 - 严禁批评他方：严禁包含任何指责其他实现缺陷的语言，全部围绕 fastalp 自身能力展开陈述。
 - 无表情、无加粗、第一人称 I。
 

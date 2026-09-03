@@ -302,3 +302,19 @@ records:
     title: "Sharing benchmark observations on decimal floating-point compression: comparing integer mapping with Gorilla/Chimp on time-series datasets"
     status: posted
     date: 2026-09-04
+
+  - type: pull_request
+    repo: praveen-influx/alp-test
+    pr_number: 1
+    url: https://github.com/praveen-influx/alp-test/pull/1
+    title: "feat(bench): add fastalp floating-point compression benchmark"
+    status: submitted
+    date: 2026-09-04
+
+  - type: pull_request
+    repo: cwida/ALP
+    pr_number: 46
+    url: https://github.com/cwida/ALP/pull/46
+    title: "docs: add fastalp to list of systems using and implementing ALP"
+    status: submitted
+    date: 2026-09-04
