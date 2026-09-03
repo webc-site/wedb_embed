@@ -3,9 +3,9 @@
 嵌入式数据库引擎，提供 Redis 兼容数据结构与接口，基于 [fjall](https://github.com/fjall-rs/fjall) LSM-Tree 存储引擎构建。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@ME/D_T-BZqMWPfy9BS7F6iA.svg" alt="wedb_embed vs Redis 性能与资源对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@HF/DL0g4movEl_wHUb-Ex7w.svg" alt="wedb_embed vs Redis 性能与资源对比" width="100%">
   <br>
-  <sub><b>测试环境</b>: CPU: AMD EPYC 7763 64-Core Processor (4核) ｜ 内存: 15.6 GB ｜ 硬盘: Azure Managed Virtual Disk (Cloud Standard SSD) ｜ 系统: Ubuntu 24.04.4 LTS (Linux 6.17.0-1022-azure) ｜ Rust: 1.98.0 (88d9e12ae 2026-08-18) ｜ Redis: v8.10.1</sub>
+  <sub><b>测试环境</b>: CPU: AMD EPYC 9V74 80-Core Processor (4核) ｜ 内存: 15.6 GB ｜ 硬盘: Azure Managed Virtual Disk (Cloud Standard SSD) ｜ 系统: Ubuntu 24.04.4 LTS (Linux 6.17.0-1022-azure) ｜ Rust: 1.98.0 (88d9e12ae 2026-08-18) ｜ Redis: v8.10.1</sub>
 </p>
 
 - **磁盘 I/O 影响**：<br>
