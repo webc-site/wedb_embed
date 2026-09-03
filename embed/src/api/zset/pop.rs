@@ -3,9 +3,10 @@ use std::ops::Bound;
 use crate::{
   api::zset::{
     ZSetKeyMemberScore, ZSetMemberScore, ZSetPopResult, compose_zset_key,
+    compose_zset_score_from_bytes_key,
     r#impl::{
-      SCORE_LEN, compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix,
-      get_zset_meta, lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
+      compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix, get_zset_meta,
+      lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
     },
     opt::{IntoRangeLex, IntoRangeRank, IntoRangeScore},
   },
@@ -79,11 +80,9 @@ where
     };
 
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let member_prefix = compose_zset_prefix(&kc, k_bytes);
     let actual_count = count.min(meta.size() as usize);
     let mut popped = Vec::with_capacity(actual_count);
     let mut batch = self.batch_with_capacity(actual_count * 2 + 1);
-    let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
 
     for g in data_ks.prefix(&prefix) {
@@ -93,11 +92,9 @@ where
         break;
       }
       if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
-        m_key.clear();
-        m_key.extend_from_slice(&member_prefix);
-        m_key.extend_from_slice(member);
+        let m_key = compose_zset_key(&kc, k_bytes, member);
         batch.rm_weak_data(k);
-        batch.rm_weak_data(&m_key);
+        batch.rm_weak_data(m_key.as_slice());
         popped.push((member.to_vec(), score));
         if popped.len() >= count {
           break;
@@ -179,10 +176,8 @@ where
     }
 
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let member_prefix = compose_zset_prefix(&kc, k_bytes);
     let mut popped = Vec::with_capacity(num_pop);
     let mut batch = self.batch_with_capacity(num_pop * 2 + 1);
-    let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
 
     for g in data_ks.prefix(&prefix).rev() {
@@ -192,11 +187,9 @@ where
         break;
       }
       if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
-        m_key.clear();
-        m_key.extend_from_slice(&member_prefix);
-        m_key.extend_from_slice(member);
+        let m_key = compose_zset_key(&kc, k_bytes, member);
         batch.rm_weak_data(k);
-        batch.rm_weak_data(&m_key);
+        batch.rm_weak_data(m_key.as_slice());
         popped.push((member.to_vec(), score));
         if popped.len() >= num_pop {
           break;
@@ -229,13 +222,24 @@ where
       return Ok(None);
     }
     for k in keys {
-      let popped = if min {
-        self.zpopmin(k, count)?
+      if count == 1 {
+        let one = if min {
+          self.zpopmin_one(k)?
+        } else {
+          self.zpopmax_one(k)?
+        };
+        if let Some(item) = one {
+          return Ok(Some((k.as_ref().to_vec(), vec![item])));
+        }
       } else {
-        self.zpopmax(k, count)?
-      };
-      if !popped.is_empty() {
-        return Ok(Some((k.as_ref().to_vec(), popped)));
+        let popped = if min {
+          self.zpopmin(k, count)?
+        } else {
+          self.zpopmax(k, count)?
+        };
+        if !popped.is_empty() {
+          return Ok(Some((k.as_ref().to_vec(), popped)));
+        }
       }
     }
     Ok(None)
@@ -246,8 +250,7 @@ where
   #[inline]
   pub fn bzpopmin<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<ZSetKeyMemberScore>> {
     for k in keys {
-      let popped = self.zpopmin(k, 1)?;
-      if let Some((member, score)) = popped.into_iter().next() {
+      if let Some((member, score)) = self.zpopmin_one(k)? {
         return Ok(Some((k.as_ref().to_vec(), member, score)));
       }
     }
@@ -259,8 +262,7 @@ where
   #[inline]
   pub fn bzpopmax<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<ZSetKeyMemberScore>> {
     for k in keys {
-      let popped = self.zpopmax(k, 1)?;
-      if let Some((member, score)) = popped.into_iter().next() {
+      if let Some((member, score)) = self.zpopmax_one(k)? {
         return Ok(Some((k.as_ref().to_vec(), member, score)));
       }
     }
@@ -356,11 +358,10 @@ where
 
     let count = e - s + 1;
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let member_prefix = compose_zset_prefix(&kc, k_bytes);
-
     if s == 0 && e + 1 >= card {
       let mut batch = self.batch();
       clear_prefix_in_batch(self.data(), &prefix, &mut batch)?;
+      let member_prefix = compose_zset_prefix(&kc, k_bytes);
       clear_prefix_in_batch(self.data(), &member_prefix, &mut batch)?;
       batch.rm_meta(&meta_k);
       batch.commit()?;
@@ -370,7 +371,6 @@ where
     let mut deleted = 0usize;
     let mut current_idx = 0usize;
     let mut batch = self.batch_with_capacity(count * 2 + 1);
-    let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
     let data_ks = self.data();
 
     for g in data_ks.prefix(&prefix) {
@@ -381,11 +381,9 @@ where
       }
       if let Some((_, member)) = parse_score_sub(&k[prefix.len()..]) {
         if current_idx >= s {
-          m_key.clear();
-          m_key.extend_from_slice(&member_prefix);
-          m_key.extend_from_slice(member);
+          let m_key = compose_zset_key(&kc, k_bytes, member);
           batch.rm_weak_data(k);
-          batch.rm_weak_data(&m_key);
+          batch.rm_weak_data(m_key.as_slice());
           deleted += 1;
           if deleted >= count {
             break;
@@ -435,14 +433,12 @@ where
     };
 
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let member_prefix = compose_zset_prefix(&kc, k_bytes);
     let (start, end) = score_range_bounds(&prefix, spec);
     let start_ref = Bound::as_ref(&start).map(|v| v.as_slice());
     let end_ref = Bound::as_ref(&end).map(|v| v.as_slice());
 
     let mut deleted = 0usize;
-    let mut batch = self.batch();
-    let mut m_key = Vec::with_capacity(member_prefix.len() + 32);
+    let mut batch = self.batch_with_capacity(32);
     let data_ks = self.data();
 
     for g in data_ks.range((start_ref, end_ref)) {
@@ -456,11 +452,9 @@ where
           break;
         }
         if spec.check(score) {
-          m_key.clear();
-          m_key.extend_from_slice(&member_prefix);
-          m_key.extend_from_slice(member);
+          let m_key = compose_zset_key(&kc, k_bytes, member);
           batch.rm_weak_data(k);
-          batch.rm_weak_data(&m_key);
+          batch.rm_weak_data(m_key.as_slice());
           deleted += 1;
         }
       }
@@ -499,14 +493,12 @@ where
     };
 
     let prefix = compose_zset_prefix(&kc, k_bytes);
-    let score_prefix = compose_zset_score_prefix(&kc, k_bytes);
     let (start, end) = lex_range_bounds(&prefix, spec);
     let start_ref = Bound::as_ref(&start).map(|v| v.as_slice());
     let end_ref = Bound::as_ref(&end).map(|v| v.as_slice());
 
     let mut deleted = 0usize;
-    let mut batch = self.batch();
-    let mut s_key = Vec::with_capacity(score_prefix.len() + SCORE_LEN + 1 + 32);
+    let mut batch = self.batch_with_capacity(32);
     let data_ks = self.data();
 
     for g in data_ks.range((start_ref, end_ref)) {
@@ -526,12 +518,8 @@ where
       }
       if spec.check(member) {
         if v.len() >= 8 {
-          s_key.clear();
-          s_key.extend_from_slice(&score_prefix);
-          s_key.extend_from_slice(&v[..8]);
-          s_key.extend_from_slice(member);
-
-          batch.rm_weak_data(&s_key);
+          let s_key = compose_zset_score_from_bytes_key(&kc, k_bytes, &v[..8], member);
+          batch.rm_weak_data(s_key.as_slice());
         }
         batch.rm_weak_data(k);
         deleted += 1;
