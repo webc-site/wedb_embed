@@ -3,7 +3,10 @@ pub mod r#impl;
 pub mod key;
 pub mod lcs;
 pub mod meta;
+pub mod multi;
+pub mod num;
 pub mod opt;
+pub mod range;
 
 use std::str;
 
