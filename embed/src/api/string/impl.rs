@@ -8,8 +8,8 @@ use crate::{
     },
     format_float_bytes, get_string_raw, key,
     meta::{
-      STRING_HDR_SIZE, decode_live_string_value, decode_string_value, encode_string_header,
-      encode_string_value, is_string_expired, with_encoded_string_value,
+      STRING_HDR_SIZE, STRING_NO_EXPIRY_HEADER, decode_live_string_value, decode_string_value,
+      encode_string_header, encode_string_value, is_string_expired, with_encoded_string_value,
     },
     opt::{DelEx, GetEx, Lcs, Set, StringLCSResult, StringMSet, StringSet, StringSetType},
     parse_redis_float, parse_redis_integer, string_digest, string_digest_bytes,
@@ -517,6 +517,35 @@ where
       return Err(Error::invalid_data(ERR_STRING_EXCEEDS_MAX_SIZE));
     }
 
+    if new_len <= 55 {
+      let mut stack_buf = [0u8; 64];
+      let header = if cur_expire == 0 {
+        STRING_NO_EXPIRY_HEADER
+      } else {
+        encode_string_header(cur_expire)
+      };
+      stack_buf[..STRING_HDR_SIZE].copy_from_slice(&header);
+      let mut pos = STRING_HDR_SIZE;
+      if let Some((ref raw, _, offset)) = old_raw {
+        let old_slice = &raw[offset..];
+        stack_buf[pos..pos + old_slice.len()].copy_from_slice(old_slice);
+        pos += old_slice.len();
+      }
+      stack_buf[pos..pos + val_bytes.len()].copy_from_slice(val_bytes);
+      pos += val_bytes.len();
+      let enc_val = &stack_buf[..pos];
+
+      if old_raw.is_none() && !self.meta().is_empty()? {
+        let mut batch = self.batch();
+        batch.insert_data(&raw_k, enc_val);
+        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+        batch.commit()?;
+      } else {
+        self.data().insert(&raw_k, enc_val)?;
+      }
+      return Ok(new_len);
+    }
+
     let mut enc_val = Vec::with_capacity(STRING_HDR_SIZE + new_len);
     enc_val.extend_from_slice(&encode_string_header(cur_expire));
     if let Some((ref raw, _, offset)) = old_raw {
@@ -553,6 +582,31 @@ where
     }
   }
 
+  /// Zero-copy borrows the resolved substring range without heap allocation.
+  /// 零拷贝借用子区间切片进行只读闭包处理（零堆分配）
+  #[inline]
+  pub fn with_getrange<K: AsRef<[u8]>, R>(
+    &self,
+    key: K,
+    range: impl IntoIndexRange,
+    f: impl FnOnce(&[u8]) -> R,
+  ) -> Result<Option<R>> {
+    let (start, end) = range.into_index_range();
+    match get_string_raw(self, key.as_ref())? {
+      Some((raw, _, offset)) => {
+        let payload = &raw[offset..];
+        let len = payload.len() as i64;
+        let (s, e) = normalize_range(start, end, len);
+        if s > e || payload.is_empty() {
+          Ok(Some(f(b"")))
+        } else {
+          Ok(Some(f(&payload[s as usize..=e as usize])))
+        }
+      }
+      None => Ok(None),
+    }
+  }
+
   #[inline]
   pub fn setrange<K: AsRef<[u8]>, V: AsRef<[u8]>>(
     &self,
@@ -586,6 +640,36 @@ where
     };
 
     let new_total_len = old_len.max(required_len);
+
+    if new_total_len <= 55 {
+      let mut stack_buf = [0u8; 64];
+      let header = if cur_expire == 0 {
+        STRING_NO_EXPIRY_HEADER
+      } else {
+        encode_string_header(cur_expire)
+      };
+      stack_buf[..STRING_HDR_SIZE].copy_from_slice(&header);
+
+      let payload_start = STRING_HDR_SIZE;
+      if let Some((ref raw, _, off)) = old_raw {
+        let old_payload = &raw[off..];
+        stack_buf[payload_start..payload_start + old_len].copy_from_slice(old_payload);
+      }
+      stack_buf[payload_start + offset..payload_start + offset + val_bytes.len()]
+        .copy_from_slice(val_bytes);
+
+      let enc_val = &stack_buf[..payload_start + new_total_len];
+      if old_raw.is_none() && !self.meta().is_empty()? {
+        let mut batch = self.batch();
+        batch.insert_data(&raw_k, enc_val);
+        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
+        batch.commit()?;
+      } else {
+        self.data().insert(&raw_k, enc_val)?;
+      }
+      return Ok(new_total_len);
+    }
+
     let mut enc_val = Vec::with_capacity(STRING_HDR_SIZE + new_total_len);
     enc_val.extend_from_slice(&encode_string_header(cur_expire));
 

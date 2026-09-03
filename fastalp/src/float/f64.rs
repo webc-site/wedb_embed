@@ -2,9 +2,9 @@ use std::{mem::size_of, ptr::read_unaligned};
 
 use super::AlpFloat;
 use crate::constants::{
-  BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F64, EXC_POS_LEN, EXP_ARR_F64, FACT_ARR_F64, FRAC_ARR_F64,
-  MAGIC_NUMBER_F64, MAX_EXPONENT_F64, MAX_FAC_F64, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
-  TYPE_F64_DELTA, TYPE_F64_RAW,
+  BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F64, EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F64, FACT_ARR_F64,
+  FRAC_ARR_F64, MAGIC_NUMBER_F64, MAX_EXPONENT_F64, MAX_FAC_F64, TYPE_F64, TYPE_F64_DEC,
+  TYPE_F64_DEC_DELTA, TYPE_F64_DELTA, TYPE_F64_RAW,
 };
 
 impl AlpFloat for f64 {
@@ -22,6 +22,7 @@ impl AlpFloat for f64 {
   const MAGIC_NUMBER: Self = MAGIC_NUMBER_F64;
   const ENCODING_UPPER_LIMIT: Self = ENCODING_UPPER_LIMIT_F64;
   const EXC_ENTRY_SIZE: usize = EXC_POS_LEN + size_of::<Self::RawBits>();
+  const EXC_ENTRY_SIZE_U32: usize = EXC_POS_LEN_U32 + size_of::<Self::RawBits>();
   const EXCEPTION_PENALTY: usize = Self::EXC_ENTRY_SIZE * BITS_PER_BYTE;
   const BASE_SIZE: usize = size_of::<Self::Int>();
   const ZERO: Self = 0.0;
@@ -202,6 +203,24 @@ impl AlpFloat for f64 {
       let pos = u16::from_le(read_unaligned(chunk.as_ptr().cast::<u16>())) as usize;
       let bits = u64::from_le(read_unaligned(
         chunk.as_ptr().add(EXC_POS_LEN).cast::<u64>(),
+      ));
+      (pos, f64::from_bits(bits))
+    }
+  }
+
+  #[inline(always)]
+  fn write_exception_u32(pos: u32, bits: Self::RawBits, dst: &mut Vec<u8>) {
+    dst.extend_from_slice(&pos.to_le_bytes());
+    dst.extend_from_slice(&bits.to_le_bytes());
+  }
+
+  #[inline(always)]
+  fn read_exception_u32(chunk: &[u8]) -> (usize, Self) {
+    // SAFETY: 调用方在进入前已校验 chunk.len() >= EXC_ENTRY_SIZE_U32 (12)，使用 read_unaligned 保证安全读取 u32 与 u64。
+    unsafe {
+      let pos = u32::from_le(read_unaligned(chunk.as_ptr().cast::<u32>())) as usize;
+      let bits = u64::from_le(read_unaligned(
+        chunk.as_ptr().add(EXC_POS_LEN_U32).cast::<u64>(),
       ));
       (pos, f64::from_bits(bits))
     }

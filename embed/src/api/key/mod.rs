@@ -2,11 +2,11 @@ pub mod r#impl;
 pub mod opt;
 
 pub use r#impl::{
-  copy_impl, del_impl, exists_impl, get_key_expire_at_impl, key_count_impl, key_type_impl,
-  keys_impl, randomkey_impl, scan_impl, set_key_expire_at_impl,
-  set_key_expire_at_impl_with_condition,
+  copy_impl, dbsize_scan_impl, del_impl, exists_impl, get_key_expire_at_impl, key_count_impl,
+  key_type_impl, keys_impl, randomkey_impl, scan_impl, set_key_expire_at_impl,
+  set_key_expire_at_impl_with_condition, sort_impl,
 };
-pub use opt::ExpireCondition;
+pub use opt::{DBScanInfo, ExpireCondition, KeyNumStats, SortArgs};
 
 pub use crate::key_composer::ALL_COMPOSITE_META_TAGS;
 use crate::{

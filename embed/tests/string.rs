@@ -856,5 +856,24 @@ fn test_string_kvrocks_extensions_and_empty_value() -> Void {
   let nonexist_res = db.with_get("nonexist_borrow", |_| true)?;
   assert_eq!(nonexist_res, None);
 
+  // 6. with_getrange 端到端零拷贝借用读取
+  let sub = db.with_getrange("borrow_key", 0..6, |s| s.to_vec())?;
+  assert_eq!(sub, Some(b"borrow".to_vec()));
+  let empty_sub = db.with_getrange("borrow_key", 100..200, |s| s.len())?;
+  assert_eq!(empty_sub, Some(0));
+  let nonexist_range = db.with_getrange("nonexist_borrow", 0..5, |_| true)?;
+  assert_eq!(nonexist_range, None);
+
+  // 7. 栈缓冲小字符串 append 与 setrange 深度边界验证 (len <= 55)
+  db.set("small_k", "hello", [])?;
+  assert_eq!(db.append("small_k", " world")?, 11);
+  assert_eq!(db.get("small_k")?, Some(b"hello world".to_vec()));
+  assert_eq!(db.setrange("small_k", 6, "rust")?, 11);
+  assert_eq!(db.get("small_k")?, Some(b"hello rustd".to_vec()));
+
+  // 8. LCS 栈缓冲快速路径 (len <= 64)
+  let lcs_short_len = compute_lcs(b"quick_fox", b"quiet_box", [Lcs::Len])?;
+  assert_eq!(lcs_short_len, StringLCSResult::Len(6)); // "qui_ox" (len 6)
+
   Ok(())
 }

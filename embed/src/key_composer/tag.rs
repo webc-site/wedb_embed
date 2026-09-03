@@ -94,7 +94,7 @@ impl KeyTag {
       Self::BloomMeta | Self::BloomData => "MBbloom--",
       Self::CuckooMeta | Self::CuckooData => "MBbloomCF",
       Self::BitmapMeta | Self::BitmapData => "bitmap",
-      Self::HllMeta | Self::HllRaw => "hll",
+      Self::HllMeta | Self::HllRaw => "hyperloglog",
       Self::JsonMeta | Self::JsonData => "ReJSON-RL",
       Self::SortedIntMeta | Self::SortedIntData => "sortedint",
       Self::StreamMeta
@@ -102,7 +102,7 @@ impl KeyTag {
       | Self::StreamGroup
       | Self::StreamConsumer
       | Self::StreamPel => "stream",
-      Self::TDigestMeta | Self::TDigestData => "tdigest",
+      Self::TDigestMeta | Self::TDigestData => "TDIS-TYPE",
       Self::TimeSeriesMeta | Self::TimeSeriesData => "timeseries",
       Self::FtSchema | Self::FtAlias | Self::FtIndex | Self::FtData => "ft",
     }

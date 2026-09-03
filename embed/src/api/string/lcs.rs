@@ -73,6 +73,21 @@ pub fn compute_lcs_with(s1: &[u8], s2: &[u8], args: StringLCS) -> Result<StringL
     } else {
       (s1, s2, alen, blen)
     };
+    if blen <= 64 {
+      let mut prev = [0u32; 65];
+      let mut curr = [0u32; 65];
+      for &b1 in s1 {
+        for j in 1..=blen {
+          if b1 == s2[j - 1] {
+            curr[j] = prev[j - 1] + 1;
+          } else {
+            curr[j] = prev[j].max(curr[j - 1]);
+          }
+        }
+        prev[..=blen].copy_from_slice(&curr[..=blen]);
+      }
+      return Ok(StringLCSResult::Len(prev[blen]));
+    }
     let mut prev = vec![0u32; blen + 1];
     let mut curr = vec![0u32; blen + 1];
     for &b1 in s1 {

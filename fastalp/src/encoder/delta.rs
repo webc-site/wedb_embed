@@ -1,6 +1,7 @@
 use super::Exception;
 use crate::{
-  bitpack::bitpack_encoded, delta::in_place_deltas, float::AlpFloat, params::pack_params,
+  bitpack::bitpack_encoded, delta::in_place_deltas, float::AlpFloat, header::write_header,
+  params::pack_params,
 };
 
 /// Encodes integer array using Delta differential Frame-of-Reference encoding.
@@ -8,7 +9,7 @@ use crate::{
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_delta<F: AlpFloat>(
-  count: u16,
+  count: usize,
   exp: u8,
   fac: u8,
   use_div: bool,
@@ -20,22 +21,14 @@ pub fn encode_delta<F: AlpFloat>(
 ) {
   let first = encoded_ints[0];
 
-  // 1. Header (5B): 1B 类型 + 2B 数量 + 2B 参数 (exp, fac, delta_bit_width)
-  let count_bytes = count.to_le_bytes();
-  let params_bytes = pack_params(exp, fac, delta_bit_width).to_le_bytes();
+  // 1. Header: 紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
   let type_byte = if use_div {
     F::TYPE_DEC_DELTA_BYTE
   } else {
     F::TYPE_DELTA_BYTE
   };
-  let header = [
-    type_byte,
-    count_bytes[0],
-    count_bytes[1],
-    params_bytes[0],
-    params_bytes[1],
-  ];
-  dst.extend_from_slice(&header);
+  let packed_params = pack_params(exp, fac, delta_bit_width);
+  write_header(type_byte, count, Some(packed_params), dst);
 
   // 2. Base fields: First value (BASE_SIZE) + min_delta (BASE_SIZE)
   F::write_base(first, dst);
@@ -48,11 +41,5 @@ pub fn encode_delta<F: AlpFloat>(
   }
 
   // 4. Exceptions (仅在存在异常值时写入)
-  if !exceptions.is_empty() {
-    let exc_count = exceptions.len() as u16;
-    dst.extend_from_slice(&exc_count.to_le_bytes());
-    for exc in exceptions {
-      F::write_exception(exc.pos, exc.bits, dst);
-    }
-  }
+  super::write_exceptions::<F>(count, exceptions, dst);
 }

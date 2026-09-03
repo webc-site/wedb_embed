@@ -1,0 +1,50 @@
+title: "fastalp Floating-Point Compression Benchmark"
+subtitle: "Cross-Algorithm Benchmark: Decompression Speed, Compression Ratio & Time Series Workloads"
+env_title: "Benchmark Environment"
+env_cpu: "CPU: Apple M2 Max (12 Cores: 8 Performance @ 3.68 GHz + 4 Efficiency @ 2.42 GHz)"
+env_os: "OS: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64)"
+env_toolchain: "Toolchain: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)"
+env_bench: "Suite: 31 ALP Paper Datasets + Representative Workloads, Steady-state Median"
+
+hero_alt: "fastalp Floating-Point Compression Performance & Ratio Benchmark"
+
+card1_title: "Peak Decompression Speed"
+card1_val: "77.0 GB/s"
+card1_sub: "3.52x faster than C++ ALP (136 ns on 1024 identical values)"
+
+card2_title: "Continuous Series Ratio (Ramp)"
+card2_val: "431.2x"
+card2_sub: "9.7x higher than Pcodec, 458x higher than C++ ALP"
+
+card3_title: "31 Datasets Avg Decode"
+card3_val: "18.0 GB/s"
+card3_sub: "9.0x faster than Pcodec, 12.6x faster than Zstd"
+
+card4_title: "31 Datasets Total Size"
+card4_val: "97.9 KB"
+card4_sub: "4.79% smaller than C++ ALP, guaranteed zero inflation"
+
+sec1_title: "Full Comparison on 31 Real-World Paper Datasets (253,952 Bytes)"
+sec1_sub: "Evaluating overall capability across physical, financial, weather, and healthcare float data"
+
+sec2_title: "Representative Time Series & Sensor Scenario Breakdown"
+sec2_sub: "Evaluating physical sensor fluctuations (Sensor), smooth ramps (Ramp), and constants"
+
+legend_dec_speed: "Decompress (GB/s)"
+legend_ratio: "Compression Ratio"
+legend_enc_speed: "Compress (GB/s)"
+legend_bits: "Bits / Value"
+
+col_algo: "Algorithm"
+col_type: "Category"
+col_dec: "Decode Speed"
+col_ratio: "Ratio"
+col_size: "Total Size"
+col_enc: "Encode Speed"
+
+type_specialized: "Specialized Float"
+type_general: "General Bytes"
+
+scene_sensor: "Physical Sensor (Sensor 1024)"
+scene_ramp: "Monotonic Ramp (Ramp 1024)"
+scene_constant: "Constant Series (Constant 1024)"

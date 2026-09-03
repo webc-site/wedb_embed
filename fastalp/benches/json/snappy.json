@@ -1,0 +1,72 @@
+{
+  "algorithm": "snappy",
+  "display_name": "Snappy (snap)",
+  "category": "general_bytes",
+  "paper_31": {
+    "total_raw_bytes": 253952,
+    "total_compressed_bytes": 127290,
+    "ratio": 1.9951,
+    "bits_per_val": 32.08,
+    "avg_enc_gb_s": 0.16,
+    "avg_dec_gb_s": 2.83,
+    "datasets": [
+      {"name":"air_sensor_f","raw_bytes":8192,"compressed_bytes":8197,"ratio":0.9994,"bits_per_val":64.04,"enc_gb_s":0.31,"dec_gb_s":16.52},
+      {"name":"arade4","raw_bytes":8192,"compressed_bytes":7085,"ratio":1.1562,"bits_per_val":55.35,"enc_gb_s":0.06,"dec_gb_s":0.25},
+      {"name":"basel_temp_f","raw_bytes":8192,"compressed_bytes":5154,"ratio":1.5894,"bits_per_val":40.27,"enc_gb_s":0.07,"dec_gb_s":0.20},
+      {"name":"basel_wind_f","raw_bytes":8192,"compressed_bytes":4674,"ratio":1.7527,"bits_per_val":36.52,"enc_gb_s":0.08,"dec_gb_s":0.25},
+      {"name":"bird_migration_f","raw_bytes":8192,"compressed_bytes":3297,"ratio":2.4847,"bits_per_val":25.76,"enc_gb_s":0.10,"dec_gb_s":0.26},
+      {"name":"bitcoin_f","raw_bytes":8192,"compressed_bytes":8197,"ratio":0.9994,"bits_per_val":64.04,"enc_gb_s":0.33,"dec_gb_s":17.63},
+      {"name":"bitcoin_transactions_f","raw_bytes":8192,"compressed_bytes":7389,"ratio":1.1087,"bits_per_val":57.73,"enc_gb_s":0.09,"dec_gb_s":0.46},
+      {"name":"city_temperature_f","raw_bytes":8192,"compressed_bytes":3645,"ratio":2.2475,"bits_per_val":28.48,"enc_gb_s":0.08,"dec_gb_s":0.16},
+      {"name":"cms1","raw_bytes":8192,"compressed_bytes":6970,"ratio":1.1753,"bits_per_val":54.45,"enc_gb_s":0.06,"dec_gb_s":0.34},
+      {"name":"cms25","raw_bytes":8192,"compressed_bytes":8199,"ratio":0.9991,"bits_per_val":64.05,"enc_gb_s":0.29,"dec_gb_s":11.46},
+      {"name":"cms9","raw_bytes":8192,"compressed_bytes":2521,"ratio":3.2495,"bits_per_val":19.70,"enc_gb_s":0.11,"dec_gb_s":0.21},
+      {"name":"food_prices","raw_bytes":8192,"compressed_bytes":2337,"ratio":3.5053,"bits_per_val":18.26,"enc_gb_s":0.11,"dec_gb_s":0.24},
+      {"name":"gov10","raw_bytes":8192,"compressed_bytes":4512,"ratio":1.8156,"bits_per_val":35.25,"enc_gb_s":0.07,"dec_gb_s":0.16},
+      {"name":"gov26","raw_bytes":8192,"compressed_bytes":388,"ratio":21.1134,"bits_per_val":3.03,"enc_gb_s":0.30,"dec_gb_s":0.56},
+      {"name":"gov30","raw_bytes":8192,"compressed_bytes":417,"ratio":19.6451,"bits_per_val":3.26,"enc_gb_s":0.26,"dec_gb_s":0.56},
+      {"name":"gov31","raw_bytes":8192,"compressed_bytes":402,"ratio":20.3781,"bits_per_val":3.14,"enc_gb_s":0.30,"dec_gb_s":0.59},
+      {"name":"gov40","raw_bytes":8192,"compressed_bytes":409,"ratio":20.0293,"bits_per_val":3.20,"enc_gb_s":0.27,"dec_gb_s":0.54},
+      {"name":"medicare1","raw_bytes":8192,"compressed_bytes":4087,"ratio":2.0044,"bits_per_val":31.93,"enc_gb_s":0.08,"dec_gb_s":0.24},
+      {"name":"medicare9","raw_bytes":8192,"compressed_bytes":2453,"ratio":3.3396,"bits_per_val":19.16,"enc_gb_s":0.11,"dec_gb_s":0.21},
+      {"name":"neon_air_pressure","raw_bytes":8192,"compressed_bytes":5701,"ratio":1.4369,"bits_per_val":44.54,"enc_gb_s":0.07,"dec_gb_s":0.28},
+      {"name":"neon_bio_temp_c","raw_bytes":8192,"compressed_bytes":2888,"ratio":2.8366,"bits_per_val":22.56,"enc_gb_s":0.10,"dec_gb_s":0.19},
+      {"name":"neon_dew_point_temp","raw_bytes":8192,"compressed_bytes":4766,"ratio":1.7188,"bits_per_val":37.23,"enc_gb_s":0.07,"dec_gb_s":0.15},
+      {"name":"neon_pm10_dust","raw_bytes":8192,"compressed_bytes":1896,"ratio":4.3207,"bits_per_val":14.81,"enc_gb_s":0.13,"dec_gb_s":0.27},
+      {"name":"neon_wind_dir","raw_bytes":8192,"compressed_bytes":4950,"ratio":1.6549,"bits_per_val":38.67,"enc_gb_s":0.06,"dec_gb_s":0.15},
+      {"name":"nyc29","raw_bytes":8192,"compressed_bytes":2700,"ratio":3.0341,"bits_per_val":21.09,"enc_gb_s":0.11,"dec_gb_s":0.35},
+      {"name":"poi_lat","raw_bytes":8192,"compressed_bytes":8197,"ratio":0.9994,"bits_per_val":64.04,"enc_gb_s":0.35,"dec_gb_s":17.40},
+      {"name":"poi_lon","raw_bytes":8192,"compressed_bytes":8197,"ratio":0.9994,"bits_per_val":64.04,"enc_gb_s":0.34,"dec_gb_s":17.02},
+      {"name":"ssd_hdd_benchmarks_f","raw_bytes":8192,"compressed_bytes":2001,"ratio":4.0940,"bits_per_val":15.63,"enc_gb_s":0.13,"dec_gb_s":0.25},
+      {"name":"stocks_de","raw_bytes":8192,"compressed_bytes":2579,"ratio":3.1764,"bits_per_val":20.15,"enc_gb_s":0.11,"dec_gb_s":0.23},
+      {"name":"stocks_uk","raw_bytes":8192,"compressed_bytes":1547,"ratio":5.2954,"bits_per_val":12.09,"enc_gb_s":0.14,"dec_gb_s":0.28},
+      {"name":"stocks_usa_c","raw_bytes":8192,"compressed_bytes":1535,"ratio":5.3368,"bits_per_val":11.99,"enc_gb_s":0.15,"dec_gb_s":0.29}
+    ]
+  },
+  "micro_benchmarks": {
+    "sensor_1024": {
+      "raw_bytes": 8192,
+      "compressed_bytes": 944,
+      "ratio": 8.6780,
+      "bits_per_val": 7.38,
+      "enc_gb_s": 0.20,
+      "dec_gb_s": 0.51
+    },
+    "ramp_1024": {
+      "raw_bytes": 8192,
+      "compressed_bytes": 4120,
+      "ratio": 1.9883,
+      "bits_per_val": 32.19,
+      "enc_gb_s": 0.07,
+      "dec_gb_s": 0.15
+    },
+    "constant_1024": {
+      "raw_bytes": 8192,
+      "compressed_bytes": 396,
+      "ratio": 20.6869,
+      "bits_per_val": 3.09,
+      "enc_gb_s": 0.33,
+      "dec_gb_s": 0.77
+    }
+  }
+}

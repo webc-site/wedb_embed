@@ -857,3 +857,57 @@ fn test_hash_kvrocks_rangebylex_and_hscan_by_field() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_hash_hmset_hrandfield_one_and_multi_field_optimizations() -> Void {
+  let dir = tempdir()?;
+  let wedb = WeDb::new(Fjall::open(dir.path())?);
+  let db = wedb.ns(0)?.db(0)?;
+
+  // 1. HRANDFIELD_ONE on non-existent key
+  assert_eq!(db.hrandfield_one("non_existent")?, None);
+
+  // 2. HMSET (alias for HSET, aligned with Redis / Kvrocks)
+  let count = db.hmset("hm_key", &[("f1", "v1"), ("f2", "v2"), ("f3", "v3")])?;
+  assert_eq!(count, 3);
+  assert_eq!(db.hlen("hm_key")?, 3);
+
+  let mvals = db.hmget("hm_key", &["f1", "f2", "f3", "f4"])?;
+  assert_eq!(
+    mvals,
+    vec![
+      Some(b"v1".to_vec()),
+      Some(b"v2".to_vec()),
+      Some(b"v3".to_vec()),
+      None,
+    ]
+  );
+
+  // 3. HRANDFIELD_ONE on populated key
+  let rand_f = db.hrandfield_one("hm_key")?.expect("should find field");
+  assert!(
+    rand_f == b"f1" || rand_f == b"f2" || rand_f == b"f3",
+    "sampled field must be in hash"
+  );
+
+  // 4. HSET multi-field with duplicates within batch and existing keys (zero-allocation path)
+  // f1 is updated (not new), f4 is new with duplicate in same batch -> net new fields = 1
+  let updated_new = db.hset(
+    "hm_key",
+    &[("f1", "v1_updated"), ("f4", "v4_draft"), ("f4", "v4_final")],
+  )?;
+  assert_eq!(updated_new, 1);
+  assert_eq!(db.hlen("hm_key")?, 4);
+  assert_eq!(db.hget("hm_key", "f1")?, Some(b"v1_updated".to_vec()));
+  assert_eq!(db.hget("hm_key", "f4")?, Some(b"v4_final".to_vec()));
+
+  // 5. Stack-allocated SmallKey hiter and hrange_by_lex verification
+  let mut keys_found = Vec::new();
+  db.hiter("hm_key", |f, _| {
+    keys_found.push(f.to_vec());
+    true
+  })?;
+  assert_eq!(keys_found.len(), 4);
+
+  Ok(())
+}

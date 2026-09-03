@@ -92,33 +92,37 @@ pub const ENCODING_UPPER_LIMIT_F64: f64 = 9223372036854774784.0;
 /// f32 编码上限阈值
 pub const ENCODING_UPPER_LIMIT_F32: f32 = 2147483520.0;
 
-/// Minimum header length in bytes for empty sequences or raw fallback mode.
-/// 最小头部长度 (字节): 仅空序列 count == 0 或 raw 回退模式时使用 (1B 类型 + 2B 数量)
-pub const MIN_HEADER_LEN: usize = 3;
+/// Standard chunk size for typical ALP blocks.
+/// 典型 ALP 标准块大小 (1024)
+pub const CHUNK_SIZE_1024: usize = 1024;
 
-/// Full header length in bytes (1B type + 2B count + 2B packed parameters).
-/// 完整头部长度 (字节): 1B 类型 + 2B 数量 + 2B 打包参数 (exp:5b, fac:4b, bit_width:7b)
-pub const HEADER_LEN: usize = 5;
+/// Type ID mask (lower 4 bits of descriptor byte: 0..=15).
+/// 描述符字节低 4 位：编码类型掩码
+pub const TYPE_MASK: u8 = 0x0F;
 
-/// Header type byte index offset.
-/// 头部类型字节偏移索引
-pub const HDR_TYPE_IDX: usize = 0;
+/// Length tag bit shift (bits 4..=5 of descriptor byte).
+/// 长度档位位移偏移 (第 4~5 位)
+pub const LEN_TAG_SHIFT: u8 = 4;
 
-/// Header count start byte index.
-/// 头部数量起始字节索引
-pub const HDR_COUNT_START: usize = 1;
+/// Length tag bitmask (2 bits).
+/// 长度档位掩码
+pub const LEN_TAG_MASK: u8 = 0x03;
 
-/// Header count end byte index.
-/// 头部数量结束字节索引
-pub const HDR_COUNT_END: usize = 3;
+/// Length tag: 1-byte count (0..=255).
+/// 长度档位：1 字节长度 (0..=255)
+pub const LEN_TAG_U8: u8 = 0b00;
 
-/// Header params start byte index.
-/// 头部参数起始字节索引
-pub const HDR_PARAMS_START: usize = 3;
+/// Length tag: 2-byte count (256..=65535, except 1024).
+/// 长度档位：2 字节长度 (256..=65535, 排除 1024)
+pub const LEN_TAG_U16: u8 = 0b01;
 
-/// Header params end byte index.
-/// 头部参数结束字节索引
-pub const HDR_PARAMS_END: usize = 5;
+/// Length tag: 4-byte count (65536..=u32::MAX).
+/// 长度档位：4 字节长度 (65536..=42亿，突破 65535 限制)
+pub const LEN_TAG_U32: u8 = 0b10;
+
+/// Length tag: Preset 1024 count (0 bytes for count field).
+/// 长度档位：预设 1024 满块 (0 字节存储长度，极限精简)
+pub const LEN_TAG_1024: u8 = 0b11;
 
 /// Exception count field length in bytes (u16).
 /// 异常总数字段长度 (字节, u16)
@@ -127,6 +131,14 @@ pub const EXC_COUNT_LEN: usize = size_of::<u16>();
 /// Exception position index field length in bytes (u16).
 /// 异常位置索引字段长度 (字节, u16)
 pub const EXC_POS_LEN: usize = size_of::<u16>();
+
+/// Exception count field length in bytes for large arrays (u32).
+/// 大数组异常总数字段长度 (字节, u32)
+pub const EXC_COUNT_LEN_U32: usize = size_of::<u32>();
+
+/// Exception position index field length in bytes for large arrays (u32).
+/// 大数组异常位置索引字段长度 (字节, u32)
+pub const EXC_POS_LEN_U32: usize = size_of::<u32>();
 
 /// Number of sample points drawn during parameter search.
 /// 参数推导搜索采样点数量

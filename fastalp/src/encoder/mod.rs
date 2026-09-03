@@ -8,9 +8,10 @@ pub use standard::encode_standard;
 
 use crate::{
   bitpack::packed_byte_size,
-  constants::{EXC_COUNT_LEN, HEADER_LEN, MIN_HEADER_LEN},
+  constants::{EXC_COUNT_LEN, EXC_COUNT_LEN_U32},
   delta::{delta_range, eval_delta_benefit},
   float::AlpFloat,
+  header::{header_len, raw_header_len, write_header},
   params::pack_params,
   sampler::{BestParams, find_best_params, find_identical_base},
 };
@@ -19,7 +20,7 @@ use crate::{
 /// 单个异常值记录
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Exception<R> {
-  pub pos: u16,
+  pub pos: usize,
   pub bits: R,
 }
 
@@ -36,34 +37,25 @@ pub fn compress_delta_into<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>) {
 }
 
 fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) {
-  let count = data.len().min(u16::MAX as usize) as u16;
+  let count = data.len();
   if count == 0 {
-    dst.reserve(MIN_HEADER_LEN);
-    let count_bytes = 0u16.to_le_bytes();
-    let header = [F::TYPE_BYTE, count_bytes[0], count_bytes[1]];
-    dst.extend_from_slice(&header);
+    let raw_hdr = raw_header_len(0);
+    dst.reserve(raw_hdr);
+    write_header(F::TYPE_BYTE, 0, None, dst);
     return;
   }
 
-  let slice = &data[..count as usize];
+  let slice = data;
 
   // 极速全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
   let first = slice[0];
   if slice.iter().all(|&v| v.is_exact_same(first))
     && let Some((exp, base)) = find_identical_base(first)
   {
-    let total_needed = HEADER_LEN + F::BASE_SIZE;
+    let total_needed = header_len(count) + F::BASE_SIZE;
     dst.reserve(total_needed);
-    let count_bytes = count.to_le_bytes();
-    let params_bytes = pack_params(exp, 0, 0).to_le_bytes();
-    let header = [
-      F::TYPE_BYTE,
-      count_bytes[0],
-      count_bytes[1],
-      params_bytes[0],
-      params_bytes[1],
-    ];
-    dst.extend_from_slice(&header);
+    let packed_params = pack_params(exp, 0, 0);
+    write_header(F::TYPE_BYTE, count, Some(packed_params), dst);
     F::write_base(base, dst);
     return;
   }
@@ -76,62 +68,43 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
 
   let mut encoded_ints: Vec<F::Int> = Vec::with_capacity(slice.len());
   let mut exceptions = Vec::new();
-  let mut min_val = F::MAX_INT;
-  let mut max_val = F::MIN_INT;
 
-  // SAFETY: encoded_ints 已分配 slice.len() 个插槽，通过指针直接写入，最后 set_len 安全更新长度
-  unsafe {
+  // SAFETY: encoded_ints 已分配 slice.len() 个插槽，encode_loop 通过指针直接写入，最后 set_len 安全更新长度
+  let (min_val, max_val) = unsafe {
     let enc_ptr: *mut F::Int = encoded_ints.as_mut_ptr();
-    if use_div {
-      for (i, &val) in slice.iter().enumerate() {
-        if let Some(enc) = val.try_encode_div(exp_factor) {
-          enc_ptr.add(i).write(enc);
-          min_val = min_val.min(enc);
-          max_val = max_val.max(enc);
-        } else {
-          enc_ptr.add(i).write(F::ZERO_INT);
-          exceptions.push(Exception {
-            pos: i as u16,
-            bits: val.to_raw_bits(),
-          });
-        }
-      }
+    let bounds = if use_div {
+      encode_loop(
+        slice,
+        enc_ptr,
+        |v| v.try_encode_div(exp_factor),
+        &mut exceptions,
+      )
     } else if fac_int == 1 {
-      for (i, &val) in slice.iter().enumerate() {
-        let enc = val.fast_round_to_int(exp_factor);
-        let decoded = F::decode_from_int(enc, 1, frac_exp);
-        if decoded.to_raw_bits() == val.to_raw_bits() {
-          enc_ptr.add(i).write(enc);
-          min_val = min_val.min(enc);
-          max_val = max_val.max(enc);
-        } else {
-          enc_ptr.add(i).write(F::ZERO_INT);
-          exceptions.push(Exception {
-            pos: i as u16,
-            bits: val.to_raw_bits(),
-          });
-        }
-      }
+      encode_loop(
+        slice,
+        enc_ptr,
+        |v| {
+          let enc = v.fast_round_to_int(exp_factor);
+          let decoded = F::decode_from_int(enc, 1, frac_exp);
+          if decoded.to_raw_bits() == v.to_raw_bits() {
+            Some(enc)
+          } else {
+            None
+          }
+        },
+        &mut exceptions,
+      )
     } else {
-      for (i, &val) in slice.iter().enumerate() {
-        match val.try_encode_fast(exp_factor, fac_int, frac_exp) {
-          Some(enc) => {
-            enc_ptr.add(i).write(enc);
-            min_val = min_val.min(enc);
-            max_val = max_val.max(enc);
-          }
-          None => {
-            enc_ptr.add(i).write(F::ZERO_INT);
-            exceptions.push(Exception {
-              pos: i as u16,
-              bits: val.to_raw_bits(),
-            });
-          }
-        }
-      }
-    }
+      encode_loop(
+        slice,
+        enc_ptr,
+        |v| v.try_encode_fast(exp_factor, fac_int, frac_exp),
+        &mut exceptions,
+      )
+    };
     encoded_ints.set_len(slice.len());
-  }
+    bounds
+  };
 
   let base = if min_val <= max_val {
     min_val
@@ -149,24 +122,29 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
       // 异常值填充前一个有效整型值，避免对相邻一阶差分造成额外突变影响
       let patch_val = if exc.pos > 0 {
         // SAFETY: exc.pos > 0 且严格小于 encoded_ints.len()
-        unsafe { *encoded_ints.get_unchecked(exc.pos as usize - 1) }
+        unsafe { *encoded_ints.get_unchecked(exc.pos - 1) }
       } else {
         base
       };
-      // SAFETY: exc.pos as usize 严格小于 encoded_ints.len()
+      // SAFETY: exc.pos 严格小于 encoded_ints.len()
       unsafe {
-        *encoded_ints.get_unchecked_mut(exc.pos as usize) = patch_val;
+        *encoded_ints.get_unchecked_mut(exc.pos) = patch_val;
       }
     }
   }
 
+  let is_large = count > u16::MAX as usize;
   let for_bit_width = F::bits_needed(max_offset);
   let for_packed_len = packed_byte_size(slice.len(), for_bit_width);
   let exc_len = if exceptions.is_empty() {
     0
+  } else if is_large {
+    EXC_COUNT_LEN_U32 + exceptions.len() * F::EXC_ENTRY_SIZE_U32
   } else {
     EXC_COUNT_LEN + exceptions.len() * F::EXC_ENTRY_SIZE
   };
+
+  let hdr_len = header_len(count);
 
   // 评估 Delta 差分收益
   let delta_decision = if slice.len() > 1 {
@@ -184,8 +162,8 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
   let (use_delta, min_delta, delta_bit_width, total_needed) = match delta_decision {
     Some((min_d, delta_bw)) => {
       let delta_packed_len = packed_byte_size(slice.len() - 1, delta_bw);
-      let delta_total = HEADER_LEN + F::BASE_SIZE * 2 + delta_packed_len + exc_len;
-      let for_total = HEADER_LEN + F::BASE_SIZE + for_packed_len + exc_len;
+      let delta_total = hdr_len + F::BASE_SIZE * 2 + delta_packed_len + exc_len;
+      let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
       if delta_total < for_total || force_delta {
         (true, min_d, delta_bw, delta_total)
       } else {
@@ -193,19 +171,19 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
       }
     }
     None => {
-      let for_total = HEADER_LEN + F::BASE_SIZE + for_packed_len + exc_len;
+      let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
       (false, F::ZERO_INT, 0, for_total)
     }
   };
 
   let raw_len = size_of_val(slice);
+  let raw_hdr = raw_header_len(count);
 
   // 启用 RAW 模式保底：当压缩后大小超过原始大小（负压缩）时，直接以 RAW 格式存储
-  if total_needed >= raw_len + MIN_HEADER_LEN {
-    let total_raw = MIN_HEADER_LEN + raw_len;
+  if total_needed >= raw_len + raw_hdr {
+    let total_raw = raw_hdr + raw_len;
     dst.reserve(total_raw);
-    let count_bytes = count.to_le_bytes();
-    dst.extend_from_slice(&[F::TYPE_RAW_BYTE, count_bytes[0], count_bytes[1]]);
+    write_header(F::TYPE_RAW_BYTE, count, None, dst);
     // SAFETY: slice 是有效且连续的浮点内存切片，转换为底层紧凑字节序列安全无误
     let raw_slice = unsafe { from_raw_parts(slice.as_ptr().cast::<u8>(), raw_len) };
     dst.extend_from_slice(raw_slice);
@@ -257,4 +235,59 @@ pub fn compress_delta<F: AlpFloat>(data: &[F]) -> Vec<u8> {
   let mut dst = Vec::new();
   compress_delta_into(data, &mut dst);
   dst
+}
+
+/// Encodes slice using a given encoding function, tracking min/max values and pushing exceptions.
+/// 单遍执行浮点数整型转换与极值追踪，统一异常收集（泛型闭包完全内联，零额外开销）
+#[inline(always)]
+unsafe fn encode_loop<F: AlpFloat, E: Fn(F) -> Option<F::Int>>(
+  slice: &[F],
+  enc_ptr: *mut F::Int,
+  encode_fn: E,
+  exceptions: &mut Vec<Exception<F::RawBits>>,
+) -> (F::Int, F::Int) {
+  unsafe {
+    let mut min_val = F::MAX_INT;
+    let mut max_val = F::MIN_INT;
+    for (i, &val) in slice.iter().enumerate() {
+      if let Some(enc) = encode_fn(val) {
+        enc_ptr.add(i).write(enc);
+        min_val = min_val.min(enc);
+        max_val = max_val.max(enc);
+      } else {
+        enc_ptr.add(i).write(F::ZERO_INT);
+        exceptions.push(Exception {
+          pos: i,
+          bits: val.to_raw_bits(),
+        });
+      }
+    }
+    (min_val, max_val)
+  }
+}
+
+/// Encodes exceptions table into dst buffer.
+/// 统一编码异常值字典至目标缓冲区（自适应兼容普通 u16 与超大数组 u32 索引）
+#[inline(always)]
+pub(crate) fn write_exceptions<F: AlpFloat>(
+  count: usize,
+  exceptions: &[Exception<F::RawBits>],
+  dst: &mut Vec<u8>,
+) {
+  if exceptions.is_empty() {
+    return;
+  }
+  if count > u16::MAX as usize {
+    let exc_count = exceptions.len() as u32;
+    dst.extend_from_slice(&exc_count.to_le_bytes());
+    for exc in exceptions {
+      F::write_exception_u32(exc.pos as u32, exc.bits, dst);
+    }
+  } else {
+    let exc_count = exceptions.len() as u16;
+    dst.extend_from_slice(&exc_count.to_le_bytes());
+    for exc in exceptions {
+      F::write_exception(exc.pos as u16, exc.bits, dst);
+    }
+  }
 }

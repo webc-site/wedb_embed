@@ -65,8 +65,7 @@ where
 
   #[inline]
   pub fn lpop_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-    let mut res = list_pop_internal(self, key.as_ref(), 1, true)?;
-    Ok(res.pop())
+    list_pop_one_internal(self, key.as_ref(), true)
   }
 
   #[inline]
@@ -76,8 +75,7 @@ where
 
   #[inline]
   pub fn rpop_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-    let mut res = list_pop_internal(self, key.as_ref(), 1, false)?;
-    Ok(res.pop())
+    list_pop_one_internal(self, key.as_ref(), false)
   }
 
   #[inline]
@@ -516,10 +514,11 @@ where
 
     let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
 
-    let mut write_idx = 0usize;
-    let mut del_idx = 0usize;
+    let first_del = to_delete_offsets[0];
+    let mut write_idx = first_del;
+    let mut del_idx = 1usize;
 
-    for read_idx in 0..len {
+    for read_idx in (first_del + 1)..len {
       if del_idx < to_delete_offsets.len() && to_delete_offsets[del_idx] == read_idx {
         del_idx += 1;
         continue;
@@ -596,27 +595,15 @@ where
         None => return Ok(None),
       };
 
-      if src_left == dst_left {
+      if src_left == dst_left || src_meta.base.size == 1 {
         return Ok(Some(elem));
       }
 
       let mut batch = self.batch();
       batch.rm_data(composer.key_for_idx(curr_idx));
 
-      if src_left {
-        src_meta.head = src_meta.head.wrapping_add(1);
-      } else {
-        src_meta.tail = src_meta.tail.wrapping_sub(1);
-      }
-
-      let target_idx = if dst_left {
-        src_meta.head = src_meta.head.wrapping_sub(1);
-        src_meta.head
-      } else {
-        let t = src_meta.tail;
-        src_meta.tail = src_meta.tail.wrapping_add(1);
-        t
-      };
+      let _ = src_meta.pop_index(src_left);
+      let target_idx = src_meta.push_index(dst_left);
 
       batch.insert_data(composer.key_for_idx(target_idx), &elem);
       batch.insert_meta(&src_meta_k, &src_meta.encode());
@@ -645,11 +632,7 @@ where
 
     batch.rm_data(src_composer.key_for_idx(curr_src_idx));
     src_meta.base.size -= 1;
-    if src_left {
-      src_meta.head = src_meta.head.wrapping_add(1);
-    } else {
-      src_meta.tail = src_meta.tail.wrapping_sub(1);
-    }
+    let _ = src_meta.pop_index(src_left);
 
     if src_meta.base.size == 0 {
       batch.rm_meta(&src_meta_k);
@@ -658,14 +641,7 @@ where
     }
 
     let mut dst_composer = ListItemKeyComposer::new(&kc, dst_bytes);
-    let target_dst_idx = if dst_left {
-      dst_meta.head = dst_meta.head.wrapping_sub(1);
-      dst_meta.head
-    } else {
-      let t = dst_meta.tail;
-      dst_meta.tail = dst_meta.tail.wrapping_add(1);
-      t
-    };
+    let target_dst_idx = dst_meta.push_index(dst_left);
 
     dst_meta.base.size += 1;
     batch.insert_data(dst_composer.key_for_idx(target_dst_idx), &elem);
@@ -915,20 +891,23 @@ where
     return Ok(0);
   }
 
+  if values.len() == 1 {
+    let target_idx = meta.push_index(push_left);
+    let item_k = compose_list_item(&kc, key_bytes, target_idx);
+    batch.insert_data(item_k.as_slice(), values[0].as_ref());
+    meta.base.size += 1;
+    batch.insert_meta(&meta_k, &meta.encode());
+    batch.commit()?;
+    return Ok(meta.base.size);
+  }
+
   let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
   let _data_ks = db.data();
   let _meta_ks = db.meta();
 
   for v in values {
     let v_bytes = v.as_ref();
-    let target_idx = if push_left {
-      meta.head = meta.head.wrapping_sub(1);
-      meta.head
-    } else {
-      let t = meta.tail;
-      meta.tail = meta.tail.wrapping_add(1);
-      t
-    };
+    let target_idx = meta.push_index(push_left);
     let item_k = composer.key_for_idx(target_idx);
     batch.insert_data(item_k, v_bytes);
     meta.base.size += 1;
@@ -937,6 +916,46 @@ where
   batch.insert_meta(&meta_k, &meta.encode());
   batch.commit()?;
   Ok(meta.base.size)
+}
+
+fn list_pop_one_internal<E: Engine>(
+  db: &Db<E>,
+  key_bytes: &[u8],
+  pop_left: bool,
+) -> Result<Option<Vec<u8>>>
+where
+  Error: From<E::Error>,
+{
+  let kc = db.kc();
+  let meta_k = compose_list_meta_key(&kc, key_bytes);
+  let now_ms = current_now_ms();
+
+  let mut meta = match get_meta_checked::<ListMeta, _>(db, key_bytes, &meta_k, now_ms)? {
+    Some(m) if m.base.size > 0 => m,
+    _ => return Ok(None),
+  };
+
+  let target_idx = meta.pop_index(pop_left);
+
+  let item_k = compose_list_item(&kc, key_bytes, target_idx);
+  let data_ks = db.data();
+  let val = match data_ks.get(item_k.as_slice())? {
+    Some(v) => v.to_vec(),
+    None => return Ok(None),
+  };
+
+  let mut batch = db.batch_with_capacity(2);
+  batch.rm_weak_data(item_k.as_slice());
+
+  meta.base.size -= 1;
+  if meta.base.size == 0 {
+    batch.rm_meta(&meta_k);
+  } else {
+    batch.insert_meta(&meta_k, &meta.encode());
+  }
+  batch.commit()?;
+
+  Ok(Some(val))
 }
 
 fn list_pop_internal<E: Engine>(
@@ -969,14 +988,7 @@ where
   let _meta_ks = db.meta();
 
   for _ in 0..actual_count {
-    let target_idx = if pop_left {
-      let h = meta.head;
-      meta.head = meta.head.wrapping_add(1);
-      h
-    } else {
-      meta.tail = meta.tail.wrapping_sub(1);
-      meta.tail
-    };
+    let target_idx = meta.pop_index(pop_left);
     let item_k = composer.key_for_idx(target_idx);
     if let Some(val) = data_ks.get(item_k)? {
       results.push(val.to_vec());

@@ -1,0 +1,50 @@
+title: "fastalp 浮点压缩基准横向评测"
+subtitle: "多算法同机实测：解压吞吐量、压缩比与物理时序场景全量对比"
+env_title: "评测环境"
+env_cpu: "CPU: Apple M2 Max (12 核心: 8 性能核 @ 3.68 GHz + 4 能效核 @ 2.42 GHz)"
+env_os: "系统: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64)"
+env_toolchain: "工具链: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)"
+env_bench: "基准套件: 论文 31 公开数据集 + 典型传感/时序序列，稳态中位数采样"
+
+hero_alt: "fastalp 浮点压缩算法全量性能与压缩比横向对比"
+
+card1_title: "单核解压吞吐峰值"
+card1_val: "77.0 GB/s"
+card1_sub: "较 C++ 原版提速 3.52x (同值序列 136 ns)"
+
+card2_title: "连续时序压缩率 (Ramp)"
+card2_val: "431.2x"
+card2_sub: "较 Pcodec 提升 9.7x，较 C++ 原版提升 458x"
+
+card3_title: "31 数据集解压均值"
+card3_val: "18.0 GB/s"
+card3_sub: "较 Pcodec 提速 9.0x，较 Zstd 提速 12.6x"
+
+card4_title: "31 数据集总压缩体积"
+card4_val: "97.9 KB"
+card4_sub: "较 C++ 原版节省 4.79% 空间，零负压缩膨胀"
+
+sec1_title: "ALP 论文 31 个真实公开数据集全量综合对比 (253,952 字节)"
+sec1_sub: "衡量各算法面对广泛真实物理、金融、气象、医疗等浮点数据的综合处理能力"
+
+sec2_title: "典型时序与物理传感器场景细分对比"
+sec2_sub: "涵盖物理传感抖动 (Sensor)、单调平滑坡道 (Ramp) 与常数稳定流 (Constant)"
+
+legend_dec_speed: "解压吞吐 (GB/s)"
+legend_ratio: "压缩比 (倍数)"
+legend_enc_speed: "编码吞吐 (GB/s)"
+legend_bits: "点均比特 (b/v)"
+
+col_algo: "算法名称"
+col_type: "算法类型"
+col_dec: "解码吞吐"
+col_ratio: "压缩比"
+col_size: "31集总体积"
+col_enc: "编码吞吐"
+
+type_specialized: "专用浮点时序"
+type_general: "通用字节字典"
+
+scene_sensor: "物理传感时序 (Sensor 1024)"
+scene_ramp: "单调递增时序 (Ramp 1024)"
+scene_constant: "常数稳定时序 (Constant 1024)"

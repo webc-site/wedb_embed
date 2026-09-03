@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use crate::{
   Db,
-  api::key::cleanup_composite_data_raw,
+  api::key::{DBScanInfo, cleanup_composite_data_raw},
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key_composer::{
@@ -93,6 +93,7 @@ pub(crate) struct WeDbInner<E: Engine> {
   pub(crate) meta: E::Partition,
   pub(crate) ns_lock: Mutex<()>,
   pub(crate) expire_cursor: Mutex<ExpireCursors>,
+  pub(crate) db_scan_infos: parking_lot::RwLock<rapidhash::RapidHashMap<(u64, u64), DBScanInfo>>,
 }
 
 /// Activate and persist a database in the catalog directory
@@ -278,6 +279,7 @@ where
         meta,
         ns_lock: Mutex::new(()),
         expire_cursor: Mutex::new(ExpireCursors::default()),
+        db_scan_infos: parking_lot::RwLock::new(rapidhash::RapidHashMap::default()),
       }),
     };
     let _ = activate_db_impl::<E>(&wedb.inner.meta, 0, 0);

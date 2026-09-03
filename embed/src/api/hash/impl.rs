@@ -13,8 +13,8 @@ use crate::{
     },
     meta::{
       HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
-      compose_hash_prefix, compose_hash_prefix_stack, decode_field_state, hexpire_condition_passes,
-      is_field_expired, is_immediate_expire,
+      compose_hash_prefix_stack, decode_field_state, hexpire_condition_passes, is_field_expired,
+      is_immediate_expire,
     },
     opt::{
       HExpire, HGetEx, HSet, HashFieldSetCondition, HashGetEx, HashLengthMode, HashSetEx, RangeLex,
@@ -100,7 +100,7 @@ where
   Error: From<E::Error>,
 {
   let kc = db.kc();
-  let prefix = compose_hash_prefix(&kc, k_bytes);
+  let prefix = compose_hash_prefix_stack(&kc, k_bytes);
   let mut repaired = *meta;
   repaired.base.size = 0;
   repaired.persist = 0;
@@ -113,7 +113,7 @@ where
   for g in data_ks.prefix(&prefix) {
     let entry = g?;
     let (k, v) = (entry.key(), entry.value());
-    if !k.starts_with(&prefix) {
+    if !k.starts_with(prefix.as_slice()) {
       break;
     }
     if let Some(state) = decode_field_state(meta, v, now_ms) {
@@ -342,8 +342,7 @@ where
       return Ok(inserted_count);
     }
 
-    // 既有元数据多字段通用路径
-    let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
+    // 既有元数据多字段通用路径（逆序去重保留最后写入值，就地解码状态，零额外堆分配）
     let mut seen = HashSet::with_capacity(fields.len());
     let mut unique_fields = Vec::with_capacity(fields.len());
     for (f, v) in fields.iter().rev() {
@@ -359,15 +358,13 @@ where
     for (f_bytes, v_bytes) in unique_fields {
       let item_k = composer.key_for_field(f_bytes);
 
-      let entry = if let Some(cached) = state_cache.get(f_bytes) {
-        cached.clone()
+      let state_kind = if let Some(raw) = data_ks.get(item_k)? {
+        decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
       } else {
-        let state_entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
-        state_cache.insert(f_bytes, state_entry.clone());
-        state_entry
+        HashFieldStateKind::Missing
       };
 
-      match entry.kind {
+      match state_kind {
         HashFieldStateKind::Missing => {
           meta.apply_missing_to_persistent();
           inserted_count += 1;
@@ -383,14 +380,6 @@ where
       }
 
       meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
-      state_cache.insert(
-        f_bytes,
-        CachedFieldState {
-          kind: HashFieldStateKind::Persistent,
-          expire: 0,
-          raw: None,
-        },
-      );
     }
 
     if meta.base.size == 0 {
@@ -401,6 +390,17 @@ where
     batch.commit()?;
 
     Ok(inserted_count)
+  }
+
+  /// Sets multiple hash fields (HMSET, alias for HSET, aligned with Redis / Apache Kvrocks).
+  /// 批量设置哈希字段（HMSET，HSET 的别名，对标 Redis / Apache Kvrocks）
+  #[inline]
+  pub fn hmset<K: AsRef<[u8]>, F: AsRef<[u8]>, V: AsRef<[u8]>>(
+    &self,
+    key: K,
+    fields: &[(F, V)],
+  ) -> Result<usize> {
+    self.hset(key, fields)
   }
 
   #[inline]
@@ -895,13 +895,13 @@ where
   where
     F: FnMut(&[u8], &[u8]) -> bool,
   {
-    let prefix = compose_hash_prefix(kc, key_bytes);
+    let prefix = compose_hash_prefix_stack(kc, key_bytes);
     let prefix_len = prefix.len();
 
     for guard in self.data().prefix(&prefix) {
       let entry = guard?;
       let (k, v) = (entry.key(), entry.value());
-      if !k.starts_with(&prefix) {
+      if !k.starts_with(prefix.as_slice()) {
         break;
       }
       if let Some((_, payload)) = meta.decode_live_subkey_value(v, now_ms) {
@@ -999,6 +999,14 @@ where
         Ok(out)
       }
     }
+  }
+
+  /// Returns a single random field from the hash, or None if key does not exist or is empty (HRANDFIELD key).
+  /// 随机返回哈希表中的一个字段（HRANDFIELD key，对标 Redis 6.2+ / Apache Kvrocks）
+  #[inline]
+  pub fn hrandfield_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+    let fields = self.hrandfield(key, 1, false)?;
+    Ok(fields.into_iter().next().map(|(f, _)| f))
   }
 
   #[inline]
@@ -2152,11 +2160,11 @@ where
       return Ok(Vec::new());
     }
 
-    let prefix = compose_hash_prefix(&kc, key_bytes);
+    let prefix = compose_hash_prefix_stack(&kc, key_bytes);
     let prefix_len = prefix.len();
     let data_ks = self.data();
 
-    let (start_bound, end_bound) = hash_lex_range_bounds(&prefix, &spec);
+    let (start_bound, end_bound) = hash_lex_range_bounds(prefix.as_slice(), &spec);
     let start_ref = match &start_bound {
       Bound::Included(b) => Bound::Included(b.as_slice()),
       Bound::Excluded(b) => Bound::Excluded(b.as_slice()),
@@ -2173,7 +2181,7 @@ where
     let mut skipped = 0;
 
     let mut process_entry = |k: &[u8], v: &[u8]| -> bool {
-      if !k.starts_with(&prefix) {
+      if !k.starts_with(prefix.as_slice()) {
         return false;
       }
       let field_bytes = &k[prefix_len..];

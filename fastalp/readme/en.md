@@ -2,6 +2,16 @@
 
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
+<p align="center">
+  <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg" target="_blank">
+    <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  </a>
+  <br>
+  <b>🔗 Vector SVG Direct Link</b>: <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg"><code>https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg</code></a>
+  <br><br>
+  <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores: 8 Performance @ 3.68 GHz + 4 Efficiency @ 2.42 GHz) ｜ OS: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64) ｜ Toolchain: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)</sub>
+</p>
+
 ---
 
 
@@ -14,6 +24,10 @@ Traditional general-purpose compression algorithms and integer bitpackers operat
 
 - **Exact Lossless Reconstruction**:<br>
   Guarantees bit-exact IEEE 754 preservation for all inputs, including special values such as `NaN`, `+Inf`, `-Inf`, and `-0.0`.
+
+- **Compact Self-Describing Header & Large Array Support**:<br>
+  Features a 2-bit length tag header layout where standard 1024-element blocks require only a 3-byte compressed header (and just 1 byte in raw fallback mode).<br>
+  Natively scales beyond 65,535 elements by auto-upgrading to 32-bit count and exception index fields, removing single-block size limits.
 
 - **Adaptive Delta Differential Encoding (Delta-ALP)**:<br>
   Automatically evaluates smooth and continuous physical time series (weather, hydrology, telemetry), adaptively applying first-order differences and branchless prefix sum accumulation to reduce bit widths by 15% to 38%.
@@ -147,8 +161,8 @@ graph TD
 ### Compression Pipeline
 
 - **Constant Detection & Fallback Filter (`encoder.rs`)**:<br>
-  Quickly evaluates bit-exact identical sequences (`v.is_exact_same(first)`). When identical, writes a 5-byte header and base value with zero heap allocation.<br>
-  When estimated payload exceeds raw size plus header overhead, switches to 3-byte raw mode to guarantee zero data inflation.
+  Quickly evaluates bit-exact identical sequences (`v.is_exact_same(first)`). When identical, writes a self-describing compact header and base value with zero heap allocation.<br>
+  When estimated payload exceeds raw size plus compact header overhead, switches to raw mode (1 byte for 1024 blocks) to guarantee zero data inflation.
 
 - **Sampling (`sampler.rs`)**:<br>
   Evaluates up to 32 evenly distributed sample points across parameter combinations `(exp, fac)`.<br>
@@ -165,8 +179,8 @@ graph TD
 
 ### Decompression Pipeline
 
-- **Header Parsing (`decoder.rs`)**:<br>
-  Reads compact header, extracting format type and element count.<br>
+- **Header Parsing (`header.rs`, `decoder.rs`)**:<br>
+  Reads descriptor byte and decodes element count via 2-bit length tags to locate parameter offsets.<br>
   For raw fallback chunks, performs direct zero-copy slice restoration.<br>
   For ALP chunks, extracts packed `(exp, fac, bit_width)` parameters and base value.
 
@@ -218,6 +232,7 @@ fastalp/
 │   │   ├── mod.rs      # AlpFloat trait and lookup table generator
 │   │   ├── f32.rs      # Single-precision f32 implementation
 │   │   └── f64.rs      # Double-precision f64 implementation
+│   ├── header.rs       # Compact self-describing header encoding/decoding & 2-bit length tags
 │   ├── lib.rs          # Public crate exports and high-level API
 │   ├── params.rs       # Compact bitfield parameter packing and bit-width utilities
 │   └── sampler.rs      # Adaptive parameter optimization and lossless roundtrip verification
@@ -230,7 +245,7 @@ fastalp/
 
 ---
 
-## Benchmarks & C++ Comparison
+## Benchmarks & Cross-Algorithm Comparison
 
 ### Benchmark Environment & Toolchain
 
@@ -242,6 +257,39 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 - **C++ Compiler Toolchain**: Homebrew LLVM Clang 22.1.8 (`-O3 -std=c++17 -DNDEBUG -march=native`) / CMake 4.4.2<br>
 - **Memory Allocator**: `mimalloc 0.1.52`<br>
 - **Benchmark Suites**: Rust `divan 0.1.20` vs C++ `std::chrono::high_resolution_clock` (steady-state median sampling)
+
+### Cross-Algorithm Benchmark Comparison
+
+Evaluated side-by-side across industry-standard floating-point and time-series compression codecs on identical hardware and data streams:
+- **fastalp** (Rust Edition 2024, SIMD NEON)
+- **C++ ALP** (Official paper reference implementation, Clang 22.1.8 -O3)
+- **Pcodec / pco 1.0.3** (Columnar numeric compression, ANS entropy coding)
+- **Zstandard / zstd 0.13** (General dictionary compression, Level 3)
+- **LZ4 / lz4_flex 0.14** (Ultra-fast general byte compressor)
+- **Snappy / snap 1.1** (Google high-speed byte compressor)
+- **Chimp128** (VLDB 2022 floating-point time series)
+- **Gorilla** (VLDB 2015 XOR floating-point time series)
+
+#### Comprehensive Comparison on 31 Paper Datasets (253,952 Bytes)
+
+| Codec | Category | 31 Datasets Total Size | Compression Ratio | Bits / Value | Avg Decode Speed | Avg Encode Speed |
+|---|---|---|---|---|---|---|
+| **fastalp (Rust)** | Specialized Float | **97,943 B** | **2.59x** | **24.68 b/v** | **18.0 GB/s** | **2.32 GB/s** |
+| **C++ ALP (Reference)** | Specialized Float | 102,873 B | 2.47x | 25.93 b/v | 21.85 GB/s (peak) | 0.84 GB/s |
+| **Pcodec (pco)** | Specialized Numeric ANS | 82,888 B | 3.06x | 20.89 b/v | 1.99 GB/s | 0.24 GB/s |
+| **Zstd (level 3)** | General Byte Dict | 101,317 B | 2.51x | 25.53 b/v | 1.42 GB/s | 0.89 GB/s |
+| **Chimp128** | Specialized Float XOR | 119,725 B | 2.12x | 30.17 b/v | 0.52 GB/s | 0.69 GB/s |
+| **Snappy (snap)** | Fast General Bytes | 127,290 B | 2.00x | 32.08 b/v | 7.51 GB/s | 3.76 GB/s |
+| **LZ4 (lz4_flex)** | Fast General Bytes | 129,189 B | 1.97x | 32.56 b/v | 7.74 GB/s | 3.11 GB/s |
+| **Gorilla** | Specialized Float XOR | 167,601 B | 1.52x | 42.24 b/v | 0.65 GB/s | 1.19 GB/s |
+
+#### Representative Time Series & Sensor Scenario Breakdown
+
+| Scenario (1024-Point Block) | fastalp (Rust) | C++ ALP (Reference) | Pcodec (pco) | Zstd (level 3) | LZ4 (lz4_flex) | Gorilla |
+|---|---|---|---|---|---|---|
+| **Physical Sensor**<br>Ratio / Decode Speed | **7.91x** (8.09 b/v)<br>**22.60 GB/s** | 7.86x (8.14 b/v)<br>21.85 GB/s | **99.90x** (0.64 b/v)<br>1.58 GB/s | 30.01x (2.13 b/v)<br>1.99 GB/s | 12.21x (5.24 b/v)<br>11.30 GB/s | 1.11x (57.67 b/v)<br>0.39 GB/s |
+| **Monotonic Ramp**<br>Ratio / Decode Speed | **431.16x** (0.15 b/v)<br>**28.08 GB/s** | 0.94x (Inflated)<br>0.58 GB/s | 44.52x (1.44 b/v)<br>0.85 GB/s | 6.93x (9.23 b/v)<br>0.90 GB/s | 1.98x (32.27 b/v)<br>2.72 GB/s | 1.16x (55.07 b/v)<br>0.39 GB/s |
+| **Constant Series**<br>Ratio / Decode Speed | **744.73x** (0.09 b/v)<br>**45.20 GB/s** | 455.11x (0.14 b/v)<br>21.85 GB/s | 282.48x (0.23 b/v)<br>4.82 GB/s | 292.57x (0.22 b/v)<br>3.37 GB/s | 146.29x (0.44 b/v)<br>2.08 GB/s | 30.45x (2.10 b/v)<br>1.82 GB/s |
 
 ### Side-by-Side Throughput Comparison
 
@@ -350,7 +398,7 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 - **Reference C++ Limitation**:<br>
   On high-entropy unstructured floats or high-precision geographic coordinates (such as POI latitude/longitude), exception tables expand beyond uncompressed payload size, leading to negative compression (down to 0.51x, doubling storage size).
 - **fastalp Algorithmic Innovation**:<br>
-  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a 3-byte metadata header, the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
+  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a compact metadata header (only 1 byte for 1024-element blocks), the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
 
 ---
 
@@ -362,14 +410,16 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
   Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
 - **fastalp Optimization**:<br>
   Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
-  Directly emits a 5-byte header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
+  Directly emits a self-describing compact header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
 
 #### Zero-Heap Direct Streaming Decompression
 
 - **Reference C++ Implementation**:<br>
   Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
 - **fastalp Optimization**:<br>
-  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
+  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot;<br>
+  For Delta differential time series, leverages 1024-element byte-alignment to stream-decode in fixed 1024-element stack batches, reducing additional heap allocations for arbitrary large arrays to 0 bytes while keeping stack buffers hot in L1 data cache;<br>
+  Provides `compress_into` and `decompress_into` zero-allocation APIs.
 
 #### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
 

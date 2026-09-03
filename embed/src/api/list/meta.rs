@@ -82,6 +82,50 @@ impl ListMeta {
     self.base.is_expired(now_ms)
   }
 
+  #[inline(always)]
+  pub fn push_head(&mut self) -> u64 {
+    self.head = self.head.wrapping_sub(1);
+    self.head
+  }
+
+  #[inline(always)]
+  pub fn push_tail(&mut self) -> u64 {
+    let t = self.tail;
+    self.tail = self.tail.wrapping_add(1);
+    t
+  }
+
+  #[inline(always)]
+  pub fn pop_head(&mut self) -> u64 {
+    let h = self.head;
+    self.head = self.head.wrapping_add(1);
+    h
+  }
+
+  #[inline(always)]
+  pub fn pop_tail(&mut self) -> u64 {
+    self.tail = self.tail.wrapping_sub(1);
+    self.tail
+  }
+
+  #[inline(always)]
+  pub fn push_index(&mut self, left: bool) -> u64 {
+    if left {
+      self.push_head()
+    } else {
+      self.push_tail()
+    }
+  }
+
+  #[inline(always)]
+  pub fn pop_index(&mut self, left: bool) -> u64 {
+    if left {
+      self.pop_head()
+    } else {
+      self.pop_tail()
+    }
+  }
+
   #[inline]
   pub fn encode(&self) -> [u8; Self::ENCODED_SIZE] {
     let mut buf = [0u8; Self::ENCODED_SIZE];

@@ -11,6 +11,16 @@
 
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
+<p align="center">
+  <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg" target="_blank">
+    <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  </a>
+  <br>
+  <b>🔗 Vector SVG Direct Link</b>: <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg"><code>https://fastly.jsdelivr.net/gh/webc-fs/-@jD/gsnw4FVMbK2ayXKnKKGQ.svg</code></a>
+  <br><br>
+  <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores: 8 Performance @ 3.68 GHz + 4 Efficiency @ 2.42 GHz) ｜ OS: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64) ｜ Toolchain: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)</sub>
+</p>
+
 ---
 
 - [Overview](#overview)
@@ -25,8 +35,11 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
   - [Decompression Pipeline](#decompression-pipeline)
 - [Tech Stack](#tech-stack)
 - [Directory Structure](#directory-structure)
-- [Benchmarks & C++ Comparison](#benchmarks-c-comparison)
+- [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
+  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
+    - [Comprehensive Comparison on 31 Paper Datasets (253,952 Bytes)](#comprehensive-comparison-on-31-paper-datasets-253952-bytes)
+    - [Representative Time Series & Sensor Scenario Breakdown](#representative-time-series-sensor-scenario-breakdown)
   - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
   - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
   - [Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)](#real-world-physical-telemetry-benchmark-noaa-usgs-all-64-series)
@@ -54,6 +67,10 @@ Traditional general-purpose compression algorithms and integer bitpackers operat
 
 - **Exact Lossless Reconstruction**:<br>
   Guarantees bit-exact IEEE 754 preservation for all inputs, including special values such as `NaN`, `+Inf`, `-Inf`, and `-0.0`.
+
+- **Compact Self-Describing Header & Large Array Support**:<br>
+  Features a 2-bit length tag header layout where standard 1024-element blocks require only a 3-byte compressed header (and just 1 byte in raw fallback mode).<br>
+  Natively scales beyond 65,535 elements by auto-upgrading to 32-bit count and exception index fields, removing single-block size limits.
 
 - **Adaptive Delta Differential Encoding (Delta-ALP)**:<br>
   Automatically evaluates smooth and continuous physical time series (weather, hydrology, telemetry), adaptively applying first-order differences and branchless prefix sum accumulation to reduce bit widths by 15% to 38%.
@@ -187,8 +204,8 @@ graph TD
 ### Compression Pipeline
 
 - **Constant Detection & Fallback Filter (`encoder.rs`)**:<br>
-  Quickly evaluates bit-exact identical sequences (`v.is_exact_same(first)`). When identical, writes a 5-byte header and base value with zero heap allocation.<br>
-  When estimated payload exceeds raw size plus header overhead, switches to 3-byte raw mode to guarantee zero data inflation.
+  Quickly evaluates bit-exact identical sequences (`v.is_exact_same(first)`). When identical, writes a self-describing compact header and base value with zero heap allocation.<br>
+  When estimated payload exceeds raw size plus compact header overhead, switches to raw mode (1 byte for 1024 blocks) to guarantee zero data inflation.
 
 - **Sampling (`sampler.rs`)**:<br>
   Evaluates up to 32 evenly distributed sample points across parameter combinations `(exp, fac)`.<br>
@@ -205,8 +222,8 @@ graph TD
 
 ### Decompression Pipeline
 
-- **Header Parsing (`decoder.rs`)**:<br>
-  Reads compact header, extracting format type and element count.<br>
+- **Header Parsing (`header.rs`, `decoder.rs`)**:<br>
+  Reads descriptor byte and decodes element count via 2-bit length tags to locate parameter offsets.<br>
   For raw fallback chunks, performs direct zero-copy slice restoration.<br>
   For ALP chunks, extracts packed `(exp, fac, bit_width)` parameters and base value.
 
@@ -258,6 +275,7 @@ fastalp/
 │   │   ├── mod.rs      # AlpFloat trait and lookup table generator
 │   │   ├── f32.rs      # Single-precision f32 implementation
 │   │   └── f64.rs      # Double-precision f64 implementation
+│   ├── header.rs       # Compact self-describing header encoding/decoding & 2-bit length tags
 │   ├── lib.rs          # Public crate exports and high-level API
 │   ├── params.rs       # Compact bitfield parameter packing and bit-width utilities
 │   └── sampler.rs      # Adaptive parameter optimization and lossless roundtrip verification
@@ -270,7 +288,7 @@ fastalp/
 
 ---
 
-## Benchmarks & C++ Comparison
+## Benchmarks & Cross-Algorithm Comparison
 
 ### Benchmark Environment & Toolchain
 
@@ -282,6 +300,39 @@ All microbenchmarks were executed and measured side-by-side on the same physical
 - **C++ Compiler Toolchain**: Homebrew LLVM Clang 22.1.8 (`-O3 -std=c++17 -DNDEBUG -march=native`) / CMake 4.4.2<br>
 - **Memory Allocator**: `mimalloc 0.1.52`<br>
 - **Benchmark Suites**: Rust `divan 0.1.20` vs C++ `std::chrono::high_resolution_clock` (steady-state median sampling)
+
+### Cross-Algorithm Benchmark Comparison
+
+Evaluated side-by-side across industry-standard floating-point and time-series compression codecs on identical hardware and data streams:
+- **fastalp** (Rust Edition 2024, SIMD NEON)
+- **C++ ALP** (Official paper reference implementation, Clang 22.1.8 -O3)
+- **Pcodec / pco 1.0.3** (Columnar numeric compression, ANS entropy coding)
+- **Zstandard / zstd 0.13** (General dictionary compression, Level 3)
+- **LZ4 / lz4_flex 0.14** (Ultra-fast general byte compressor)
+- **Snappy / snap 1.1** (Google high-speed byte compressor)
+- **Chimp128** (VLDB 2022 floating-point time series)
+- **Gorilla** (VLDB 2015 XOR floating-point time series)
+
+#### Comprehensive Comparison on 31 Paper Datasets (253,952 Bytes)
+
+| Codec | Category | 31 Datasets Total Size | Compression Ratio | Bits / Value | Avg Decode Speed | Avg Encode Speed |
+|---|---|---|---|---|---|---|
+| **fastalp (Rust)** | Specialized Float | **97,943 B** | **2.59x** | **24.68 b/v** | **18.0 GB/s** | **2.32 GB/s** |
+| **C++ ALP (Reference)** | Specialized Float | 102,873 B | 2.47x | 25.93 b/v | 21.85 GB/s (peak) | 0.84 GB/s |
+| **Pcodec (pco)** | Specialized Numeric ANS | 82,888 B | 3.06x | 20.89 b/v | 1.99 GB/s | 0.24 GB/s |
+| **Zstd (level 3)** | General Byte Dict | 101,317 B | 2.51x | 25.53 b/v | 1.42 GB/s | 0.89 GB/s |
+| **Chimp128** | Specialized Float XOR | 119,725 B | 2.12x | 30.17 b/v | 0.52 GB/s | 0.69 GB/s |
+| **Snappy (snap)** | Fast General Bytes | 127,290 B | 2.00x | 32.08 b/v | 7.51 GB/s | 3.76 GB/s |
+| **LZ4 (lz4_flex)** | Fast General Bytes | 129,189 B | 1.97x | 32.56 b/v | 7.74 GB/s | 3.11 GB/s |
+| **Gorilla** | Specialized Float XOR | 167,601 B | 1.52x | 42.24 b/v | 0.65 GB/s | 1.19 GB/s |
+
+#### Representative Time Series & Sensor Scenario Breakdown
+
+| Scenario (1024-Point Block) | fastalp (Rust) | C++ ALP (Reference) | Pcodec (pco) | Zstd (level 3) | LZ4 (lz4_flex) | Gorilla |
+|---|---|---|---|---|---|---|
+| **Physical Sensor**<br>Ratio / Decode Speed | **7.91x** (8.09 b/v)<br>**22.60 GB/s** | 7.86x (8.14 b/v)<br>21.85 GB/s | **99.90x** (0.64 b/v)<br>1.58 GB/s | 30.01x (2.13 b/v)<br>1.99 GB/s | 12.21x (5.24 b/v)<br>11.30 GB/s | 1.11x (57.67 b/v)<br>0.39 GB/s |
+| **Monotonic Ramp**<br>Ratio / Decode Speed | **431.16x** (0.15 b/v)<br>**28.08 GB/s** | 0.94x (Inflated)<br>0.58 GB/s | 44.52x (1.44 b/v)<br>0.85 GB/s | 6.93x (9.23 b/v)<br>0.90 GB/s | 1.98x (32.27 b/v)<br>2.72 GB/s | 1.16x (55.07 b/v)<br>0.39 GB/s |
+| **Constant Series**<br>Ratio / Decode Speed | **744.73x** (0.09 b/v)<br>**45.20 GB/s** | 455.11x (0.14 b/v)<br>21.85 GB/s | 282.48x (0.23 b/v)<br>4.82 GB/s | 292.57x (0.22 b/v)<br>3.37 GB/s | 146.29x (0.44 b/v)<br>2.08 GB/s | 30.45x (2.10 b/v)<br>1.82 GB/s |
 
 ### Side-by-Side Throughput Comparison
 
@@ -390,7 +441,7 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 - **Reference C++ Limitation**:<br>
   On high-entropy unstructured floats or high-precision geographic coordinates (such as POI latitude/longitude), exception tables expand beyond uncompressed payload size, leading to negative compression (down to 0.51x, doubling storage size).
 - **fastalp Algorithmic Innovation**:<br>
-  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a 3-byte metadata header, the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
+  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a compact metadata header (only 1 byte for 1024-element blocks), the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
 
 ---
 
@@ -402,14 +453,16 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
   Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
 - **fastalp Optimization**:<br>
   Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
-  Directly emits a 5-byte header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
+  Directly emits a self-describing compact header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
 
 #### Zero-Heap Direct Streaming Decompression
 
 - **Reference C++ Implementation**:<br>
   Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
 - **fastalp Optimization**:<br>
-  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot and providing `compress_into` and `decompress_into` zero-allocation APIs.
+  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot;<br>
+  For Delta differential time series, leverages 1024-element byte-alignment to stream-decode in fixed 1024-element stack batches, reducing additional heap allocations for arbitrary large arrays to 0 bytes while keeping stack buffers hot in L1 data cache;<br>
+  Provides `compress_into` and `decompress_into` zero-allocation APIs.
 
 #### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
 
@@ -454,6 +507,12 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
+<p align="center">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@G1/NLzBVVepG2v72whkgFJg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <br>
+  <sub><b>评测环境</b>: CPU: Apple M2 Max (12 核心: 8 性能核 @ 3.68 GHz + 4 能效核 @ 2.42 GHz) ｜ 系统: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64) ｜ 工具链: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)</sub>
+</p>
+
 ---
 
 - [功能特性](#功能特性)
@@ -468,18 +527,21 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
   - [解压流程](#解压流程)
 - [技术栈](#技术栈)
 - [目录结构](#目录结构)
-- [性能评测与 C++ 原版对比](#性能评测与-c-原版对比)
+- [性能评测与多算法对比](#性能评测与多算法对比)
   - [测试环境与编译配置](#测试环境与编译配置)
+  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
+    - [公开数据集全量综合对比](#公开数据集全量综合对比)
+    - [典型时序与物理传感器场景细分对比](#典型时序与物理传感器场景细分对比)
   - [同机实测吞吐量对比](#同机实测吞吐量对比)
   - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
   - [真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)](#真实物理观测时序数据集对比-noaa-usgs-全量-64-时序)
 - [架构对比与工程优化设计](#架构对比与工程优化设计)
-  - [核心压缩率算法优化对比 (vs C++ 原版)](#核心压缩率算法优化对比-vs-c-原版)
-    - [1. 十进制精确除法重构模式 (Decimal Division Mode) —— 根治乘法舍入伪异常](#1-十进制精确除法重构模式-decimal-division-mode-根治乘法舍入伪异常)
-    - [2. 自适应一阶差分时序编码 (Delta-ALP) —— 突破全局极值跨度瓶颈](#2-自适应一阶差分时序编码-delta-alp-突破全局极值跨度瓶颈)
-    - [3. 异常点前值平滑隔离补丁 —— 杜绝尖峰噪声污染差分流](#3-异常点前值平滑隔离补丁-杜绝尖峰噪声污染差分流)
-    - [4. 原始保底机制消除负压缩 (Raw Fallback Safeguard)](#4-原始保底机制消除负压缩-raw-fallback-safeguard)
-  - [工程微架构与吞吐性能优化 (vs C++ 原版)](#工程微架构与吞吐性能优化-vs-c-原版)
+  - [核心压缩率算法优化对比](#核心压缩率算法优化对比)
+    - [十进制精确除法重构模式 —— 消除乘法舍入伪异常](#十进制精确除法重构模式-消除乘法舍入伪异常)
+    - [自适应一阶差分时序编码 —— 突破全局极值跨度瓶颈](#自适应一阶差分时序编码-突破全局极值跨度瓶颈)
+    - [异常点前值平滑隔离补丁 —— 避免尖峰噪声污染差分流](#异常点前值平滑隔离补丁-避免尖峰噪声污染差分流)
+    - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
+  - [工程微架构与吞吐性能优化](#工程微架构与吞吐性能优化)
     - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
     - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
     - [纯寄存器 SIMD 向量化解压与局部查表混合加速](#纯寄存器-simd-向量化解压与局部查表混合加速)
@@ -498,14 +560,18 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 - **严格无损重构**：<br>
   保证解码数据与原始 IEEE 754 二进制位严格一致，支持 `NaN`、`+Inf`、`-Inf` 与 `-0.0` 等特殊值。
 
-- **时序差分自适应编码 (Delta-ALP)**：<br>
+- **紧凑自描述头与超大数组支持**：<br>
+  采用 2-bit 长度标签紧凑头部架构，标准 1024 满块压缩头仅占 3 字节，RAW 保底模式仅占 1 字节；<br>
+  原生支持超过 65,535 元素的超大数组，自动升级为 4 字节数量与 4 字节异常索引，解除单块长度截断限制。
+
+- **时序差分自适应编码**：<br>
   自动评估连续平滑的时序物理波形（气象、水文、传感器），自适应采用一阶相邻差分与前缀和递推，位宽进一步收窄 15% ~ 38%。
 
-- **十进制精确除法重构 (Decimal Division Mode)**：<br>
-  彻底消除 IEEE 754 浮点乘法（如 `* 0.1`）引起的无限循环二进制尾数截断误差，以十进制除法精确重构，将观测时序异常点直接归零。
+- **十进制精确除法重构**：<br>
+  消除 IEEE 754 浮点乘法（如 `* 0.1`）引起的无限循环二进制尾数截断误差，以十进制除法精确重构，将观测时序异常点直接归零。
 
 - **栈上 LUT 查表与 SIMD 混合加速**：<br>
-  小位宽利用 256 项栈上查找表（L1D 缓存命中）彻底消除循环内硬件除法延迟；对直接模式采用纯寄存器 SIMD 向量化计算，吞吐高达 55+ GB/s。
+  小位宽利用 256 项栈上查找表（L1D 缓存命中）消除循环内硬件除法延迟；对直接模式采用纯寄存器 SIMD 向量化计算，吞吐高达 55+ GB/s。
 
 - **自适应参数推导**：<br>
   通过对输入数据进行采样，计算使编码位宽最小的最优参数组合 `(exp, fac, use_div)`。
@@ -630,8 +696,8 @@ graph TD
 ### 压缩流程
 
 - **全等探测与保底分流 (`encoder.rs`)**：<br>
-  先对数据进行常数序列快速校验；若全等且可编码，直接写入 5 字节头与基准值；<br>
-  若为不可压缩随机数据且编码体积超过原始大小，则直接写入 3 字节头并以原始字节流存储。
+  先对数据进行常数序列快速校验；若全等且可编码，直接写入自描述紧凑头部与基准值；<br>
+  若为不可压缩随机数据且编码体积超过原始大小加上极简头部，则自动回退至原始保底模式（1024 满块仅 1 字节头部），直接以原始字节流存储。
 
 - **采样评估 (`sampler.rs`)**：<br>
   在数据序列中均匀采样至多 32 个数值，遍历 `(exp, fac)` 参数组合，<br>
@@ -650,12 +716,12 @@ graph TD
 
 ### 解压流程
 
-- **帧解析 (`decoder.rs`)**：<br>
-  读取紧凑头部，提取类型标识与元素数量；<br>
-  若类型为原始保底数据，通过内存复制直出恢复；若为 ALP 压缩数据，提取 `(exp, fac)` 缩放参数、位宽以及基准值。
+- **自描述头解析 (`header.rs`, `decoder.rs`)**：<br>
+  读取首字节描述符，由 2-bit 长度标签解码元素总数并确定参数偏移；<br>
+  若类型为原始保底数据，通过内存复制直出恢复；若为 ALP 压缩数据，提取 `(exp, fac, bit_width)` 缩放参数与基准值。
 
 - **位流解包与 SIMD 寄存器流水重构 (`bitpack/unpack.rs`)**：<br>
-  针对 8/16/32/64 bit 采用纯寄存器 SIMD 自动向量化计算，彻底消除堆栈查表与内存间接 gather 寻址延迟；针对 1/2/4 bit 采用微型局部表快速还原。
+  针对 8/16/32/64 bit 采用纯寄存器 SIMD 自动向量化计算，消除堆栈查表与内存间接 gather 寻址延迟；针对 1/2/4 bit 采用微型局部表快速还原。
 
 - **异常值覆盖 (`decoder.rs`)**：<br>
   若存在尾部异常表，读取对应索引位置的数值并覆盖为原始 IEEE 754 浮点值。
@@ -701,6 +767,7 @@ fastalp/
 │   │   ├── mod.rs      # AlpFloat trait 定义与查表构建
 │   │   ├── f32.rs      # 单精度 f32 乘法/除法编解码实现
 │   │   └── f64.rs      # 双精度 f64 乘法/除法编解码实现
+│   ├── header.rs       # 紧凑自描述头部编解码与 2-bit 长度标签档位管理
 │   ├── lib.rs          # 导出接口与高层封装
 │   ├── params.rs       # 紧凑位域参数打包与位宽计算
 │   └── sampler.rs      # 参数采样与无损重构验证
@@ -713,7 +780,7 @@ fastalp/
 
 ---
 
-## 性能评测与 C++ 原版对比
+## 性能评测与多算法对比
 
 ### 测试环境与编译配置
 
@@ -725,6 +792,41 @@ fastalp/
 - **C++ 编译工具链**: Homebrew LLVM Clang 22.1.8 (`-O3 -std=c++17 -DNDEBUG -march=native`) / CMake 4.4.2<br>
 - **内存分配器**: `mimalloc 0.1.52`<br>
 - **基准测试框架**: Rust `divan 0.1.20` 微基准套件 vs C++ `std::chrono::high_resolution_clock`（稳态中位数采样）
+
+### 主流浮点与时序压缩算法同机横向对比
+
+在完全相同的测试硬件与数据负载下，对比业界主流浮点与时序压缩库：
+- **fastalp** (Rust Edition 2024, SIMD NEON)
+- **C++ ALP** (官方 C++ 论文原版实现, Clang 22.1.8 -O3)
+- **Pcodec / pco 1.0.3** (现代列式数值压缩, ANS 熵编码)
+- **Zstandard / zstd 0.13** (通用流式字典压缩, Level 3)
+- **LZ4 / lz4_flex 0.14** (极速通用字节压缩)
+- **Snappy / snap 1.1** (Google 高速字节压缩)
+- **Chimp128** (VLDB 2022 浮点时序压缩)
+- **Gorilla** (VLDB 2015 XOR 浮点时序压缩)
+
+#### 公开数据集全量综合对比
+
+对 ALP 论文全部 31 个真实公开数据集（共 253,952 字节原始浮点数据）进行同机全量评测：
+
+| 压缩算法 | 算法类型 | 31 集压缩后总大小 | 综合压缩比 | 点均比特 (b/v) | 平均解码吞吐 | 平均编码吞吐 |
+|---|---|---|---|---|---|---|
+| **fastalp (Rust)** | 专用浮点时序 | **97,943 B** | **2.59x** | **24.68 b/v** | **18.0 GB/s** | **2.32 GB/s** |
+| **C++ ALP (Reference)** | 专用浮点时序 | 102,873 B | 2.47x | 25.93 b/v | 21.85 GB/s (峰值) | 0.84 GB/s |
+| **Pcodec (pco)** | 专用数值熵编码 | 82,888 B | 3.06x | 20.89 b/v | 1.99 GB/s | 0.24 GB/s |
+| **Zstd (level 3)** | 通用字节字典 | 101,317 B | 2.51x | 25.53 b/v | 1.42 GB/s | 0.89 GB/s |
+| **Chimp128** | 专用浮点 XOR | 119,725 B | 2.12x | 30.17 b/v | 0.52 GB/s | 0.69 GB/s |
+| **Snappy (snap)** | 通用极速字节 | 127,290 B | 2.00x | 32.08 b/v | 7.51 GB/s | 3.76 GB/s |
+| **LZ4 (lz4_flex)** | 通用极速字节 | 129,189 B | 1.97x | 32.56 b/v | 7.74 GB/s | 3.11 GB/s |
+| **Gorilla** | 专用浮点 XOR | 167,601 B | 1.52x | 42.24 b/v | 0.65 GB/s | 1.19 GB/s |
+
+#### 典型时序与物理传感器场景细分对比
+
+| 场景负载 (1024 点标准块) | fastalp (Rust) | C++ ALP 原版 | Pcodec (pco) | Zstd (level 3) | LZ4 (lz4_flex) | Gorilla |
+|---|---|---|---|---|---|---|
+| **物理传感时序 (Sensor)**<br>压缩比 / 解码吞吐 | **7.91x** (8.09 b/v)<br>**22.60 GB/s** | 7.86x (8.14 b/v)<br>21.85 GB/s | **99.90x** (0.64 b/v)<br>1.58 GB/s | 30.01x (2.13 b/v)<br>1.99 GB/s | 12.21x (5.24 b/v)<br>11.30 GB/s | 1.11x (57.67 b/v)<br>0.39 GB/s |
+| **单调递增时序 (Ramp)**<br>压缩比 / 解码吞吐 | **431.16x** (0.15 b/v)<br>**28.08 GB/s** | 0.94x (膨胀)<br>0.58 GB/s | 44.52x (1.44 b/v)<br>0.85 GB/s | 6.93x (9.23 b/v)<br>0.90 GB/s | 1.98x (32.27 b/v)<br>2.72 GB/s | 1.16x (55.07 b/v)<br>0.39 GB/s |
+| **常数稳定时序 (Constant)**<br>压缩比 / 解码吞吐 | **744.73x** (0.09 b/v)<br>**45.20 GB/s** | 455.11x (0.14 b/v)<br>21.85 GB/s | 282.48x (0.23 b/v)<br>4.82 GB/s | 292.57x (0.22 b/v)<br>3.37 GB/s | 146.29x (0.44 b/v)<br>2.08 GB/s | 30.45x (2.10 b/v)<br>1.82 GB/s |
 
 ### 同机实测吞吐量对比
 
@@ -776,7 +878,7 @@ fastalp/
 | **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.64x (膨胀) |
 | **总计 / 全数据集平均** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
 
-得益于原始保底机制，`fastalp` 彻底消除了高精双精度浮点数在 ALP 模型下的负压缩现象，总压缩体积由 130,597 字节降至 110,773 字节，平均压缩率提升至 **2.29x**。
+得益于原始保底机制，`fastalp` 消除了高精双精度浮点数在 ALP 模型下的负压缩现象，总压缩体积由 130,597 字节降至 110,773 字节，平均压缩率提升至 **2.29x**。
 
 ### 真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)
 
@@ -802,42 +904,42 @@ fastalp/
 
 ## 架构对比与工程优化设计
 
-相比 C++ 原版实现，`fastalp` 不仅在吞吐性能上实现成倍飞跃，更在底层算法上做出了重大革新，彻底突破了 C++ 原版在特定场景下的压缩率瓶颈。
+相比 C++ 原版实现，`fastalp` 不仅在吞吐性能上实现成倍提升，更在底层算法上做出了重大革新，突破了 C++ 原版在特定场景下的压缩率瓶颈。
 
-### 核心压缩率算法优化对比 (vs C++ 原版)
+### 核心压缩率算法优化对比
 
-#### 1. 十进制精确除法重构模式 (Decimal Division Mode) —— 根治乘法舍入伪异常
+#### 十进制精确除法重构模式 —— 消除乘法舍入伪异常
 - **C++ 原版局限**：<br>
-  C++ ALP 仅采用基于乘法的逆变换 `v = (encoded * frac_exp) / fac`。由于二进制无法完全精确表示 `0.1`，浮点乘法会引入不可逆的微小截断误差（例如 `123 * 0.1` 的实际计算结果为 `12.30000000000000071...`，并不等于十进制输入的 `12.3`）。这导致原版 ALP 将大量原本为严格十进制的真实物理数据误判为“无法无损还原的异常点（Exceptions）”，每个异常点在标准 1024 块中必须单独记录 8 字节原始浮点数 + 2 字节位置索引（单个异常代价高达 80 比特！）。在真实气象与潮位观测时序中，异常点比例居高不下，极大地蚕食了压缩率。
+  C++ ALP 仅采用基于乘法的逆变换 `v = (encoded * frac_exp) / fac`。由于二进制无法完全精确表示 `0.1`，浮点乘法会引入不可逆的微小截断误差（例如 `123 * 0.1` 的实际计算结果为 `12.30000000000000071...`，并不等于十进制输入的 `12.3`）。这导致原版 ALP 将大量原本为严格十进制的真实物理数据误判为无法无损还原的异常点（Exceptions），每个异常点在标准 1024 块中必须单独记录 8 字节原始浮点数 + 2 字节位置索引（单个异常代价高达 80 比特！）。在真实气象与潮位观测时序中，异常点比例居高不下，极大地蚕食了压缩率。
 - **fastalp 算法革新**：<br>
-  `fastalp` 引入**十进制精确除法重构模式 (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**。在采样与重构中，通过直接除以精确的十进制整数幂（如 `/ 10.0`），使截断误差彻底归零。
+  `fastalp` 引入**十进制精确除法重构模式 (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**。在采样与重构中，通过直接除以精确的十进制整数幂（如 `/ 10.0`），使截断误差归零。
   - **压缩收益**：在 NOAA 海洋潮位、地表气温等真实时序中，异常点数量直接由 C++ 原版的数百个骤降至 **0 个**！省去庞大的异常字典开销，压缩体积直接额外缩减 **20% ~ 38%**（如潮位数据压缩比从 C++ 的 5.32x 提升至 8.51x）。
-  - **性能解耦**：为防止硬件浮点除法的高延迟拖累解压速度，`fastalp` 创新性地结合了 256 项栈上微型查表（LUT），在享受 0 异常最高压缩率的同时，维持 55+ GB/s 的极限吞吐。
+  - **性能解耦**：为防止硬件浮点除法的高延迟拖累解压速度，`fastalp` 结合 256 项栈上微型查表（LUT），在享受 0 异常最高压缩率的同时，维持 55+ GB/s 的高吞吐。
 
-#### 2. 自适应一阶差分时序编码 (Delta-ALP) —— 突破全局极值跨度瓶颈
+#### 自适应一阶差分时序编码 —— 突破全局极值跨度瓶颈
 - **C++ 原版局限**：<br>
   C++ ALP 仅采用全局基准偏移（Frame-of-Reference, FOR）：`stored = encoded - min_encoded`。对于真实世界具有物理连续性的时序数据（如气温昼夜周期、水尺高度起伏、河流流量平缓变化、单调递增计数器），1024 个点内的数据极值跨度 `(max - min)` 往往很大（如温度跨越数十度，对应整型跨度达数千），这强制该数据块内所有 1024 个点必须采用 12~16 位的打包位宽，完全无法利用时序数据相邻点极度接近的强局部相关性。
 - **fastalp 算法革新**：<br>
   `fastalp` 首创自适应 **Delta-ALP (`TYPE_F64_DELTA` / `TYPE_F32_DEC_DELTA`) 算法**：
   1. **自适应收益决策**：在采样阶段动态比对 FOR 全局位宽与一阶差分位宽（`delta[i] = encoded[i] - encoded[i-1]`），仅在差分确有收益时才启用，兼顾乱序与有序时序；
   2. **相邻差分紧凑打包**：以首元素为基准，对相邻差分序列 `(delta - min_delta)` 进行位打包。物理传感序列的差分位宽通常直接骤降至 1~6 位；
-  3. **压缩收益**：在单调与平滑时序上，压缩体积较 C++ 原版缩减 **50% ~ 90%**。在单调递增时序测试中，每点占用由原版的 68.09 bits 暴降至 0.16 bits，压缩比跃升至 **390x**（C++ 原版仅为 0.94x）。
+  3. **压缩收益**：在单调与平滑时序上，压缩体积较 C++ 原版缩减 **50% ~ 90%**。在单调递增时序测试中，每点占用由原版的 68.09 bits 降至 0.16 bits，压缩比跃升至 **390x**（C++ 原版仅为 0.94x）。
 
-#### 3. 异常点前值平滑隔离补丁 —— 杜绝尖峰噪声污染差分流
+#### 异常点前值平滑隔离补丁 —— 避免尖峰噪声污染差分流
 - **C++ 原版局限**：<br>
   在传统的差分压缩流水线中，若遭遇单点仪器噪声或异常尖峰，该异常点会同时污染相邻的两个差分值（突变上升与突变下跌），导致整块数据的最大差分跨度剧烈膨胀，使得整个数据块的打包位宽急剧恶化。
 - **fastalp 算法革新**：<br>
   `fastalp` 在 Delta 编码时设计了**前值平滑隔离补丁机制**：当遇到无法缩放的浮点异常点时，差分流中记录增量为 0（平滑沿用前一个有效整数），将真实的异常浮点数独立提取进 Patch 字典。解码时，先以单遍无分支前缀和流水线还原基准整型，再就地修补异常点。既保护了差分位流不受尖峰干扰、维持最低位宽，又确保了 100% 比特精确无损。
 
-#### 4. 原始保底机制消除负压缩 (Raw Fallback Safeguard)
+#### 原始保底机制消除负压缩
 - **C++ 原版局限**：<br>
   遇到高熵非结构化浮点或高精度随机坐标（如 POI 经纬度、高频电磁传感）时，原版 C++ ALP 的异常表膨胀导致体积比原始数据还要大（负压缩，压缩比低至 0.51x，产生 2 倍空间膨胀）。
 - **fastalp 算法革新**：<br>
-  在编码流水线末端精确计算压缩产物大小；一旦发现压缩大小超过原始数据加上 3 字节元数据头部，自动瞬间回退至 `TYPE_RAW` 模式，将数据按原样存储。在标准 31 数据集评测中，彻底杜绝了 0.51x 的膨胀，全量数据集平均压缩比从 C++ 的 1.94x 提高到了 2.29x。
+  在编码流水线末端精确计算压缩产物大小；一旦发现压缩大小超过原始数据加上极简元数据头部（1024 满块仅占 1 字节），自动瞬间回退至 `TYPE_RAW` 模式，将数据按原样存储。在标准 31 数据集评测中，杜绝了 0.51x 的膨胀，全量数据集平均压缩比从 C++ 的 1.94x 提高到了 2.29x。
 
 ---
 
-### 工程微架构与吞吐性能优化 (vs C++ 原版)
+### 工程微架构与吞吐性能优化
 
 #### 全等序列常数探测与零堆分配
 
@@ -845,14 +947,16 @@ fastalp/
   面对全量常数序列时，依然需要执行完整的样本采集、临时整型数组转换与位宽分析，端到端耗时达 9.25 微秒。<br>
 - **fastalp 优化**：<br>
   在压缩入口通过底层原始比特比对（`v.is_exact_same(first)`，严格区分 `+0.0` 与 `-0.0` 符号位）；<br>
-  命中后直接写入 5 字节紧凑头部与基准值（`bit_width = 0`），跳过所有采样与中间数组分配，压缩耗时降至 351 纳秒，相对提速 26 倍。
+  命中后直接写入自描述紧凑头部与基准值（`bit_width = 0`），跳过所有采样与中间数组分配，压缩耗时降至 351 纳秒，相对提速 26 倍。
 
 #### 零堆内存分配与单遍流式解码
 
 - **C++ 原版实现**：<br>
   采用两阶段解码架构：阶段一解包位流到中间堆数组，阶段二遍历中间数组计算浮点逆缩放并修补异常，引发 8 字节/元素的堆分配与 L1/L2 缓存挤占。<br>
 - **fastalp 优化**：<br>
-  采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；对外提供 `compress_into` 与 `decompress_into` 零分配接口。
+  采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；<br>
+  针对 Delta 差分时序数据，利用 1024 元素位打包天然对齐字节边界的特性，采用固定 1024 元素栈流式分批解包，将大数组解码时的额外堆内存分配降为 0 字节，同时栈缓存常驻于 CPU L1 Data Cache；<br>
+  对外提供 `compress_into` 与 `decompress_into` 零分配接口。
 
 #### 纯寄存器 SIMD 向量化解压与局部查表混合加速
 
@@ -866,7 +970,7 @@ fastalp/
 - **C++ 原版实现**：<br>
   多层采样逻辑复杂度高，编码循环混合了密集条件分支，导致基本块碎片化。<br>
 - **fastalp 优化**：<br>
-  在压缩采样中引入 `EARLY_EXIT_BIT_WIDTH` 优质参数即停机制，避免对 135 种组合的盲目遍历；在数据编码阶段采用 Two-Pass 分离架构（Pass 1 纯寄存器无分支舍入转换整型，Pass 2 集中校验异常），彻底消除单元素内的多重分支停顿，批量压缩吞吐飙升至 5.4+ GB/s。
+  在压缩采样中引入 `EARLY_EXIT_BIT_WIDTH` 优质参数即停机制，避免对 135 种组合的盲目遍历；在数据编码阶段采用 Two-Pass 分离架构（Pass 1 纯寄存器无分支舍入转换整型，Pass 2 集中校验异常），消除单元素内的多重分支停顿，批量压缩吞吐飙升至 5.4+ GB/s。
 
 #### 纯寄存器 128 位累加器与紧凑位打包
 

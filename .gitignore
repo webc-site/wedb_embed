@@ -3,3 +3,9 @@ node_modules/
 target/
 Cargo.lock
 
+
+# Benchmark datasets
+fastalp/benches/data/
+*.isd
+*.rdb
+

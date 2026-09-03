@@ -21,6 +21,7 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
   const ENCODING_UPPER_LIMIT: Self;
   const EXCEPTION_PENALTY: usize;
   const EXC_ENTRY_SIZE: usize;
+  const EXC_ENTRY_SIZE_U32: usize;
   const BASE_SIZE: usize;
   const ZERO: Self;
   const ZERO_INT: Self::Int;
@@ -67,6 +68,9 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
 
   fn write_exception(pos: u16, bits: Self::RawBits, dst: &mut Vec<u8>);
   fn read_exception(chunk: &[u8]) -> (usize, Self);
+
+  fn write_exception_u32(pos: u32, bits: Self::RawBits, dst: &mut Vec<u8>);
+  fn read_exception_u32(chunk: &[u8]) -> (usize, Self);
 
   /// Decodes a floating-point value from offset and base when factor is 1 (scale = 10^-exp).
   /// 当因子为 1 时根据基准值与逆缩放因子快速解码浮点数

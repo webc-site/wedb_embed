@@ -9,8 +9,8 @@ fn _log_init() {
 fn test_empty_and_single() -> aok::Result<()> {
   let empty: [f64; 0] = [];
   let compressed = compress(&empty);
-  // 校验空序列紧凑截断：仅占用 3 字节 (MIN_HEADER_LEN)
-  assert_eq!(compressed.len(), 3);
+  // 校验空序列紧凑截断：仅占用 2 字节 (1B 描述符 + 1B count)
+  assert_eq!(compressed.len(), 2);
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), 0);
 
@@ -29,18 +29,17 @@ fn test_empty_and_single() -> aok::Result<()> {
 
 #[test]
 fn test_header_and_trailer_elimination() -> aok::Result<()> {
-  // 无异常序列：5 字节 Header + 8 字节 Base + 0 字节 payload (全等值 bit_width=0)
+  // count=16: 4 字节 Header (1B desc + 1B count + 2B params) + 8 字节 Base + 0 字节 payload = 12 字节
   let identical = [10.5f64; 16];
   let comp = compress(&identical);
-  // HEADER_LEN (5) + BASE_SIZE (8) + packed_len (0) + 0 异常尾缀 = 13 字节
-  assert_eq!(comp.len(), 13);
+  assert_eq!(comp.len(), 12);
   let dec: Vec<f64> = decompress(&comp)?;
   assert_eq!(dec, identical);
 
-  // f32 无异常全等序列：HEADER_LEN (5) + BASE_SIZE (4) + 0 = 9 字节
+  // f32 无异常全等序列：4 字节 Header + 4 字节 Base + 0 = 8 字节
   let identical_f32 = [10.5f32; 16];
   let comp_f32 = compress(&identical_f32);
-  assert_eq!(comp_f32.len(), 9);
+  assert_eq!(comp_f32.len(), 8);
   let dec_f32: Vec<f32> = decompress(&comp_f32)?;
   assert_eq!(dec_f32, identical_f32);
   Ok(())
@@ -261,12 +260,15 @@ fn test_raw_fallback_incompressible_data() -> aok::Result<()> {
     .map(|_| f64::from_bits(fastrand::u64(..)))
     .collect();
   let compressed = compress(&random_bits_data);
-  // 断言触发 RAW 模式：首字节为 TYPE_F64_RAW (3)
-  assert_eq!(compressed[0], fastalp::TYPE_F64_RAW);
+  // 断言触发 RAW 模式：首字节类型为 TYPE_F64_RAW (3)，长度档位为 1024 预设块
+  let hdr = fastalp::read_header(&compressed)?;
+  assert_eq!(hdr.type_byte, fastalp::TYPE_F64_RAW);
+  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_1024);
   assert_eq!(
     compressed.len(),
-    fastalp::MIN_HEADER_LEN + random_bits_data.len() * 8
+    fastalp::raw_header_len(1024) + random_bits_data.len() * 8
   );
+  assert_eq!(fastalp::raw_header_len(1024), 1);
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), random_bits_data.len());
   for (a, b) in decompressed.iter().zip(random_bits_data.iter()) {
@@ -277,16 +279,98 @@ fn test_raw_fallback_incompressible_data() -> aok::Result<()> {
     .map(|_| f32::from_bits(fastrand::u32(..)))
     .collect();
   let compressed_f32 = compress(&random_bits_f32);
-  // 断言触发 RAW 模式：首字节为 TYPE_F32_RAW (4)
-  assert_eq!(compressed_f32[0], fastalp::TYPE_F32_RAW);
+  let hdr_f32 = fastalp::read_header(&compressed_f32)?;
+  assert_eq!(hdr_f32.type_byte, fastalp::TYPE_F32_RAW);
+  assert_eq!(hdr_f32.len_tag, fastalp::LEN_TAG_1024);
   assert_eq!(
     compressed_f32.len(),
-    fastalp::MIN_HEADER_LEN + random_bits_f32.len() * 4
+    fastalp::raw_header_len(1024) + random_bits_f32.len() * 4
   );
+  assert_eq!(fastalp::raw_header_len(1024), 1);
   let decompressed_f32: Vec<f32> = decompress(&compressed_f32)?;
   assert_eq!(decompressed_f32.len(), random_bits_f32.len());
   for (a, b) in decompressed_f32.iter().zip(random_bits_f32.iter()) {
     assert_eq!(a.to_bits(), b.to_bits());
+  }
+  Ok(())
+}
+
+#[test]
+fn test_large_array_u32_roundtrip() -> aok::Result<()> {
+  // 超过 65535 元素的大数组测试，验证 u32 长度标签与 u32 异常索引无损编解码
+  let size = 70_000usize;
+  let mut data: Vec<f64> = (0..size).map(|i| (i as f64) * 0.125).collect();
+  // 注入偶发异常值
+  data[100] = f64::NAN;
+  data[66_000] = 99999999.12345;
+
+  let compressed = compress(&data);
+  let hdr = fastalp::read_header(&compressed)?;
+  assert_eq!(hdr.count, size);
+  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), size);
+  for (i, (&orig, &dec)) in data.iter().zip(&decompressed).enumerate() {
+    if orig.is_nan() {
+      assert!(dec.is_nan(), "expected NaN at {i}");
+    } else {
+      assert_eq!(orig.to_bits(), dec.to_bits(), "mismatch at {i}");
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn test_large_array_f32_u32_roundtrip() -> aok::Result<()> {
+  // 单精度 f32 超过 65535 元素的大数组测试，验证 u32 长度标签与 u32 异常索引无损编解码
+  let size = 68_000usize;
+  let mut data: Vec<f32> = (0..size).map(|i| (i as f32) * 0.25f32).collect();
+  data[50] = f32::NAN;
+  data[67_000] = 88888.5f32;
+
+  let compressed = compress(&data);
+  let hdr = fastalp::read_header(&compressed)?;
+  assert_eq!(hdr.count, size);
+  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+
+  let decompressed: Vec<f32> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), size);
+  for (i, (&orig, &dec)) in data.iter().zip(&decompressed).enumerate() {
+    if orig.is_nan() {
+      assert!(dec.is_nan(), "expected NaN at {i}");
+    } else {
+      assert_eq!(orig.to_bits(), dec.to_bits(), "mismatch at {i}");
+    }
+  }
+  Ok(())
+}
+
+#[test]
+fn test_large_array_delta_u32_roundtrip() -> aok::Result<()> {
+  use fastalp::compress_delta;
+
+  // 超过 65535 元素的强制 Delta 一阶差分测试，验证 1024 栈分批流式解包与 u32 异常无损恢复
+  let size = 75_000usize;
+  let mut data: Vec<f64> = (0..size)
+    .map(|i| 100.0 + (i as f64) * 0.5 + ((i % 10) as f64) * 0.05)
+    .collect();
+  data[10] = f64::NAN;
+  data[70_000] = 999999.99;
+
+  let compressed = compress_delta(&data);
+  let hdr = fastalp::read_header(&compressed)?;
+  assert_eq!(hdr.count, size);
+  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), size);
+  for (i, (&orig, &dec)) in data.iter().zip(&decompressed).enumerate() {
+    if orig.is_nan() {
+      assert!(dec.is_nan(), "expected NaN at {i}");
+    } else {
+      assert_eq!(orig.to_bits(), dec.to_bits(), "mismatch at {i}");
+    }
   }
   Ok(())
 }
