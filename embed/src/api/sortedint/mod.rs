@@ -1,8 +1,11 @@
 pub mod r#const;
 pub mod r#impl;
+pub mod iter;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod range;
+pub mod rem;
 
 pub use r#const::{BE_LEN, ERR_MAX_NOT_INT, ERR_MIN_GT_MAX, ERR_MIN_NOT_INT, ERR_WRONG_TYPE};
 pub use key::{
