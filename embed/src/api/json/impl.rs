@@ -137,7 +137,7 @@ where
 
   #[inline]
   pub fn json_get_one<K: AsRef<[u8]>>(&self, key: K, path: &str) -> Result<Option<String>> {
-    self.json_get(key, &[path], [])
+    self.json_get_formatted(key, &[path], None, None, None)
   }
 
   #[inline]

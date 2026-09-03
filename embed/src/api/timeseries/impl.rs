@@ -25,7 +25,17 @@ where
 {
   #[inline]
   pub fn ts_create_one<K: AsRef<[u8]>>(&self, key: K) -> Result<()> {
-    self.ts_create(key, [])
+    let key_bytes = key.as_ref();
+    let meta_k = key::meta(&self.kc(), key_bytes);
+    let now_ms = current_now_ms();
+
+    if get_meta_checked::<TimeSeriesMeta, _>(self, key_bytes, &meta_k, now_ms)?.is_some() {
+      return Err(Error::invalid_data(ERR_TSDB_KEY_ALREADY_EXISTS));
+    }
+
+    let meta = TimeSeriesMeta::default();
+    self.meta().insert(&meta_k, &meta.encode())?;
+    Ok(())
   }
 
   #[inline]

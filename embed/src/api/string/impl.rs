@@ -47,7 +47,7 @@ where
 
   #[inline]
   pub fn set_one<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, val: V) -> Result<Option<Vec<u8>>> {
-    self.set(key, val, [])
+    self.set_internal(key, val, &StringSet::default())
   }
 
   #[inline]
@@ -200,7 +200,14 @@ where
     val: V,
     expire_at_ms: u64,
   ) -> Result<()> {
-    self.set(key, val, [Set::PxAt(expire_at_ms)])?;
+    self.set_internal(
+      key,
+      val,
+      &StringSet {
+        expire: expire_at_ms,
+        ..Default::default()
+      },
+    )?;
     Ok(())
   }
 
@@ -211,13 +218,29 @@ where
     val: V,
     ttl_sec: u64,
   ) -> Result<()> {
-    self.set(key, val, [Set::Ex(ttl_sec)])?;
+    let now_ms = current_now_ms();
+    self.set_internal(
+      key,
+      val,
+      &StringSet {
+        expire: now_ms.saturating_add(ttl_sec.saturating_mul(1000)),
+        ..Default::default()
+      },
+    )?;
     Ok(())
   }
 
   #[inline]
   pub fn psetex<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, val: V, ttl_ms: u64) -> Result<()> {
-    self.set(key, val, [Set::Px(ttl_ms)])?;
+    let now_ms = current_now_ms();
+    self.set_internal(
+      key,
+      val,
+      &StringSet {
+        expire: now_ms.saturating_add(ttl_ms),
+        ..Default::default()
+      },
+    )?;
     Ok(())
   }
 
@@ -301,7 +324,14 @@ where
 
   #[inline]
   pub fn getset<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, val: V) -> Result<Option<Vec<u8>>> {
-    self.set(key, val, [Set::Get])
+    self.set_internal(
+      key,
+      val,
+      &StringSet {
+        get: true,
+        ..Default::default()
+      },
+    )
   }
 
   #[inline]
@@ -320,7 +350,18 @@ where
 
   #[inline]
   pub fn setnx<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, val: V) -> Result<bool> {
-    Ok(self.set(key, val, [Set::Nx])?.is_some())
+    Ok(
+      self
+        .set_internal(
+          key,
+          val,
+          &StringSet {
+            set_type: StringSetType::Nx,
+            ..Default::default()
+          },
+        )?
+        .is_some(),
+    )
   }
 
   #[inline]
@@ -330,15 +371,19 @@ where
     val: V,
     expire_at_ms: u64,
   ) -> Result<bool> {
-    if expire_at_ms > 0 {
-      Ok(
-        self
-          .set(key, val, [Set::Nx, Set::PxAt(expire_at_ms)])?
-          .is_some(),
-      )
-    } else {
-      Ok(self.set(key, val, [Set::Nx])?.is_some())
-    }
+    Ok(
+      self
+        .set_internal(
+          key,
+          val,
+          &StringSet {
+            expire: expire_at_ms,
+            set_type: StringSetType::Nx,
+            ..Default::default()
+          },
+        )?
+        .is_some(),
+    )
   }
 
   #[inline]
@@ -348,14 +393,18 @@ where
     val: V,
     expire_at_ms: u64,
   ) -> Result<bool> {
-    if expire_at_ms > 0 {
-      Ok(
-        self
-          .set(key, val, [Set::Xx, Set::PxAt(expire_at_ms)])?
-          .is_some(),
-      )
-    } else {
-      Ok(self.set(key, val, [Set::Xx])?.is_some())
-    }
+    Ok(
+      self
+        .set_internal(
+          key,
+          val,
+          &StringSet {
+            expire: expire_at_ms,
+            set_type: StringSetType::Xx,
+            ..Default::default()
+          },
+        )?
+        .is_some(),
+    )
   }
 }
