@@ -4,10 +4,10 @@ use crate::{
   api::{
     geo::{
       codec::{
-        GEO_STEP_MAX, align_52bits, encode_geohash_string, geohash_decode_wgs84,
-        geohash_encode_wgs84, haversine_distance, validate_long_lat,
+        GEO_STEP_MAX, align_52bits, encode_geohash_string, geohash_encode_wgs84,
+        haversine_distance, score_to_coord, validate_long_lat,
       },
-      opt::{DistanceUnit, GeoHashBits, GeoPoint},
+      opt::{DistanceUnit, GeoPoint},
     },
     zset::opt::ZAdd,
   },
@@ -67,14 +67,8 @@ where
 
     let scores = self.zmscore(&key, &[member1.as_ref(), member2.as_ref()])?;
     if let (Some(Some(s1)), Some(Some(s2))) = (scores.first().copied(), scores.get(1).copied()) {
-      let (lon1, lat1) = geohash_decode_wgs84(GeoHashBits {
-        bits: s1 as u64,
-        step: GEO_STEP_MAX,
-      });
-      let (lon2, lat2) = geohash_decode_wgs84(GeoHashBits {
-        bits: s2 as u64,
-        step: GEO_STEP_MAX,
-      });
+      let (lon1, lat1) = score_to_coord(s1);
+      let (lon2, lat2) = score_to_coord(s2);
       let d_meters = haversine_distance(lon1, lat1, lon2, lat2);
       Ok(Some(u.from_meters(d_meters)))
     } else {
@@ -101,15 +95,7 @@ where
     let scores = self.zmscore(&key, members)?;
     let results = scores
       .into_iter()
-      .map(|score| {
-        score.map(|s| {
-          let bits = GeoHashBits {
-            bits: s as u64,
-            step: GEO_STEP_MAX,
-          };
-          geohash_decode_wgs84(bits)
-        })
-      })
+      .map(|score| score.map(score_to_coord))
       .collect();
     Ok(results)
   }
@@ -122,26 +108,8 @@ where
     key: K,
     member: M,
   ) -> Result<Option<GeoPoint>> {
-    let m_ref = member.as_ref();
-    let score = match self.zscore(&key, m_ref)? {
-      Some(s) => s,
-      None => return Ok(None),
-    };
-    let bits = GeoHashBits {
-      bits: score as u64,
-      step: GEO_STEP_MAX,
-    };
-    let (lon, lat) = geohash_decode_wgs84(bits);
-    let member_str = from_utf8(m_ref)
-      .map(ToOwned::to_owned)
-      .unwrap_or_else(|_| String::from_utf8_lossy(m_ref).into_owned());
-    Ok(Some(GeoPoint {
-      longitude: lon,
-      latitude: lat,
-      member: member_str,
-      dist: 0.0,
-      score,
-    }))
+    let mut res = self.geomget(key, &[member])?;
+    Ok(res.pop().flatten())
   }
 
   /// Retrieves complete GeoPoints for multiple members aligned with Kvrocks Geo::MGet.
@@ -157,11 +125,7 @@ where
     for (m, score_opt) in members.iter().zip(scores) {
       match score_opt {
         Some(s) => {
-          let bits = GeoHashBits {
-            bits: s as u64,
-            step: GEO_STEP_MAX,
-          };
-          let (lon, lat) = geohash_decode_wgs84(bits);
+          let (lon, lat) = score_to_coord(s);
           let member_str = from_utf8(m.as_ref())
             .map(ToOwned::to_owned)
             .unwrap_or_else(|_| String::from_utf8_lossy(m.as_ref()).into_owned());
@@ -200,11 +164,7 @@ where
       .into_iter()
       .map(|score| {
         score.map(|s| {
-          let bits = GeoHashBits {
-            bits: s as u64,
-            step: GEO_STEP_MAX,
-          };
-          let (lon, lat) = geohash_decode_wgs84(bits);
+          let (lon, lat) = score_to_coord(s);
           encode_geohash_string(lon, lat)
         })
       })

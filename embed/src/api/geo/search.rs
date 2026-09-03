@@ -4,8 +4,8 @@ use crate::{
   api::{
     geo::{
       codec::{
-        GEO_STEP_MAX, bounding_box, geohash_decode_wgs84, get_areas_by_shape_wgs84,
-        haversine_distance, scores_of_geohash_box, validate_long_lat,
+        bounding_box, get_areas_by_shape_wgs84, haversine_distance, score_to_coord,
+        scores_of_geohash_box, validate_long_lat,
       },
       opt::{
         DistanceSort, DistanceUnit, GeoHashBits, GeoPoint, GeoRadius, GeoSearch, GeoSearchStore,
@@ -129,11 +129,7 @@ where
 
     // 零分配流式扫描：消除 zrangebyscore 的中间堆缓冲与无谓 to_vec()
     db.ziter_range_byscore(&key, &spec, |member_bytes, score| {
-      let bits = GeoHashBits {
-        bits: score as u64,
-        step: GEO_STEP_MAX,
-      };
-      let (pt_lon, pt_lat) = geohash_decode_wgs84(bits);
+      let (pt_lon, pt_lat) = score_to_coord(score);
 
       let (is_inside, d_meters) = match shape_type {
         GeoShapeType::Circular => {

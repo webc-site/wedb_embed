@@ -604,6 +604,14 @@ pub fn geohash_decode_wgs84(hash: GeoHashBits) -> (f64, f64) {
   geohash_decode_area_to_long_lat(&area)
 }
 
+#[inline]
+pub fn score_to_coord(score: f64) -> (f64, f64) {
+  geohash_decode_wgs84(GeoHashBits {
+    bits: score as u64,
+    step: GEO_STEP_MAX,
+  })
+}
+
 impl GeoShape {
   pub fn new_circular(lon: f64, lat: f64, radius_meters: f64) -> Self {
     let mut shape = Self {
