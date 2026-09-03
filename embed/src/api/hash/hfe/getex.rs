@@ -1,0 +1,320 @@
+use rapidhash::{HashMapExt, RapidHashMap as HashMap};
+
+use crate::{
+  api::{
+    hash::{
+      CachedFieldState,
+      hfe::load_field_state,
+      key,
+      meta::{
+        HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key,
+        decode_field_state, is_immediate_expire,
+      },
+      opt::{HGetEx, HashGetEx, TTLAction},
+      r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+    },
+    key::get_meta_checked,
+  },
+  engine::{Engine, Partition},
+  error::{Error, Result},
+  meta::current_now_ms,
+  wedb::Db,
+};
+
+impl<E: Engine> Db<E>
+where
+  Error: From<E::Error>,
+{
+  #[inline]
+  pub fn hgetex<K: AsRef<[u8]>, F: AsRef<[u8]>>(
+    &self,
+    key: K,
+    field: F,
+    opt_li: impl IntoIterator<Item = HGetEx>,
+  ) -> Result<Option<Vec<u8>>> {
+    let now_ms = current_now_ms();
+    let opts = HashGetEx::from_options(opt_li, now_ms);
+    let res = self.get_fields_with_expire(key, &[field], opts)?;
+    Ok(res.into_iter().next().flatten())
+  }
+
+  #[inline]
+  pub fn hmget_ex<K: AsRef<[u8]>, F: AsRef<[u8]>>(
+    &self,
+    key: K,
+    fields: &[F],
+    opt_li: impl IntoIterator<Item = HGetEx>,
+  ) -> Result<Vec<Option<Vec<u8>>>> {
+    let now_ms = current_now_ms();
+    let opts = HashGetEx::from_options(opt_li, now_ms);
+    self.get_fields_with_expire(key, fields, opts)
+  }
+
+  #[inline]
+  pub(crate) fn get_fields_with_expire<K: AsRef<[u8]>, F: AsRef<[u8]>>(
+    &self,
+    key: K,
+    fields: &[F],
+    options: HashGetEx,
+  ) -> Result<Vec<Option<Vec<u8>>>> {
+    if fields.is_empty() {
+      return Ok(Vec::new());
+    }
+
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(vec![None; fields.len()]),
+    };
+
+    if meta.is_legacy_subkey_encoding() {
+      return Err(Error::invalid_data(
+        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+      ));
+    }
+
+    let is_immediate =
+      options.ttl_action == TTLAction::Set && is_immediate_expire(options.expire_at_ms, now_ms);
+
+    if fields.len() == 1 {
+      let f_bytes = fields[0].as_ref();
+      let item_k = key::field(&kc, key_bytes, f_bytes);
+      let data_ks = self.data();
+      let raw_opt = data_ks.get(item_k.as_slice())?;
+      let (state_kind, _state_expire, payload) = match raw_opt.as_ref() {
+        None => (HashFieldStateKind::Missing, 0, None),
+        Some(raw) => match decode_field_state(&meta, raw, now_ms) {
+          None => (HashFieldStateKind::Missing, 0, None),
+          Some(s) => {
+            let p = meta.decode_subkey_value(raw).map(|(_, p)| p.to_vec());
+            (s.kind, s.expire, p)
+          }
+        },
+      };
+
+      match state_kind {
+        HashFieldStateKind::Missing => return Ok(vec![None]),
+        HashFieldStateKind::ExpiredTTLPhysical => {
+          let mut batch = self.batch();
+          batch.rm_data(item_k.as_slice());
+          meta.apply_ttl_to_deleted();
+          if meta.base.size == 0 {
+            batch.rm_meta(&meta_k);
+          } else {
+            batch.insert_meta(&meta_k, &meta.encode());
+          }
+          batch.commit()?;
+          return Ok(vec![None]);
+        }
+        HashFieldStateKind::Persistent => {
+          if is_immediate {
+            let mut batch = self.batch();
+            batch.rm_data(item_k.as_slice());
+            meta.apply_persistent_to_deleted();
+            if meta.base.size == 0 {
+              batch.rm_meta(&meta_k);
+            } else {
+              batch.insert_meta(&meta_k, &meta.encode());
+            }
+            batch.commit()?;
+          } else if options.ttl_action == TTLAction::Set {
+            let mut batch = self.batch();
+            meta.apply_persistent_to_ttl(options.expire_at_ms);
+            let p = payload.as_deref().unwrap_or(b"");
+            meta.with_encoded_subkey_value(p, options.expire_at_ms, |enc| {
+              batch.insert_data(item_k.as_slice(), enc)
+            });
+            batch.insert_meta(&meta_k, &meta.encode());
+            batch.commit()?;
+          }
+          return Ok(vec![payload]);
+        }
+        HashFieldStateKind::LiveTTL => {
+          if is_immediate {
+            let mut batch = self.batch();
+            batch.rm_data(item_k.as_slice());
+            meta.apply_ttl_to_deleted();
+            if meta.base.size == 0 {
+              batch.rm_meta(&meta_k);
+            } else {
+              batch.insert_meta(&meta_k, &meta.encode());
+            }
+            batch.commit()?;
+          } else {
+            match options.ttl_action {
+              TTLAction::Persist => {
+                let mut batch = self.batch();
+                meta.apply_ttl_to_persistent();
+                let p = payload.as_deref().unwrap_or(b"");
+                meta
+                  .with_encoded_subkey_value(p, 0, |enc| batch.insert_data(item_k.as_slice(), enc));
+                batch.insert_meta(&meta_k, &meta.encode());
+                batch.commit()?;
+              }
+              TTLAction::Set => {
+                let mut batch = self.batch();
+                meta.apply_ttl_to_ttl(options.expire_at_ms);
+                let p = payload.as_deref().unwrap_or(b"");
+                meta.with_encoded_subkey_value(p, options.expire_at_ms, |enc| {
+                  batch.insert_data(item_k.as_slice(), enc)
+                });
+                batch.insert_meta(&meta_k, &meta.encode());
+                batch.commit()?;
+              }
+              TTLAction::Discard | TTLAction::Keep => {}
+            }
+          }
+          return Ok(vec![payload]);
+        }
+      }
+    }
+
+    let mut results = Vec::with_capacity(fields.len());
+    let mut batch = self.batch();
+    let mut meta_changed = false;
+    let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
+    let data_ks = self.data();
+    let _meta_ks = self.meta();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+
+    for f in fields {
+      let f_bytes = f.as_ref();
+      let item_k = composer.key_for_field(f_bytes);
+
+      let entry = if let Some(cached) = state_cache.get(f_bytes) {
+        cached.clone()
+      } else {
+        let state_entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
+        state_cache.insert(f_bytes, state_entry.clone());
+        state_entry
+      };
+
+      match entry.kind {
+        HashFieldStateKind::Missing => {
+          results.push(None);
+        }
+        HashFieldStateKind::ExpiredTTLPhysical => {
+          batch.rm_data(item_k);
+          meta.apply_ttl_to_deleted();
+          meta_changed = true;
+          state_cache.insert(
+            f_bytes,
+            CachedFieldState {
+              kind: HashFieldStateKind::Missing,
+              expire: 0,
+              raw: None,
+            },
+          );
+          results.push(None);
+        }
+        HashFieldStateKind::Persistent => {
+          let payload = entry
+            .raw
+            .as_ref()
+            .and_then(|s| meta.decode_subkey_value(s))
+            .map(|(_, p)| p)
+            .unwrap_or(b"");
+          results.push(Some(payload.to_vec()));
+
+          if is_immediate {
+            batch.rm_data(item_k);
+            meta.apply_persistent_to_deleted();
+            meta_changed = true;
+            state_cache.insert(
+              f_bytes,
+              CachedFieldState {
+                kind: HashFieldStateKind::Missing,
+                expire: 0,
+                raw: None,
+              },
+            );
+          } else if options.ttl_action == TTLAction::Set && options.expire_at_ms != 0 {
+            meta.apply_persistent_to_ttl(options.expire_at_ms);
+            meta_changed = true;
+            meta.with_encoded_subkey_value(payload, options.expire_at_ms, |enc| {
+              batch.insert_data(item_k, enc)
+            });
+            state_cache.insert(
+              f_bytes,
+              CachedFieldState {
+                kind: HashFieldStateKind::LiveTTL,
+                expire: options.expire_at_ms,
+                raw: entry.raw,
+              },
+            );
+          }
+        }
+        HashFieldStateKind::LiveTTL => {
+          let payload = entry
+            .raw
+            .as_ref()
+            .and_then(|s| meta.decode_subkey_value(s))
+            .map(|(_, p)| p)
+            .unwrap_or(b"");
+          results.push(Some(payload.to_vec()));
+
+          if is_immediate {
+            batch.rm_data(item_k);
+            meta.apply_ttl_to_deleted();
+            meta_changed = true;
+            state_cache.insert(
+              f_bytes,
+              CachedFieldState {
+                kind: HashFieldStateKind::Missing,
+                expire: 0,
+                raw: None,
+              },
+            );
+          } else {
+            match options.ttl_action {
+              TTLAction::Persist => {
+                meta.apply_ttl_to_persistent();
+                meta_changed = true;
+                meta.with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k, enc));
+                state_cache.insert(
+                  f_bytes,
+                  CachedFieldState {
+                    kind: HashFieldStateKind::Persistent,
+                    expire: 0,
+                    raw: entry.raw,
+                  },
+                );
+              }
+              TTLAction::Set => {
+                meta.apply_ttl_to_ttl(options.expire_at_ms);
+                meta_changed = true;
+                meta.with_encoded_subkey_value(payload, options.expire_at_ms, |enc| {
+                  batch.insert_data(item_k, enc)
+                });
+                state_cache.insert(
+                  f_bytes,
+                  CachedFieldState {
+                    kind: HashFieldStateKind::LiveTTL,
+                    expire: options.expire_at_ms,
+                    raw: entry.raw,
+                  },
+                );
+              }
+              TTLAction::Keep | TTLAction::Discard => {}
+            }
+          }
+        }
+      }
+    }
+
+    if meta_changed {
+      if meta.base.size == 0 {
+        batch.rm_meta(&meta_k);
+      } else {
+        batch.insert_meta(&meta_k, &meta.encode());
+      }
+      batch.commit()?;
+    }
+
+    Ok(results)
+  }
+}
