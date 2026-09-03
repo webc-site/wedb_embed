@@ -6,12 +6,43 @@ use crate::{
   wedb::Db,
 };
 
+#[inline(always)]
+fn apply_set_limit(set_opt: Option<HashSet<Vec<u8>>>, limit: usize) -> usize {
+  match set_opt {
+    Some(set) => {
+      if limit == 0 {
+        set.len()
+      } else {
+        set.len().min(limit)
+      }
+    }
+    None => 0,
+  }
+}
+
+#[inline(always)]
+fn apply_card_limit(card: usize, limit: usize) -> usize {
+  if limit == 0 { card } else { card.min(limit) }
+}
+
 /// Set algebra operations (SINTER, SUNION, SDIFF and their store/card variants).
 /// 集合代数运算（交集、并集、差集及其存储与基数统计实现）
 impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
 {
+  #[inline]
+  fn store_set_opt<D: AsRef<[u8]>>(
+    &self,
+    dst: D,
+    set_opt: Option<HashSet<Vec<u8>>>,
+  ) -> Result<usize> {
+    match set_opt {
+      Some(set) => self.overwrite_set_iter(dst, set),
+      None => self.overwrite_set(dst, &[b""; 0]),
+    }
+  }
+
   #[inline]
   fn compute_sinter_set<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<HashSet<Vec<u8>>>> {
     if keys.is_empty() {
@@ -78,10 +109,7 @@ where
 
   #[inline]
   pub fn sinterstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
-    match self.compute_sinter_set(keys)? {
-      Some(set) => self.overwrite_set_iter(dst, set),
-      None => self.overwrite_set(dst, &[b""; 0]),
-    }
+    self.store_set_opt(dst, self.compute_sinter_set(keys)?)
   }
 
   #[inline]
@@ -90,17 +118,9 @@ where
       return Ok(0);
     }
     if keys.len() == 1 {
-      let card = self.scard(&keys[0])? as usize;
-      return Ok(if limit == 0 { card } else { card.min(limit) });
+      return Ok(apply_card_limit(self.scard(&keys[0])? as usize, limit));
     }
-    match self.compute_sinter_set(keys)? {
-      Some(set) => Ok(if limit == 0 {
-        set.len()
-      } else {
-        set.len().min(limit)
-      }),
-      None => Ok(0),
-    }
+    Ok(apply_set_limit(self.compute_sinter_set(keys)?, limit))
   }
 
   #[inline]
@@ -145,8 +165,7 @@ where
       return Ok(0);
     }
     if keys.len() == 1 {
-      let card = self.scard(&keys[0])? as usize;
-      return Ok(if limit == 0 { card } else { card.min(limit) });
+      return Ok(apply_card_limit(self.scard(&keys[0])? as usize, limit));
     }
 
     let mut union_set: HashSet<u64> = HashSet::default();
@@ -219,10 +238,7 @@ where
 
   #[inline]
   pub fn sdiffstore<D: AsRef<[u8]>, K: AsRef<[u8]>>(&self, dst: D, keys: &[K]) -> Result<usize> {
-    match self.compute_sdiff_set(keys)? {
-      Some(diff) => self.overwrite_set_iter(dst, diff),
-      None => self.overwrite_set(dst, &[b""; 0]),
-    }
+    self.store_set_opt(dst, self.compute_sdiff_set(keys)?)
   }
 
   #[inline]
@@ -231,16 +247,8 @@ where
       return Ok(0);
     }
     if keys.len() == 1 {
-      let card = self.scard(&keys[0])? as usize;
-      return Ok(if limit == 0 { card } else { card.min(limit) });
+      return Ok(apply_card_limit(self.scard(&keys[0])? as usize, limit));
     }
-    match self.compute_sdiff_set(keys)? {
-      Some(set) => Ok(if limit == 0 {
-        set.len()
-      } else {
-        set.len().min(limit)
-      }),
-      None => Ok(0),
-    }
+    Ok(apply_set_limit(self.compute_sdiff_set(keys)?, limit))
   }
 }
