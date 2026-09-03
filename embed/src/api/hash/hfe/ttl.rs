@@ -101,14 +101,60 @@ where
 
   #[inline]
   pub fn hpersist_one<K: AsRef<[u8]>, F: AsRef<[u8]>>(&self, key: K, field: F) -> Result<i64> {
-    let res = self.hpersist(key, &[field])?;
-    Ok(res.into_iter().next().unwrap_or(HASH_FIELD_NOT_FOUND))
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(HASH_FIELD_NOT_FOUND),
+    };
+
+    let f_bytes = field.as_ref();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+    let entry = load_field_state(self.data(), &meta, item_k, now_ms)?;
+
+    match entry.kind {
+      HashFieldStateKind::Missing => Ok(HASH_FIELD_NOT_FOUND),
+      HashFieldStateKind::ExpiredTTLPhysical => {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_data(item_k);
+        meta.apply_ttl_to_deleted();
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        Ok(HASH_FIELD_NOT_FOUND)
+      }
+      HashFieldStateKind::Persistent => Ok(HASH_FIELD_PERSISTENT),
+      HashFieldStateKind::LiveTTL => {
+        let mut batch = self.batch_with_capacity(2);
+        meta.apply_ttl_to_persistent();
+        let payload = entry
+          .raw
+          .as_ref()
+          .and_then(|s| meta.decode_subkey_value(s))
+          .map(|(_, p)| p)
+          .unwrap_or(b"");
+        meta.with_encoded_subkey_value(payload, 0, |enc| batch.insert_data(item_k, enc));
+        batch.insert_meta(&meta_k, &meta.encode());
+        batch.commit()?;
+        Ok(HASH_EXPIRE_SET_OK)
+      }
+    }
   }
 
   #[inline]
   pub fn hpersist<K: AsRef<[u8]>, F: AsRef<[u8]>>(&self, key: K, fields: &[F]) -> Result<Vec<i64>> {
     if fields.is_empty() {
       return Ok(Vec::new());
+    }
+    if fields.len() == 1 {
+      return Ok(vec![self.hpersist_one(key, &fields[0])?]);
     }
 
     let key_bytes = key.as_ref();

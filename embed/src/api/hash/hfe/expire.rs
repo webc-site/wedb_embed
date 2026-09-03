@@ -49,8 +49,14 @@ where
     seconds: i64,
     opt_li: impl IntoIterator<Item = HExpire>,
   ) -> Result<i64> {
-    let res = self.hexpire(key, &[field], seconds, opt_li)?;
-    Ok(res.into_iter().next().unwrap_or(HASH_FIELD_NOT_FOUND))
+    let now_ms = current_now_ms();
+    let condition = opt_li.into_iter().next().unwrap_or_default();
+    let target_expire_ms = if seconds <= 0 {
+      0
+    } else {
+      now_ms.saturating_add((seconds as u64).saturating_mul(1000))
+    };
+    self.expire_field_one(key, field, target_expire_ms, condition, now_ms)
   }
 
   #[inline]
@@ -79,8 +85,14 @@ where
     milliseconds: i64,
     opt_li: impl IntoIterator<Item = HExpire>,
   ) -> Result<i64> {
-    let res = self.hpexpire(key, &[field], milliseconds, opt_li)?;
-    Ok(res.into_iter().next().unwrap_or(HASH_FIELD_NOT_FOUND))
+    let now_ms = current_now_ms();
+    let condition = opt_li.into_iter().next().unwrap_or_default();
+    let target_expire_ms = if milliseconds <= 0 {
+      0
+    } else {
+      now_ms.saturating_add(milliseconds as u64)
+    };
+    self.expire_field_one(key, field, target_expire_ms, condition, now_ms)
   }
 
   #[inline]
@@ -105,8 +117,10 @@ where
     unix_time_sec: u64,
     opt_li: impl IntoIterator<Item = HExpire>,
   ) -> Result<i64> {
-    let res = self.hexpireat(key, &[field], unix_time_sec, opt_li)?;
-    Ok(res.into_iter().next().unwrap_or(HASH_FIELD_NOT_FOUND))
+    let now_ms = current_now_ms();
+    let condition = opt_li.into_iter().next().unwrap_or_default();
+    let target_expire_ms = unix_time_sec.saturating_mul(1000);
+    self.expire_field_one(key, field, target_expire_ms, condition, now_ms)
   }
 
   #[inline]
@@ -130,8 +144,89 @@ where
     unix_time_ms: u64,
     opt_li: impl IntoIterator<Item = HExpire>,
   ) -> Result<i64> {
-    let res = self.hpexpireat(key, &[field], unix_time_ms, opt_li)?;
-    Ok(res.into_iter().next().unwrap_or(HASH_FIELD_NOT_FOUND))
+    let now_ms = current_now_ms();
+    let condition = opt_li.into_iter().next().unwrap_or_default();
+    self.expire_field_one(key, field, unix_time_ms, condition, now_ms)
+  }
+
+  #[inline]
+  pub(crate) fn expire_field_one<K: AsRef<[u8]>, F: AsRef<[u8]>>(
+    &self,
+    key: K,
+    field: F,
+    expire_at_ms: u64,
+    condition: HExpire,
+    now_ms: u64,
+  ) -> Result<i64> {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+
+    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(HASH_FIELD_NOT_FOUND),
+    };
+
+    let is_immediate = is_immediate_expire(expire_at_ms, now_ms);
+    let data_ks = self.data();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let f_bytes = field.as_ref();
+    let item_k = composer.key_for_field(f_bytes);
+    let entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
+
+    match entry.kind {
+      HashFieldStateKind::Missing => Ok(HASH_FIELD_NOT_FOUND),
+      HashFieldStateKind::ExpiredTTLPhysical => {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_data(item_k);
+        meta.apply_ttl_to_deleted();
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        Ok(HASH_FIELD_NOT_FOUND)
+      }
+      HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
+        if !hexpire_condition_passes(condition, entry.kind, entry.expire, expire_at_ms) {
+          return Ok(HASH_EXPIRE_COND_FAILED);
+        }
+        let mut batch = self.batch_with_capacity(2);
+        if is_immediate {
+          batch.rm_data(item_k);
+          if entry.kind == HashFieldStateKind::Persistent {
+            meta.apply_persistent_to_deleted();
+          } else {
+            meta.apply_ttl_to_deleted();
+          }
+          if meta.base.size == 0 {
+            batch.rm_meta(&meta_k);
+          } else {
+            batch.insert_meta(&meta_k, &meta.encode());
+          }
+          batch.commit()?;
+          Ok(HASH_EXPIRE_DELETED)
+        } else {
+          if entry.kind == HashFieldStateKind::Persistent {
+            meta.apply_persistent_to_ttl(expire_at_ms);
+          } else {
+            meta.apply_ttl_to_ttl(expire_at_ms);
+          }
+          let payload = entry
+            .raw
+            .as_ref()
+            .and_then(|s| meta.decode_subkey_value(s))
+            .map(|(_, p)| p)
+            .unwrap_or(b"");
+          meta
+            .with_encoded_subkey_value(payload, expire_at_ms, |enc| batch.insert_data(item_k, enc));
+          batch.insert_meta(&meta_k, &meta.encode());
+          batch.commit()?;
+          Ok(HASH_EXPIRE_SET_OK)
+        }
+      }
+    }
   }
 
   #[inline]
@@ -146,6 +241,15 @@ where
     if fields.is_empty() {
       return Ok(Vec::new());
     }
+    if fields.len() == 1 {
+      return Ok(vec![self.expire_field_one(
+        key,
+        &fields[0],
+        expire_at_ms,
+        condition,
+        now_ms,
+      )?]);
+    }
 
     let key_bytes = key.as_ref();
     let kc = self.kc();
@@ -157,73 +261,12 @@ where
     };
 
     let is_immediate = is_immediate_expire(expire_at_ms, now_ms);
-    let data_ks = self.data();
-    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
-
-    if fields.len() == 1 {
-      let f_bytes = fields[0].as_ref();
-      let item_k = composer.key_for_field(f_bytes);
-      let entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
-      match entry.kind {
-        HashFieldStateKind::Missing => return Ok(vec![HASH_FIELD_NOT_FOUND]),
-        HashFieldStateKind::ExpiredTTLPhysical => {
-          let mut batch = self.batch_with_capacity(2);
-          batch.rm_data(item_k);
-          meta.apply_ttl_to_deleted();
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
-          return Ok(vec![HASH_FIELD_NOT_FOUND]);
-        }
-        HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
-          if !hexpire_condition_passes(condition, entry.kind, entry.expire, expire_at_ms) {
-            return Ok(vec![HASH_EXPIRE_COND_FAILED]);
-          }
-          let mut batch = self.batch_with_capacity(2);
-          if is_immediate {
-            batch.rm_data(item_k);
-            if entry.kind == HashFieldStateKind::Persistent {
-              meta.apply_persistent_to_deleted();
-            } else {
-              meta.apply_ttl_to_deleted();
-            }
-            if meta.base.size == 0 {
-              batch.rm_meta(&meta_k);
-            } else {
-              batch.insert_meta(&meta_k, &meta.encode());
-            }
-            batch.commit()?;
-            return Ok(vec![HASH_EXPIRE_DELETED]);
-          } else {
-            if entry.kind == HashFieldStateKind::Persistent {
-              meta.apply_persistent_to_ttl(expire_at_ms);
-            } else {
-              meta.apply_ttl_to_ttl(expire_at_ms);
-            }
-            let payload = entry
-              .raw
-              .as_ref()
-              .and_then(|s| meta.decode_subkey_value(s))
-              .map(|(_, p)| p)
-              .unwrap_or(b"");
-            meta.with_encoded_subkey_value(payload, expire_at_ms, |enc| {
-              batch.insert_data(item_k, enc)
-            });
-            batch.insert_meta(&meta_k, &meta.encode());
-            batch.commit()?;
-            return Ok(vec![HASH_EXPIRE_SET_OK]);
-          }
-        }
-      }
-    }
-
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
     let mut meta_changed = false;
     let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
+    let data_ks = self.data();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
 
     for f in fields {
       let f_bytes = f.as_ref();
