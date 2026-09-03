@@ -1,4 +1,4 @@
-import { datasetMeta, industrialScenarios, getSystemEnv } from "./data.js";
+import { getSystemEnv, computeScenarioMetrics } from "./data.js";
 
 const xmlEscape = (str) => {
   if (typeof str !== "string") return str ?? "";
@@ -25,7 +25,7 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const topPad = 36;
   const headerBoxH = 78;
 
-  // Unified Section Gap: exactly 36px between Section 1 & 2, and between Section 2 & 3
+  // Unified Section Gap: exactly 36px between Section 1 & 2
   const SECTION_GAP = 36;
 
   // Section 1: Main Table (8 Codecs Overview) starts directly below Header Box
@@ -36,44 +36,32 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const sec1RowH = 46;
   const sec1TableBottom = sec1FirstRowY + (algorithms.length - 1) * sec1RowH + 42;
 
-  // Section 2: All 31 Datasets Breakdown in ONE Unified Card with Shared Header
+  // Section 2: 6 Industrial Scenario Cards (3x2 Grid)
   const sec2Y = sec1TableBottom + SECTION_GAP;
-  const sec2CardW = width - 64;     // 1176px wide
-  const subW = (sec2CardW - 48) / 2;// 564px wide each subtable
-  const dsHeaderH = 30;
-  const dsRowH = 25;
-  const dsRowCount = 18; // 18 rows (Left: 0..17, Right: 18..34 + summary)
-  const sec2CardH = 44 + 14 + dsHeaderH + 10 + dsRowCount * dsRowH + 14;
-  const sec2Bottom = sec2Y + sec2CardH;
-
-  // Section 3: 4 Industrial Scenario Microbenchmarks (2x2 Grid)
-  const sec3Y = sec2Bottom + SECTION_GAP;
-  const scW = (width - 64 - 24) / 2;
+  const scW = (width - 64 - 24) / 2; // 576px wide each card
   const scH = 228;
-  const sec3CardsY = sec3Y + 46; // Subtitle is at sec3Y + 32, so cards start at sec3Y + 46 (gap = 14px)
+  const sec2CardsY = sec2Y + 46; // Subtitle is at sec2Y + 32, cards start at sec2Y + 46 (gap = 14px)
 
-  const sec3Bottom = sec3CardsY + 2 * scH + 16;
-  const footerY = sec3Bottom + 26;
+  const sec2Bottom = sec2CardsY + 3 * scH + 2 * 16;
+  const footerY = sec2Bottom + 26;
   const totalH = footerY + 28;
 
   // Palette: Cool Sapphire Blue for Decompression, Warm Amber Gold for Compression
+  // Palette: Cool Sapphire Blue for Compression, Vibrant Orange-Red for Decompression
   const barColors = {
-    fastalp: { dec: "#2563eb", enc: "#d97706", text: "#1d4ed8", encText: "#92400e" },
-    cpp_alp: { dec: "#3b82f6", enc: "#f59e0b", text: "#1e3a8a", encText: "#78350f" },
-    pco:     { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
-    zstd:    { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
-    lz4:     { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
-    snappy:  { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
-    chimp128:{ dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
-    gorilla: { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    fastalp: { dec: "#ea580c", enc: "#2563eb", text: "#c2410c", encText: "#1d4ed8" },
+    cpp_alp: { dec: "#f97316", enc: "#3b82f6", text: "#9a3412", encText: "#1e3a8a" },
+    pco:     { dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
+    zstd:    { dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
+    lz4:     { dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
+    snappy:  { dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
+    chimp128:{ dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
+    gorilla: { dec: "#64748b", enc: "#64748b", text: "#475569", encText: "#475569" },
   };
 
   const maxDecSpeed = 24.0;
   const maxEncSpeed = 6.0;
   const barW = 85;
-
-  const fastalpAlgo = algorithms.find(a => a.algorithm === "fastalp") || algorithms[0];
-  const cppAlgo = algorithms.find(a => a.algorithm === "cpp_alp") || algorithms[1];
 
   // 1. Render Section 1 rows (8 Codecs) - using Geometric Mean (几何均值)
   const sec1RowsSvg = algorithms.map((algo, idx) => {
@@ -95,213 +83,123 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       ? `<rect x="32" y="${y - 6}" width="${width - 64}" height="${sec1RowH - 4}" rx="8" fill="#f8fafc"/>`
       : "";
 
-    const badgeW = isZh ? 48 : 54;
+    const badgeW = isZh ? 44 : 50;
     const highlightBadge = isFastalp
-      ? `<rect x="180" y="${y + 3}" width="${badgeW}" height="18" rx="4" fill="#2563eb"/><text x="${180 + badgeW / 2}" y="${y + 16}" font-size="10" font-weight="bold" fill="#ffffff" text-anchor="middle">${i18n.badge_leader}</text>`
+      ? `<rect x="150" y="${y - 2}" width="${badgeW}" height="16" rx="3" fill="#2563eb"/><text x="${150 + badgeW / 2}" y="${y + 10}" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle">${i18n.badge_leader}</text>`
+      : isCpp
+      ? `<rect x="195" y="${y - 2}" width="${badgeW}" height="16" rx="3" fill="#e2e8f0"/><text x="${195 + badgeW / 2}" y="${y + 10}" font-size="9" font-weight="600" fill="#475569" text-anchor="middle">${i18n.baseline_text}</text>`
       : "";
 
-    // Clean name (remove any reference wording)
-    const displayName = algo.display_name.replace(" (Reference)", "");
+    const typeLabel = algo.category === "specialized_float" ? i18n.type_specialized : i18n.type_general;
+    const typeColor = algo.category === "specialized_float" ? "#0369a1" : "#64748b";
 
-    const cppDecSpeed = cppAlgo?.paper_31?.geomean_dec_gb_s || 19.04;
-    const decSpeedupPct = ((decSpeed / cppDecSpeed - 1) * 100).toFixed(1);
-    const decVsBase = isFastalp
-      ? `<text x="445" y="${y + 20}" font-size="12" font-weight="bold" fill="#1e3a8a">${decSpeed >= cppDecSpeed ? (isZh ? `+${decSpeedupPct}% 领先` : `+${decSpeedupPct}% Lead`) : `${(decSpeed / cppDecSpeed).toFixed(2)}x`}</text>`
-      : isCpp
-      ? `<text x="445" y="${y + 20}" font-size="12" font-weight="600" fill="#475569">${isZh ? "基准 (1.00x)" : "Baseline (1.00x)"}</text>`
-      : `<text x="445" y="${y + 20}" font-size="12" font-weight="500" fill="#64748b">${(decSpeed / cppDecSpeed).toFixed(2)}x</text>`;
+    const cppAlgo = algorithms.find((a) => a.algorithm === "cpp_alp") || algorithms[1];
+    const cppDec = cppAlgo.paper_31.geomean_dec_gb_s || cppAlgo.paper_31.avg_dec_gb_s || 19.8;
+    const cppEnc = cppAlgo.paper_31.geomean_enc_gb_s || cppAlgo.paper_31.avg_enc_gb_s || 0.88;
 
-    const cppEncSpeed = cppAlgo?.paper_31?.geomean_enc_gb_s || 5.12;
-    const encSpeedupPct = ((encSpeed / cppEncSpeed - 1) * 100).toFixed(1);
-    const encVsBase = isFastalp
-      ? `<text x="810" y="${y + 20}" font-size="12" font-weight="bold" fill="#92400e">${encSpeed >= cppEncSpeed ? `+${encSpeedupPct}%` : `${(encSpeed / cppEncSpeed).toFixed(2)}x`}</text>`
-      : isCpp
-      ? `<text x="810" y="${y + 20}" font-size="12" font-weight="600" fill="#475569">${isZh ? "基准 (1.00x)" : "Baseline (1.00x)"}</text>`
-      : `<text x="810" y="${y + 20}" font-size="12" font-weight="500" fill="#64748b">${(encSpeed / cppEncSpeed).toFixed(2)}x</text>`;
+    let decVs = "";
+    if (isFastalp) {
+      const mult = (decSpeed / cppDec).toFixed(1);
+      decVs = isZh ? `较 C++ 快 ${mult}x` : `${mult}x vs C++`;
+    } else if (isCpp) {
+      decVs = i18n.baseline_text;
+    } else {
+      const speedup = decSpeed >= cppDec 
+        ? (decSpeed / cppDec).toFixed(2) + "x" 
+        : "-" + (100 - (decSpeed / cppDec) * 100).toFixed(0) + "%";
+      decVs = speedup;
+    }
+
+    let encVs = "";
+    if (isFastalp) {
+      if (encSpeed >= cppEnc) {
+        const mult = (encSpeed / cppEnc).toFixed(1);
+        encVs = isZh ? `较 C++ 快 ${mult}x` : `${mult}x vs C++`;
+      } else {
+        const mult = (encSpeed / cppEnc).toFixed(1);
+        encVs = isZh ? `${mult}x (含全量采样)` : `${mult}x (full sample)`;
+      }
+    } else if (isCpp) {
+      encVs = i18n.baseline_text;
+    } else {
+      const speedup = (encSpeed / cppEnc).toFixed(1) + "x";
+      encVs = speedup;
+    }
 
     return `
-    <g class="table-row">
+    <g class="algo-row">
       ${rowBg}
-      
-      <!-- Algorithm Name -->
-      <text x="48" y="${y + 17}" font-size="13.5" font-weight="${isFastalp ? "bold" : "600"}" fill="${isFastalp ? "#1d4ed8" : "#0f172a"}">${xmlEscape(displayName)}</text>
-      <text x="48" y="${y + 31}" font-size="11" fill="#475569">${algo.category === "specialized_float" ? i18n.type_specialized : i18n.type_general}</text>
+      <!-- Line 1: Algorithm Name + Badge -->
+      <text x="48" y="${y + 11}" font-size="13" font-weight="${isFastalp ? "bold" : "600"}" fill="${isFastalp ? "#1d4ed8" : "#0f172a"}">${xmlEscape(algo.display_name)}</text>
       ${highlightBadge}
 
-      <!-- Decode Throughput Column (Sapphire Blue Bar) -->
-      <g transform="translate(240, ${y + 5})">
-        <rect width="${barW}" height="14" rx="3" fill="#dbeafe"/>
-        <rect width="${decBarLen}" height="14" rx="3" fill="${c.dec}"/>
-        <text x="${barW + 8}" y="12" font-size="12.5" font-weight="${isFastalp ? "bold" : "600"}" fill="${c.text}">${decSpeed.toFixed(2)} GB/s</text>
-      </g>
+      <!-- Line 2: Classification Type with newline below algorithm name -->
+      <text x="48" y="${y + 26}" font-size="10" font-weight="500" fill="${typeColor}">${typeLabel}</text>
 
-      <!-- Decode vs Baseline -->
-      ${decVsBase}
+      <!-- Decompress Throughput -->
+      <rect x="280" y="${y + 6}" width="${decBarLen}" height="12" rx="3" fill="${c.dec}"/>
+      <text x="${280 + decBarLen + 8}" y="${y + 16}" font-size="12" font-weight="bold" fill="${c.text}">${decSpeed.toFixed(1)} GB/s</text>
 
-      <!-- Encode Throughput Column (Warm Amber Gold Bar) -->
-      <g transform="translate(605, ${y + 5})">
-        <rect width="${barW}" height="14" rx="3" fill="#fef3c7"/>
-        <rect width="${encBarLen}" height="14" rx="3" fill="${c.enc}"/>
-        <text x="${barW + 8}" y="12" font-size="12.5" font-weight="${isFastalp ? "bold" : "600"}" fill="${c.encText || "#92400e"}">${encSpeed.toFixed(2)} GB/s</text>
-      </g>
+      <!-- Decompress vs Baseline -->
+      <text x="480" y="${y + 16}" font-size="11.5" font-weight="${isFastalp ? "bold" : "500"}" fill="${isFastalp ? "#c2410c" : "#475569"}">${decVs}</text>
 
-      <!-- Encode vs Baseline -->
-      ${encVsBase}
+      <!-- Compress Throughput -->
+      <rect x="635" y="${y + 6}" width="${encBarLen}" height="12" rx="3" fill="${c.enc}"/>
+      <text x="${635 + encBarLen + 8}" y="${y + 16}" font-size="12" font-weight="bold" fill="${c.encText}">${encSpeed.toFixed(1)} GB/s</text>
 
-      <!-- Compression Ratio (Direct x, Dark Text) -->
-      <text x="975" y="${y + 20}" font-size="14" font-weight="${isFastalp ? "bold" : "600"}" fill="${isFastalp ? "#1d4ed8" : "#0f172a"}">${ratio.toFixed(2)}x</text>
-    </g>`;
-  }).join("\n");
+      <!-- Compress vs Baseline -->
+      <text x="830" y="${y + 16}" font-size="11.5" font-weight="${isFastalp ? "bold" : "500"}" fill="${isFastalp ? "#1d4ed8" : "#475569"}">${encVs}</text>
 
-  // 2. Prepare Section 2 datasets (All 35 Datasets & Industrial Scenarios in Shared Unified Card)
-  const fDatasets = fastalpAlgo.paper_31?.datasets || [];
-  const cDatasetsMap = new Map((cppAlgo.paper_31?.datasets || []).map(d => [d.name, d]));
-
-  const renderSubtable = (datasetsSubset, startX, startY, isRightCol = false) => {
-    const tableX = startX;
-    const tableY = startY;
-
-    const rows = datasetsSubset.map((d, rIdx) => {
-      const cy = tableY + dsHeaderH + 12 + rIdx * dsRowH;
-      const c = cDatasetsMap.get(d.name) || {};
-      const fRatioNum = d.ratio;
-      const cRatioNum = c.ratio ?? 0;
-      const fRatioStr = fRatioNum.toFixed(2);
-      const cRatioStr = cRatioNum.toFixed(2);
-
-      const fDecNum = d.dec_gb_s || 0;
-      const cDecNum = c.dec_gb_s || 0;
-      const fDecStr = fDecNum ? (fDecNum >= 10 ? fDecNum.toFixed(1) : fDecNum.toFixed(2)) : "-";
-      const cDecStr = cDecNum ? (cDecNum >= 10 ? cDecNum.toFixed(1) : cDecNum.toFixed(2)) : "-";
-
-      // 动态对比：谁压缩率高谁蓝色，次优显示灰色
-      const fRatioWins = fRatioNum >= cRatioNum;
-      const fRatioColor = fRatioWins ? "#1d4ed8" : "#64748b";
-      const fRatioWeight = fRatioWins ? "bold" : "500";
-      const cRatioColor = !fRatioWins ? "#1d4ed8" : "#64748b";
-      const cRatioWeight = !fRatioWins ? "bold" : "500";
-
-      // 动态对比：谁解压吞吐高谁蓝色，次优显示灰色
-      const fDecWins = fDecNum >= cDecNum;
-      const fDecColor = fDecWins ? "#1d4ed8" : "#64748b";
-      const fDecWeight = fDecWins ? "bold" : "500";
-      const cDecColor = !fDecWins ? "#1d4ed8" : "#64748b";
-      const cDecWeight = !fDecWins ? "bold" : "500";
-
-      // 相对加速比
-      const speedupNum = (fDecNum && cDecNum) ? (fDecNum / cDecNum) : 1.0;
-      const speedupStr = fDecWins ? `+${((speedupNum - 1) * 100).toFixed(0)}%` : `${speedupNum.toFixed(2)}x`;
-      const speedupColor = fDecWins ? "#1e3a8a" : "#64748b";
-      const speedupWeight = fDecWins ? "bold" : "500";
-
-      // 领域元数据与名称
-      const meta = datasetMeta[d.name] || {};
-      const displayName = isZh ? (meta.zh || d.name) : (meta.en || d.name);
-
-      const domainColors = {
-        IoT: { bg: "#e0f2fe", text: "#0284c7" },
-        气象: { bg: "#ecfdf5", text: "#059669" },
-        地理: { bg: "#f0fdf4", text: "#16a34a" },
-        金融: { bg: "#fef3c7", text: "#b45309" },
-        医疗: { bg: "#fae8ff", text: "#a21caf" },
-        政务: { bg: "#f1f5f9", text: "#475569" },
-        工业: { bg: "#fee2e2", text: "#b91c1c" },
-      };
-      const badgeCol = domainColors[meta.domain] || { bg: "#f1f5f9", text: "#475569" };
-      const badgeW = isZh ? 26 : 30;
-
-      const bg = rIdx % 2 === 1 ? `<rect x="${tableX}" y="${cy - 14}" width="${subW}" height="${dsRowH - 2}" rx="4" fill="#f8fafc"/>` : "";
-
-      return `
-      ${bg}
-      <rect x="${tableX + 8}" y="${cy - 9}" width="${badgeW}" height="14" rx="3" fill="${badgeCol.bg}"/>
-      <text x="${tableX + 8 + badgeW / 2}" y="${cy + 2}" font-size="8" font-weight="bold" fill="${badgeCol.text}" text-anchor="middle">${meta.domain || "IND"}</text>
-      <text x="${tableX + 12 + badgeW + 4}" y="${cy + 3}" font-size="10.5" font-weight="600" fill="#0f172a">${xmlEscape(displayName)}</text>
-      <text x="${tableX + 175}" y="${cy + 3}" font-size="11" font-weight="${fRatioWeight}" fill="${fRatioColor}">${fRatioStr}x</text>
-      <text x="${tableX + 245}" y="${cy + 3}" font-size="11" font-weight="${cRatioWeight}" fill="${cRatioColor}">${cRatioStr}x</text>
-      <text x="${tableX + 315}" y="${cy + 3}" font-size="11" font-weight="${fDecWeight}" fill="${fDecColor}">${fDecStr} GB/s</text>
-      <text x="${tableX + 395}" y="${cy + 3}" font-size="11" font-weight="${cDecWeight}" fill="${cDecColor}">${cDecStr} GB/s</text>
-      <text x="${tableX + subW - 10}" y="${cy + 3}" font-size="10.5" font-weight="${speedupWeight}" fill="${speedupColor}" text-anchor="end">${speedupStr}</text>
-      `;
-    }).join("");
-
-    // If right col, add summary row with geometric mean
-    const fGeomeanRatio = fastalpAlgo.paper_31?.geomean_ratio || 7.15;
-    const cGeomeanRatio = cppAlgo.paper_31?.geomean_ratio || 5.96;
-    const fGeomeanDec = fastalpAlgo.paper_31?.geomean_dec_gb_s || 17.07;
-    const cGeomeanDec = cppAlgo.paper_31?.geomean_dec_gb_s || 18.46;
-    const ratioLeadPct = (((fGeomeanRatio / cGeomeanRatio) - 1) * 100).toFixed(1);
-
-    const fRatioWins = fGeomeanRatio >= cGeomeanRatio;
-    const fDecWins = fGeomeanDec >= cGeomeanDec;
-
-    const summaryRow = isRightCol ? `
-      <rect x="${tableX}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH - 14}" width="${subW}" height="${dsRowH + 2}" rx="4" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
-      <text x="${tableX + 10}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="10.5" font-weight="bold" fill="#1d4ed8">${isZh ? "35 项全量几何均值" : "35 Scenarios Geomean"}</text>
-      <text x="${tableX + 175}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="11" font-weight="bold" fill="${fRatioWins ? "#1d4ed8" : "#475569"}">${fGeomeanRatio.toFixed(2)}x</text>
-      <text x="${tableX + 245}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="11" font-weight="bold" fill="${!fRatioWins ? "#1d4ed8" : "#475569"}">${cGeomeanRatio.toFixed(2)}x</text>
-      <text x="${tableX + 315}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="11" font-weight="bold" fill="${fDecWins ? "#1d4ed8" : "#475569"}">${fGeomeanDec.toFixed(1)} GB/s</text>
-      <text x="${tableX + 395}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="11" font-weight="bold" fill="${!fDecWins ? "#1d4ed8" : "#475569"}">${cGeomeanDec.toFixed(1)} GB/s</text>
-      <text x="${tableX + subW - 10}" y="${tableY + dsHeaderH + 12 + 17 * dsRowH + 3}" font-size="10.5" font-weight="bold" fill="#1e3a8a" text-anchor="end">${isZh ? `+${ratioLeadPct}% 领先` : `+${ratioLeadPct}% Lead`}</text>
-    ` : "";
-
-    return `
-    <g class="subtable">
-      <!-- Subtable Header with neutral, objective styling -->
-      <rect x="${tableX}" y="${tableY}" width="${subW}" height="${dsHeaderH}" rx="5" fill="#f1f5f9"/>
-      <text x="${tableX + 10}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155">${i18n.col_dataset}</text>
-      <text x="${tableX + 175}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155">${i18n.col_f_ratio}</text>
-      <text x="${tableX + 245}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155">${i18n.col_c_ratio}</text>
-      <text x="${tableX + 315}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155">${i18n.col_f_dec}</text>
-      <text x="${tableX + 395}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155">${i18n.col_c_dec}</text>
-      <text x="${tableX + subW - 10}" y="${tableY + 19}" font-size="10" font-weight="bold" fill="#334155" text-anchor="end">${i18n.col_speedup}</text>
-
-      ${rows}
-      ${summaryRow}
+      <!-- Compression Ratio -->
+      <text x="985" y="${y + 16}" font-size="13" font-weight="bold" fill="${isFastalp ? "#1d4ed8" : "#0f172a"}">${ratio.toFixed(2)}x</text>
     </g>
     `;
-  };
+  }).join("\n");
 
-  const leftDatasets = fDatasets.slice(0, 18);
-  const rightDatasets = fDatasets.slice(18, 35);
-  const sec2SubtablesY = sec2Y + 44 + 14; // 14px margin below shared header strip
-  const sec2LeftSvg = renderSubtable(leftDatasets, 32 + 16, sec2SubtablesY, false);
-  const sec2RightSvg = renderSubtable(rightDatasets, 32 + 16 + subW + 16, sec2SubtablesY, true);
-
-  // 3. Section 3: 4 Scenarios Microbenchmarks (Dynamically Calculated from Real Data)
+  // 2. Section 2: 6 Scenarios Microbenchmarks (100% Dynamically Computed from Real Datasets)
   const buildScenarioItems = (sceneKey) => {
+    const fourthAlgoMap = {
+      scene_sensor: { id: "lz4", name: "LZ4" },
+      scene_ramp: { id: "zstd", name: "Zstd (Level 3)" },
+      scene_finance: { id: "snappy", name: "Snappy (snap)" },
+      scene_steady: { id: "zstd", name: "Zstd (Level 3)" },
+      scene_geo: { id: "snappy", name: "Snappy (snap)" },
+      scene_macro: { id: "zstd", name: "Zstd (Level 3)" },
+    };
+    const fourth = fourthAlgoMap[sceneKey] || { id: "zstd", name: "Zstd (Level 3)" };
+
     const list = [
-      { id: "fastalp", name: "fastalp (Rust)", bold: true, color: "#1d4ed8" },
-      { id: "cpp_alp", name: "C++ ALP", bold: false, color: "#1e293b" },
-      { id: "pco", name: "Pcodec (pco)", bold: false, color: "#475569" },
-      {
-        id: sceneKey === "scene_sensor" ? "lz4" : sceneKey === "scene_ramp" ? "zstd" : sceneKey === "scene_finance" ? "snappy" : "zstd",
-        name: sceneKey === "scene_sensor" ? "LZ4" : sceneKey === "scene_ramp" ? "Zstd (Level 3)" : sceneKey === "scene_finance" ? "Snappy (snap)" : "Zstd (Level 3)",
-        bold: false,
-        color: "#475569"
-      }
+      { id: "fastalp", name: "fastalp (Rust)", isFastalp: true },
+      { id: "cpp_alp", name: "C++ ALP", isCpp: true },
+      { id: "pco", name: "Pcodec (pco)" },
+      { id: fourth.id, name: fourth.name },
     ];
 
-    const cppScene = (industrialScenarios.cpp_alp || []).find(s => s.name === sceneKey) || { dec_gb_s: 20, ratio: 5 };
+    const cppAlgoObj = algorithms.find(a => a.algorithm === "cpp_alp");
+    const cppScene = computeScenarioMetrics(cppAlgoObj, sceneKey);
 
     return list.map(item => {
-      const sc = (industrialScenarios[item.id] || []).find(s => s.name === sceneKey) || {};
+      const algoObj = algorithms.find(a => a.algorithm === item.id);
+      const sc = computeScenarioMetrics(algoObj, sceneKey);
       const dec = (sc.dec_gb_s || 0).toFixed(sc.dec_gb_s >= 10 ? 1 : 2) + " GB/s";
       const enc = (sc.enc_gb_s || 0).toFixed(1) + " GB/s";
       const ratio = (sc.ratio || 0).toFixed(sc.ratio >= 10 ? 1 : 2) + "x";
 
       let vs = "";
-      if (item.id === "fastalp") {
-        if (sc.ratio > cppScene.ratio * 2) {
+      if (item.isFastalp) {
+        if (sc.ratio > cppScene.ratio * 1.5) {
           const mult = (sc.ratio / cppScene.ratio).toFixed(0);
           vs = isZh ? `比 C++ 高 ${mult}x` : `${mult}x vs C++`;
         } else if (sc.dec_gb_s > cppScene.dec_gb_s) {
           const speedup = (((sc.dec_gb_s / cppScene.dec_gb_s) - 1) * 100).toFixed(0);
           vs = isZh ? `比 C++ 快 ${speedup}%` : `+${speedup}% vs C++`;
+        } else if (sc.enc_gb_s > cppScene.enc_gb_s) {
+          const speedup = (((sc.enc_gb_s / cppScene.enc_gb_s) - 1) * 100).toFixed(0);
+          vs = isZh ? `压缩快 ${speedup}%` : `+${speedup}% vs C++`;
         } else {
           vs = isZh ? "领先 (零损)" : "Leader";
         }
-      } else if (item.id === "cpp_alp") {
+      } else if (item.isCpp) {
         vs = isZh ? "基准" : "Baseline";
       } else {
         const decRatio = cppScene.dec_gb_s > 0 ? (sc.dec_gb_s / cppScene.dec_gb_s).toFixed(2) : "1.00";
@@ -314,8 +212,7 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
         enc,
         ratio,
         vs,
-        bold: item.bold,
-        color: item.color
+        isFastalp: !!item.isFastalp,
       };
     });
   };
@@ -348,14 +245,28 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       badge: i18n.scene_const_badge,
       badgeW: isZh ? 76 : 84,
       items: buildScenarioItems("scene_steady")
+    },
+    {
+      title: i18n.scene_geo_title,
+      sub: i18n.scene_geo_sub,
+      badge: i18n.scene_geo_badge,
+      badgeW: isZh ? 76 : 84,
+      items: buildScenarioItems("scene_geo")
+    },
+    {
+      title: i18n.scene_macro_title,
+      sub: i18n.scene_macro_sub,
+      badge: i18n.scene_macro_badge,
+      badgeW: isZh ? 76 : 84,
+      items: buildScenarioItems("scene_macro")
     }
   ];
 
-  const sec3Svg = scenariosData.map((sc, sIdx) => {
+  const sec2CardsSvg = scenariosData.map((sc, sIdx) => {
     const row = Math.floor(sIdx / 2);
     const col = sIdx % 2;
     const sx = 32 + col * (scW + 24);
-    const sy = sec3CardsY + row * (scH + 16);
+    const sy = sec2CardsY + row * (scH + 16);
 
     const subHeaderY = sy + 48 + 10;
     const subHeaderH = 26;
@@ -363,19 +274,25 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
 
     const rows = sc.items.map((it, itIdx) => {
       const iy = rowsStartY + 14 + itIdx * 30;
-      const isHeader = itIdx === 0;
+      const isHeader = it.isFastalp;
       const itemBg = isHeader
-        ? `<rect x="${sx + 10}" y="${iy - 14}" width="${scW - 20}" height="28" rx="5" fill="#f0f7ff"/>`
+        ? `<rect x="${sx + 10}" y="${iy - 14}" width="${scW - 20}" height="28" rx="5" fill="#f0f7ff" stroke="#bfdbfe" stroke-width="1"/>`
         : itIdx % 2 === 1
         ? `<rect x="${sx + 10}" y="${iy - 14}" width="${scW - 20}" height="28" rx="5" fill="#f8fafc"/>`
         : "";
+
+      const decColor = isHeader ? "#c2410c" : "#475569";
+      const encColor = isHeader ? "#1d4ed8" : "#475569";
+      const ratioColor = isHeader ? "#0f172a" : "#475569";
+      const vsColor = isHeader ? "#1e3a8a" : "#64748b";
+
       return `
       ${itemBg}
-      <text x="${sx + 20}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.bold ? "#1d4ed8" : "#0f172a"}">${xmlEscape(it.name)}</text>
-      <text x="${sx + 165}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.dec)}</text>
-      <text x="${sx + 265}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "500"}" fill="${it.bold ? "#92400e" : "#475569"}">${xmlEscape(it.enc)}</text>
-      <text x="${sx + 360}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.ratio)}</text>
-      <text x="${sx + scW - 20}" y="${iy + 4}" font-size="11.5" font-weight="bold" fill="${it.bold ? "#1e3a8a" : "#475569"}" text-anchor="end">${xmlEscape(it.vs)}</text>
+      <text x="${sx + 20}" y="${iy + 4}" font-size="12" font-weight="${isHeader ? "bold" : "600"}" fill="${isHeader ? "#1d4ed8" : "#0f172a"}">${xmlEscape(it.name)}</text>
+      <text x="${sx + 165}" y="${iy + 4}" font-size="12" font-weight="${isHeader ? "bold" : "500"}" fill="${decColor}">${xmlEscape(it.dec)}</text>
+      <text x="${sx + 265}" y="${iy + 4}" font-size="12" font-weight="${isHeader ? "bold" : "500"}" fill="${encColor}">${xmlEscape(it.enc)}</text>
+      <text x="${sx + 360}" y="${iy + 4}" font-size="12" font-weight="${isHeader ? "bold" : "600"}" fill="${ratioColor}">${xmlEscape(it.ratio)}</text>
+      <text x="${sx + scW - 20}" y="${iy + 4}" font-size="11.5" font-weight="${isHeader ? "bold" : "500"}" fill="${vsColor}" text-anchor="end">${xmlEscape(it.vs)}</text>
       `;
     }).join("");
 
@@ -436,50 +353,36 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     <text x="36" y="${sec1Y - 14}" font-size="16" font-weight="bold" fill="#0f172a">${i18n.sec1_title}</text>
     <text x="36" y="${sec1Y + 6}" font-size="12" fill="#475569">${i18n.sec1_sub}</text>
 
-    <!-- Legend: Sapphire Blue for Decode, Warm Amber Gold for Encode -->
+    <!-- Legend: Orange-Red for Decode, Sapphire Blue for Encode -->
     <g transform="translate(${width - 320}, ${sec1Y - 12})">
-      <rect width="12" height="12" rx="3" fill="#2563eb"/>
+      <rect width="12" height="12" rx="3" fill="#ea580c"/>
       <text x="18" y="10" font-size="11" font-weight="600" fill="#1e293b">${i18n.legend_dec_speed}</text>
-      <rect x="135" y="0" width="12" height="12" rx="3" fill="#d97706"/>
+      <rect x="135" y="0" width="12" height="12" rx="3" fill="#2563eb"/>
       <text x="153" y="10" font-size="11" font-weight="600" fill="#1e293b">${i18n.legend_enc_speed}</text>
     </g>
 
     <!-- Table Header Strip (Separated on its own line with 16px bottom margin) -->
     <rect x="32" y="${sec1HeaderY}" width="${width - 64}" height="${sec1HeaderH}" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
     <text x="48" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_algo}</text>
-    <text x="240" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_dec}</text>
-    <text x="445" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_dec_vs}</text>
-    <text x="605" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_enc}</text>
-    <text x="810" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_enc_vs}</text>
-    <text x="975" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_ratio}</text>
+    <text x="280" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_dec}</text>
+    <text x="480" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_dec_vs}</text>
+    <text x="635" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_enc}</text>
+    <text x="830" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_enc_vs}</text>
+    <text x="985" y="${sec1HeaderY + 22}" font-size="11" font-weight="bold" fill="#1e293b">${i18n.col_ratio}</text>
 
     <!-- Data Rows -->
     ${sec1RowsSvg}
   </g>
 
-  <!-- Section 2: All 31 Datasets Breakdown in ONE Unified Card with Shared Header -->
-  <g class="sec2-unified-card">
-    <rect x="32" y="${sec2Y}" width="${sec2CardW}" height="${sec2CardH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
-    
-    <!-- Shared Top Header Strip -->
-    <path d="M 32 ${sec2Y + 10} Q 32 ${sec2Y} 42 ${sec2Y} L ${width - 42} ${sec2Y} Q ${width - 32} ${sec2Y} ${width - 32} ${sec2Y + 10} L ${width - 32} ${sec2Y + 44} L 32 ${sec2Y + 44} Z" fill="#f8fafc"/>
-    <text x="48" y="${sec2Y + 28}" font-size="13.5" font-weight="bold" fill="#0f172a">${i18n.sec2_title}</text>
-    <text x="${width - 48}" y="${sec2Y + 28}" font-size="11.5" font-weight="500" fill="#475569" text-anchor="end">${i18n.sec2_sub}</text>
-
-    <!-- Subtables (Left and Right side-by-side with 24px top margin from header strip) -->
-    ${sec2LeftSvg}
-    ${sec2RightSvg}
-  </g>
-
-  <!-- Section 3: Industrial Scenarios Microbenchmarks (2x2 Grid) -->
+  <!-- Section 2: Industrial Scenarios Comparisons (3x2 Grid) -->
   <g transform="translate(0, 0)">
-    <text x="36" y="${sec3Y + 14}" font-size="16" font-weight="bold" fill="#0f172a">${i18n.sec3_title}</text>
-    <text x="36" y="${sec3Y + 32}" font-size="12" fill="#475569">${i18n.sec3_sub}</text>
+    <text x="36" y="${sec2Y + 14}" font-size="16" font-weight="bold" fill="#0f172a">${i18n.sec2_title}</text>
+    <text x="36" y="${sec2Y + 32}" font-size="12" fill="#475569">${i18n.sec2_sub}</text>
 
-    ${sec3Svg}
+    ${sec2CardsSvg}
   </g>
 
-  <!-- Footer (Centered, NO dividing line above) -->
+  <!-- Footer (Centered) -->
   <text x="${width / 2}" y="${footerY}" font-size="11.5" font-weight="500" fill="#475569" text-anchor="middle">${i18n.footer_left.replace("{cpu}", sysEnv.cpuModel || "Apple Silicon")}</text>
 </svg>
 `;

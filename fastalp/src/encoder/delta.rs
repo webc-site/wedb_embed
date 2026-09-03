@@ -1,11 +1,10 @@
 use super::Exception;
 use crate::{
-  bitpack::bitpack_encoded, delta::in_place_deltas, float::AlpFloat, header::write_header,
-  params::pack_params,
+  bitpack::bitpack_fused_delta, float::AlpFloat, header::write_header, params::pack_params,
 };
 
 /// Encodes integer array using Delta differential Frame-of-Reference encoding.
-/// 使用 Delta 一阶差分基准值对齐编码写入字节缓冲区（就地差分，零多余堆分配）
+/// 使用 Delta 一阶差分基准值对齐编码写入字节缓冲区（熔合差分打包，零多余内存读写）
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 pub fn encode_delta<F: AlpFloat>(
@@ -34,10 +33,9 @@ pub fn encode_delta<F: AlpFloat>(
   F::write_base(first, dst);
   F::write_base(min_delta, dst);
 
-  // 3. Bitpacked deltas (就地计算差分，零额外内存分配)
+  // 3. Bitpacked deltas (熔合差分直接打包，省去 1024 元素的大内存回写)
   if delta_bit_width > 0 && encoded_ints.len() > 1 {
-    in_place_deltas::<F>(encoded_ints);
-    bitpack_encoded::<F>(&encoded_ints[1..], min_delta, delta_bit_width, dst);
+    bitpack_fused_delta::<F>(encoded_ints, min_delta, delta_bit_width, dst);
   }
 
   // 4. Exceptions (仅在存在异常值时写入)

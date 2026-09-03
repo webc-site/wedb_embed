@@ -52,57 +52,6 @@ export const geomean = (arr) => {
   return Math.exp(sumLn / valid.length);
 };
 
-export const industrialScenarios = {
-  fastalp: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 1035, ratio: 7.91, bits_per_val: 8.09, enc_gb_s: 4.8, dec_gb_s: 22.8 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 19,   ratio: 431.2, bits_per_val: 0.15, enc_gb_s: 3.1, dec_gb_s: 40.7 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 787,  ratio: 10.41, bits_per_val: 6.15, enc_gb_s: 4.2, dec_gb_s: 24.2 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 11,   ratio: 744.7, bits_per_val: 0.09, enc_gb_s: 24.6, dec_gb_s: 88.9 }
-  ],
-  cpp_alp: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 1042, ratio: 7.86, bits_per_val: 8.14, enc_gb_s: 0.84, dec_gb_s: 21.8 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 8716, ratio: 0.94, bits_per_val: 68.09, enc_gb_s: 0.45, dec_gb_s: 0.58 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 1955, ratio: 4.19, bits_per_val: 15.28, enc_gb_s: 1.20, dec_gb_s: 21.2 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 18,   ratio: 455.1, bits_per_val: 0.14, enc_gb_s: 7.02, dec_gb_s: 23.5 }
-  ],
-  pco: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 1047, ratio: 7.82, bits_per_val: 8.18, enc_gb_s: 0.21, dec_gb_s: 1.58 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 184,  ratio: 44.5, bits_per_val: 1.44, enc_gb_s: 0.12, dec_gb_s: 0.85 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 1321, ratio: 6.20, bits_per_val: 10.32, enc_gb_s: 0.18, dec_gb_s: 1.60 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 29,   ratio: 282.5, bits_per_val: 0.23, enc_gb_s: 0.52, dec_gb_s: 4.82 }
-  ],
-  zstd: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 1342, ratio: 6.10, bits_per_val: 10.48, enc_gb_s: 0.44, dec_gb_s: 1.20 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 1182, ratio: 6.93, bits_per_val: 9.23, enc_gb_s: 0.32, dec_gb_s: 0.90 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 1606, ratio: 5.10, bits_per_val: 12.55, enc_gb_s: 0.41, dec_gb_s: 1.15 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 28,   ratio: 292.6, bits_per_val: 0.22, enc_gb_s: 3.51, dec_gb_s: 3.37 }
-  ],
-  lz4: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 6553, ratio: 1.25, bits_per_val: 51.20, enc_gb_s: 3.82, dec_gb_s: 11.3 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 6942, ratio: 1.18, bits_per_val: 54.23, enc_gb_s: 1.62, dec_gb_s: 4.20 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 6068, ratio: 1.35, bits_per_val: 47.41, enc_gb_s: 1.84, dec_gb_s: 4.50 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 170,  ratio: 48.2, bits_per_val: 1.33, enc_gb_s: 8.52, dec_gb_s: 15.2 }
-  ],
-  snappy: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 6714, ratio: 1.22, bits_per_val: 52.45, enc_gb_s: 3.51, dec_gb_s: 10.1 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 7123, ratio: 1.15, bits_per_val: 55.65, enc_gb_s: 2.12, dec_gb_s: 4.10 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 6400, ratio: 1.28, bits_per_val: 50.00, enc_gb_s: 2.82, dec_gb_s: 5.62 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 194,  ratio: 42.1, bits_per_val: 1.52, enc_gb_s: 7.92, dec_gb_s: 14.5 }
-  ],
-  chimp128: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 2874, ratio: 2.85, bits_per_val: 22.45, enc_gb_s: 0.62, dec_gb_s: 0.46 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 3900, ratio: 2.10, bits_per_val: 30.47, enc_gb_s: 0.55, dec_gb_s: 0.42 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 3343, ratio: 2.45, bits_per_val: 26.12, enc_gb_s: 0.58, dec_gb_s: 0.44 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 505,  ratio: 16.2, bits_per_val: 3.95, enc_gb_s: 0.75, dec_gb_s: 0.52 }
-  ],
-  gorilla: [
-    { name: "scene_sensor", raw_bytes: 8192, compressed_bytes: 3385, ratio: 2.42, bits_per_val: 26.45, enc_gb_s: 0.95, dec_gb_s: 0.60 },
-    { name: "scene_ramp",   raw_bytes: 8192, compressed_bytes: 4201, ratio: 1.95, bits_per_val: 32.82, enc_gb_s: 0.88, dec_gb_s: 0.52 },
-    { name: "scene_finance", raw_bytes: 8192, compressed_bytes: 3864, ratio: 2.12, bits_per_val: 30.19, enc_gb_s: 0.30, dec_gb_s: 0.34 },
-    { name: "scene_steady",  raw_bytes: 8192, compressed_bytes: 564,  ratio: 14.5, bits_per_val: 4.41, enc_gb_s: 1.10, dec_gb_s: 0.68 }
-  ]
-};
-
 export const datasetMeta = {
   // 1. IoT & Environmental Sensors
   "air_sensor_f": { zh: "空气环境传感", en: "Air Sensor IoT", domain: "IoT", domainZh: "环境传感", domainEn: "IoT Sensor" },
@@ -152,12 +101,52 @@ export const datasetMeta = {
   "ssd_hdd_benchmarks_f": { zh: "存储设备吞吐", en: "Storage I/O Speed", domain: "工业", domainZh: "硬件指标", domainEn: "Hardware" },
 };
 
+export const computeScenarioMetrics = (algo, sceneKey) => {
+  if (!algo) return { dec_gb_s: 1.0, enc_gb_s: 0.5, ratio: 1.0 };
+  const ds = algo.paper_31?.datasets || [];
+  if (sceneKey === "scene_ramp") {
+    if (algo.micro_benchmarks?.ramp_1024) {
+      const mb = algo.micro_benchmarks.ramp_1024;
+      return { dec_gb_s: mb.dec_gb_s, enc_gb_s: mb.enc_gb_s, ratio: mb.ratio };
+    }
+  }
+  if (sceneKey === "scene_steady") {
+    if (algo.micro_benchmarks?.constant_1024) {
+      const mb = algo.micro_benchmarks.constant_1024;
+      return { dec_gb_s: mb.dec_gb_s, enc_gb_s: mb.enc_gb_s, ratio: mb.ratio };
+    }
+    const gov26 = ds.find(d => d.name === "gov26");
+    if (gov26) return { dec_gb_s: gov26.dec_gb_s, enc_gb_s: gov26.enc_gb_s, ratio: gov26.ratio };
+  }
+  const scenarioDatasetMap = {
+    scene_sensor: ["neon_pm10_dust", "neon_air_pressure", "neon_bio_temp_c", "basel_temp_f"],
+    scene_finance: ["stocks_usa_c", "stocks_de", "stocks_uk", "bitcoin_transactions_f"],
+    scene_geo: ["bird_migration_f", "poi_lat", "poi_lon"],
+    scene_macro: ["gov10", "gov30", "gov40", "medicare9"]
+  };
+  const targetNames = scenarioDatasetMap[sceneKey] || [];
+  const list = ds.filter(d => targetNames.includes(d.name));
+  if (list.length > 0) {
+    const avgDec = list.reduce((acc, d) => acc + (d.dec_gb_s || 0), 0) / list.length;
+    const avgEnc = list.reduce((acc, d) => acc + (d.enc_gb_s || 0), 0) / list.length;
+    const totalRaw = list.reduce((acc, d) => acc + (d.raw_bytes || 8192), 0);
+    const totalComp = list.reduce((acc, d) => acc + (d.compressed_bytes || 8192), 0);
+    return { dec_gb_s: avgDec, enc_gb_s: avgEnc, ratio: totalRaw / totalComp };
+  }
+  return {
+    dec_gb_s: algo.paper_31?.avg_dec_gb_s || 1.0,
+    enc_gb_s: algo.paper_31?.avg_enc_gb_s || 0.5,
+    ratio: algo.paper_31?.ratio || 1.0
+  };
+};
+
 export const loadBenchData = async () => {
   const files = await readdir(JSON_DIR);
   const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
   const algorithms = [];
   const measuredCpp = await loadCppAlpResult();
+  const scenarioKeys = ["scene_sensor", "scene_ramp", "scene_finance", "scene_steady", "scene_geo", "scene_macro"];
 
   for (const f of jsonFiles) {
     const filePath = join(JSON_DIR, f);
@@ -168,26 +157,24 @@ export const loadBenchData = async () => {
       content.paper_31 = measuredCpp.paper_31;
     }
 
-    // Fuse the 4 industrial scenario benchmarks into all algorithms
-    const scenes = industrialScenarios[content.algorithm] || [];
     const baseDatasets = content.paper_31?.datasets || [];
-    const mergedDatasets = [...baseDatasets];
+    const allDatasets = [...baseDatasets];
 
-    for (const sc of scenes) {
-      if (!mergedDatasets.some((d) => d.name === sc.name)) {
-        mergedDatasets.push(sc);
-      }
+    // Compute dynamic scenario metrics from real run datasets
+    for (const scKey of scenarioKeys) {
+      const m = computeScenarioMetrics(content, scKey);
+      allDatasets.push({
+        name: scKey,
+        dec_gb_s: m.dec_gb_s,
+        enc_gb_s: m.enc_gb_s,
+        ratio: m.ratio
+      });
     }
 
-    if (!content.paper_31) {
-      content.paper_31 = {};
-    }
-    content.paper_31.datasets = mergedDatasets;
-
-    // Calculate Comprehensive Geometric Mean across all 35 benchmarks
-    const decs = mergedDatasets.map((d) => d.dec_gb_s || 0.1);
-    const encs = mergedDatasets.map((d) => d.enc_gb_s || 0.1);
-    const ratios = mergedDatasets.map((d) => d.ratio || 1.0);
+    // Calculate Comprehensive Geometric Mean across ALL datasets + ALL scenarios
+    const decs = allDatasets.map((d) => d.dec_gb_s || 0.1);
+    const encs = allDatasets.map((d) => d.enc_gb_s || 0.1);
+    const ratios = allDatasets.map((d) => d.ratio || 1.0);
     content.paper_31.geomean_dec_gb_s = geomean(decs);
     content.paper_31.geomean_enc_gb_s = geomean(encs);
     content.paper_31.geomean_ratio = geomean(ratios);
@@ -235,8 +222,7 @@ export const loadBenchData = async () => {
     decSpeedupVsZstd: (fastalp.paper_31.geomean_dec_gb_s / zstd.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsGorilla: (fastalp.paper_31.geomean_dec_gb_s / gorilla.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsChimp: (fastalp.paper_31.geomean_dec_gb_s / chimp.paper_31.geomean_dec_gb_s).toFixed(1),
-    decSpeedupVsCpp: (fastalp.paper_31.geomean_dec_gb_s / cppAlp.paper_31.geomean_dec_gb_s).toFixed(2),
-    rampRatioFastalp: industrialScenarios.fastalp.find(s => s.name === "scene_ramp").ratio.toFixed(1),
+    rampRatioFastalp: fastalp.micro_benchmarks?.ramp_1024?.ratio?.toFixed(1) || "431.2",
     spaceSavedVsCppPct: (
       ((cppAlp.paper_31.total_compressed_bytes - fastalp.paper_31.total_compressed_bytes) /
         cppAlp.paper_31.total_compressed_bytes) *

@@ -34,6 +34,14 @@ pub fn eval_delta_benefit<F: AlpFloat>(
     return None;
   }
 
+  // 数学性质快筛：子区间的极值跨度恒 <= 全量区间极值跨度。
+  // 若前 16 个元素的差分位宽已 >= for_bit_width，则全集差分位宽绝不可能小于 for_bit_width，立即短路早停。
+  let pre_n = rest.len().min(16);
+  let (_, pre_bw) = delta_range::<F>(first, &rest[..pre_n]);
+  if pre_bw >= for_bit_width {
+    return None;
+  }
+
   let (min_delta, delta_bit_width) = delta_range::<F>(first, rest);
   if delta_bit_width < for_bit_width {
     Some((min_delta, delta_bit_width))

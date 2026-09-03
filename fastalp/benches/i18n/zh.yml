@@ -22,13 +22,10 @@ card4_val: "{val}"
 card4_sub: "较 C++ ALP 压缩率全面领先 {val}"
 
 sec1_title: "主流算法综合基准对比 (8 种算法)"
-sec1_sub: "基于 31 个公开时序数据集 + 4 大典型工业场景全量同机实测（综合吞吐与压缩率采用几何平均值）"
+sec1_sub: "基于 31 个公开时序数据集 + 典型工业场景全量同机实测（综合吞吐与压缩率采用几何平均值）"
 
-sec2_title: "35 项工业时序场景与公开测试集全量实测对比 (fastalp vs C++ ALP)"
-sec2_sub: "采用工业时序领域规范分类（各指标优胜者高亮深蓝，次优显示灰色）"
-
-sec3_title: "典型时序工业场景对比"
-sec3_sub: "涵盖十进制传感、平滑趋势波形、高频量化行情与极低熵稳态流"
+sec2_title: "分场景对比"
+sec2_sub: "涵盖环境传感、趋势波形、高频金融、稳态常数、地理轨迹与政务统计"
 
 legend_dec_speed: "解压吞吐 (GB/s)"
 legend_enc_speed: "压缩吞吐 (GB/s)"
@@ -41,17 +38,10 @@ col_enc: "压缩吞吐 (几何均值)"
 col_enc_vs: "压缩对比"
 col_ratio: "压缩率 (几何均值)"
 
-col_dataset: "工业时序场景 / 数据集"
-col_f_ratio: "fastalp 比"
-col_c_ratio: "C++ 比"
-col_f_dec: "fastalp 解压"
-col_c_dec: "C++ 解压"
-col_speedup: "加速比"
-
 badge_leader: "领先"
 baseline_text: "基准"
 
-type_specialized: "专用浮点"
+type_specialized: "浮点压缩"
 type_general: "通用字节"
 
 scene_sensor_title: "十进制环境传感"
@@ -69,6 +59,14 @@ scene_stock_badge: "量化金融"
 scene_const_title: "稳态常数与极低熵监控流"
 scene_const_sub: "恒定传感器、无故障监控与常量流 (1024 点)"
 scene_const_badge: "稳态常数"
+
+scene_geo_title: "地理空间测绘与轨迹跟踪"
+scene_geo_sub: "GPS 经纬度位置采样、无人机航迹与动物迁徙 (1024 点)"
+scene_geo_badge: "地理轨迹"
+
+scene_macro_title: "公共政务与宏观统计普查"
+scene_macro_sub: "医疗保费统计、社保宏观经济指标与大宗商品价格 (1024 点)"
+scene_macro_badge: "政务统计"
 
 sc_col_algo: "算法名称"
 sc_col_dec: "解压吞吐"

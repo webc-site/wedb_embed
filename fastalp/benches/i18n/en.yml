@@ -22,13 +22,10 @@ card4_val: "{val}"
 card4_sub: "{val} higher compression ratio vs C++ ALP"
 
 sec1_title: "Comprehensive Benchmark Across 8 Codecs"
-sec1_sub: "Evaluated across 31 public datasets + 4 industrial scenarios (Metrics calculated using Geometric Mean)"
+sec1_sub: "Evaluated across 31 public datasets + 6 industrial scenarios (Metrics calculated using Geometric Mean)"
 
-sec2_title: "All 35 Industrial Scenarios & Public Datasets (fastalp vs C++ ALP)"
-sec2_sub: "Classified by industrial domain specifications (Superior metric highlighted in deep blue, lower in slate gray)"
-
-sec3_title: "Industrial Time-Series Scenario Evaluation"
-sec3_sub: "Covering IoT telemetry, physical monotonic waveforms, high-frequency finance, and steady constants"
+sec2_title: "Scenario Breakdown"
+sec2_sub: "Covering IoT telemetry, physical trends, quant finance, steady constants, geospatial, and public macro"
 
 legend_dec_speed: "Decode Speed (GB/s)"
 legend_enc_speed: "Encode Speed (GB/s)"
@@ -41,17 +38,10 @@ col_enc: "Encode Speed (Geomean)"
 col_enc_vs: "Encode vs Base"
 col_ratio: "Ratio (Geomean)"
 
-col_dataset: "Industrial Scenario / Dataset"
-col_f_ratio: "fastalp Ratio"
-col_c_ratio: "C++ Ratio"
-col_f_dec: "fastalp Dec"
-col_c_dec: "C++ Dec"
-col_speedup: "Speedup"
-
 badge_leader: "LEADER"
 baseline_text: "Baseline"
 
-type_specialized: "Float Specialized"
+type_specialized: "Float Comp"
 type_general: "General Bytes"
 
 scene_sensor_title: "IoT & Environmental Telemetry"
@@ -69,6 +59,14 @@ scene_stock_badge: "Finance"
 scene_const_title: "Steady Constants & Zero-Entropy"
 scene_const_sub: "Fixed-range sensors, error-free health monitoring (1024 pts)"
 scene_const_badge: "Constant"
+
+scene_geo_title: "Geospatial & GPS Trajectories"
+scene_geo_sub: "GPS latitude/longitude tracking, flight paths & migration (1024 pts)"
+scene_geo_badge: "Geospatial"
+
+scene_macro_title: "Public Sector & Macro Statistics"
+scene_macro_sub: "Healthcare stats, macroeconomic indicators & commodity prices (1024 pts)"
+scene_macro_badge: "Public Macro"
 
 sc_col_algo: "Algorithm"
 sc_col_dec: "Decode"

@@ -12,7 +12,7 @@
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@NH/FQYY14ZfTFe-e0oTHA9Q.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@FK/i14b3fpU_CrvhCJytpbg.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -34,25 +34,10 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
 - [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
-    - [Comprehensive Comparison on 31 Paper Datasets (253,952 Bytes)](#comprehensive-comparison-on-31-paper-datasets-253952-bytes)
-    - [Representative Time Series & Sensor Scenario Breakdown](#representative-time-series-sensor-scenario-breakdown)
-  - [Side-by-Side Throughput Comparison](#side-by-side-throughput-comparison)
-  - [Real-World Datasets Compression Ratio](#real-world-datasets-compression-ratio)
-  - [Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)](#real-world-physical-telemetry-benchmark-noaa-usgs-all-64-series)
-- [Architecture Comparison & Engineering Optimizations](#architecture-comparison-engineering-optimizations)
-  - [Algorithmic Innovations on Compression Ratio (vs Reference C++)](#algorithmic-innovations-on-compression-ratio-vs-reference-c)
-    - [1. Decimal Division Exact Mode — Eliminating Multiplication Rounding Exceptions](#1-decimal-division-exact-mode-eliminating-multiplication-rounding-exceptions)
-    - [2. Adaptive Delta-ALP Differential Encoding — Breaking Global Dynamic Range Bounds](#2-adaptive-delta-alp-differential-encoding-breaking-global-dynamic-range-bounds)
-    - [3. Outlier Smoothing Isolation — Safeguarding Delta Bit-Width from Noise](#3-outlier-smoothing-isolation-safeguarding-delta-bit-width-from-noise)
-    - [4. Raw Fallback Safeguard Against Negative Compression](#4-raw-fallback-safeguard-against-negative-compression)
-  - [Engineering Micro-Architecture & Throughput Optimizations (vs Reference C++)](#engineering-micro-architecture-throughput-optimizations-vs-reference-c)
-    - [Constant Sequence Fast Detection & Zero-Heap Allocation](#constant-sequence-fast-detection-zero-heap-allocation)
-    - [Zero-Heap Direct Streaming Decompression](#zero-heap-direct-streaming-decompression)
-    - [Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration](#pure-register-simd-vectorized-decompression-hybrid-local-table-acceleration)
-    - [Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling](#two-pass-simd-vectorized-encoding-early-exit-sampling)
-    - [Pure 128-bit Register Bitpacker](#pure-128-bit-register-bitpacker)
-    - [Sample-Space Cost Lower-Bound Pruning](#sample-space-cost-lower-bound-pruning)
-    - [Branchless Arithmetic & Precomputed Constants](#branchless-arithmetic-precomputed-constants)
+  - [Evaluation Datasets & Authoritative Data Sources (All 35 Benchmarks)](#evaluation-datasets-authoritative-data-sources-all-35-benchmarks)
+- [Architecture Evolution & Optimization Breakdown](#architecture-evolution-optimization-breakdown)
+  - [1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)](#1-architecture-patterns-adopted-refined-from-c-alp-and-their-purposes)
+  - [2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)](#2-novel-high-performance-optimizations-invented-in-fastalp-and-their-purposes)
 
 ## Overview
 
@@ -309,190 +294,93 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 - **Chimp128** (VLDB 2022 floating-point time series)
 - **Gorilla** (VLDB 2015 XOR floating-point time series)
 
-#### Comprehensive Comparison on 31 Paper Datasets (253,952 Bytes)
+### Evaluation Datasets & Authoritative Data Sources (All 35 Benchmarks)
 
-| Codec | Category | 31 Datasets Total Size | Compression Ratio | Bits / Value | Avg Decode Speed | Avg Encode Speed |
-|---|---|---|---|---|---|---|
-| **fastalp (Rust)** | Specialized Float | **97,943 B** | **2.59x** | **24.68 b/v** | **18.0 GB/s** | **2.32 GB/s** |
-| **C++ ALP (Reference)** | Specialized Float | 102,873 B | 2.47x | 25.93 b/v | 21.85 GB/s (peak) | 0.84 GB/s |
-| **Pcodec (pco)** | Specialized Numeric ANS | 82,888 B | 3.06x | 20.89 b/v | 1.99 GB/s | 0.24 GB/s |
-| **Zstd (level 3)** | General Byte Dict | 101,317 B | 2.51x | 25.53 b/v | 1.42 GB/s | 0.89 GB/s |
-| **Chimp128** | Specialized Float XOR | 119,725 B | 2.12x | 30.17 b/v | 0.52 GB/s | 0.69 GB/s |
-| **Snappy (snap)** | Fast General Bytes | 127,290 B | 2.00x | 32.08 b/v | 7.51 GB/s | 3.76 GB/s |
-| **LZ4 (lz4_flex)** | Fast General Bytes | 129,189 B | 1.97x | 32.56 b/v | 7.74 GB/s | 3.11 GB/s |
-| **Gorilla** | Specialized Float XOR | 167,601 B | 1.52x | 42.24 b/v | 0.65 GB/s | 1.19 GB/s |
+This benchmark strictly adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 4 industrial extreme-load scenarios (35 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
 
-#### Representative Time Series & Sensor Scenario Breakdown
-
-| Scenario (1024-Point Block) | fastalp (Rust) | C++ ALP (Reference) | Pcodec (pco) | Zstd (level 3) | LZ4 (lz4_flex) | Gorilla |
-|---|---|---|---|---|---|---|
-| **Physical Sensor**<br>Ratio / Decode Speed | **7.91x** (8.09 b/v)<br>**22.60 GB/s** | 7.86x (8.14 b/v)<br>21.85 GB/s | **99.90x** (0.64 b/v)<br>1.58 GB/s | 30.01x (2.13 b/v)<br>1.99 GB/s | 12.21x (5.24 b/v)<br>11.30 GB/s | 1.11x (57.67 b/v)<br>0.39 GB/s |
-| **Monotonic Ramp**<br>Ratio / Decode Speed | **431.16x** (0.15 b/v)<br>**28.08 GB/s** | 0.94x (Inflated)<br>0.58 GB/s | 44.52x (1.44 b/v)<br>0.85 GB/s | 6.93x (9.23 b/v)<br>0.90 GB/s | 1.98x (32.27 b/v)<br>2.72 GB/s | 1.16x (55.07 b/v)<br>0.39 GB/s |
-| **Constant Series**<br>Ratio / Decode Speed | **744.73x** (0.09 b/v)<br>**45.20 GB/s** | 455.11x (0.14 b/v)<br>21.85 GB/s | 282.48x (0.23 b/v)<br>4.82 GB/s | 292.57x (0.22 b/v)<br>3.37 GB/s | 146.29x (0.44 b/v)<br>2.08 GB/s | 30.45x (2.10 b/v)<br>1.82 GB/s |
-
-### Side-by-Side Throughput Comparison
-
-| Scenario | Data Size | fastalp Throughput | C++ Reference Throughput | Throughput Ratio (fastalp / C++) |
-|---|---|---|---|---|
-| **f64 Compress** (Identical Values) | 1024 x f64 (8 KB) | **23.15 GB/s** | 7.02 GB/s | **3.30x** |
-| **f64 Compress** (Sensor Decimals) | 1024 x f64 (8 KB) | **6.10 GB/s** | 0.84 GB/s | **7.26x** |
-| **f64 Compress** (Large Batch) | 65535 x f64 (512 KB) | **6.57 GB/s** | 5.85 GB/s | **1.12x** |
-| **f32 Compress** (Sensor Decimals) | 1024 x f32 (4 KB) | **3.52 GB/s** | 2.46 GB/s | **1.43x** |
-| **f64 Decompress** (Identical Values) | 1024 x f64 (8 KB) | **77.01 GB/s** | 21.85 GB/s | **3.52x** |
-| **f64 Decompress** (Sensor Decimals) | 1024 x f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
-| **f64 Decompress** (Large Batch) | 65535 x f64 (512 KB) | **55.93 GB/s** | 18.42 GB/s | **3.04x** |
-| **f32 Decompress** (Sensor Decimals) | 1024 x f32 (4 KB) | **57.45 GB/s** | 32.77 GB/s | **1.75x** |
-
-### Real-World Datasets Compression Ratio
-
-Evaluated against all 31 standard real-world datasets from the original ALP paper (253,952 bytes of raw 64-bit doubles):
-
-| Dataset Name | Raw Size | fastalp Compressed Size | fastalp Ratio | C++ Ref ALP Ratio |
-|---|---|---|---|---|
-| **gov26**<br>Government Stats | 8192 B | 13 B | **630.15x**<br>(0.10 b/v) | 455.11x |
-| **gov31**<br>Government Stats | 8192 B | 25 B | **327.68x**<br>(0.20 b/v) | 292.57x |
-| **gov30**<br>Government Stats | 8192 B | 55 B | **148.95x**<br>(0.43 b/v) | 141.24x |
-| **stocks_uk**<br>UK Stock Prices | 8192 B | 1165 B | **7.03x**<br>(9.10 b/v) | 7.00x |
-| **cms9**<br>Healthcare Billing | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
-| **medicare9**<br>Medical Monitoring | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
-| **neon_pm10_dust**<br>PM10 Sensor | 8192 B | 1553 B | **5.27x**<br>(12.13 b/v) | 5.26x |
-| **stocks_usa_c**<br>US Stock Prices | 8192 B | 1951 B | **4.20x**<br>(15.24 b/v) | 4.19x |
-| **gov40**<br>Government Timestamps | 8192 B | 2445 B | **3.35x**<br>(19.10 b/v) | 3.34x |
-| **stocks_de**<br>German Stock Prices | 8192 B | 2625 B | **3.12x**<br>(20.51 b/v) | 3.12x |
-| **bird_migration_f**<br>GPS Coordinates | 8192 B | 2651 B | **3.09x**<br>(20.71 b/v) | 3.09x |
-| **neon_bio_temp_c**<br>Biology Sensor | 8192 B | 2957 B | **2.77x**<br>(23.10 b/v) | 2.77x |
-| **food_prices**<br>Consumer Index | 8192 B | 3285 B | **2.49x**<br>(25.66 b/v) | 2.49x |
-| **city_temperature_f**<br>Weather Temp | 8192 B | 3363 B | **2.44x**<br>(26.27 b/v) | 2.43x |
-| **ssd_hdd_benchmarks_f**<br>Disk Benchmarks | 8192 B | 3621 B | **2.26x**<br>(28.29 b/v) | 2.26x |
-| **neon_wind_dir**<br>Wind Direction | 8192 B | 3725 B | **2.20x**<br>(29.10 b/v) | 2.20x |
-| **neon_air_pressure**<br>Air Pressure | 8192 B | 3743 B | **2.19x**<br>(29.24 b/v) | 2.19x |
-| **basel_wind_f**<br>Basel Wind Speed | 8192 B | 3817 B | **2.15x**<br>(29.82 b/v) | 2.14x |
-| **arade4**<br>Hydrology Sensor | 8192 B | 4063 B | **2.02x**<br>(31.74 b/v) | 2.01x |
-| **basel_temp_f**<br>Basel Temperature | 8192 B | 4069 B | **2.01x**<br>(31.79 b/v) | 2.01x |
-| **bitcoin_f**<br>Bitcoin Rates | 8192 B | 4195 B | **1.95x**<br>(32.77 b/v) | 1.95x |
-| **bitcoin_transactions_f**<br>On-chain Tx | 8192 B | 4861 B | **1.69x**<br>(37.98 b/v) | 1.68x |
-| **medicare1**<br>Medical Records | 8192 B | 5249 B | **1.56x**<br>(41.01 b/v) | 1.56x |
-| **cms1**<br>Medical Records | 8192 B | 5363 B | **1.53x**<br>(41.90 b/v) | 1.53x |
-| **cms25**<br>Medical Records | 8192 B | 5451 B | **1.50x**<br>(42.59 b/v) | 1.50x |
-| **nyc29**<br>NYC Taxi Travel | 8192 B | 5441 B | **1.51x**<br>(42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>Air Sensor Data | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.52x (Expansion) |
-| **poi_lat**<br>High-Precision Lat | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.51x (Expansion) |
-| **poi_lon**<br>High-Precision Lon | 8192 B | 8195 B (Fallback) | **1.00x**<br>(Guaranteed) | 0.64x (Expansion) |
-| **TOTAL / Overall Average** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
-
-Thanks to the raw fallback safeguard, `fastalp` completely eliminates negative compression on difficult datasets, reducing overall storage from 130,597 B to 110,773 B and elevating average compression ratio to **2.29x**.
-
-### Real-World Physical Telemetry Benchmark (NOAA & USGS All 64 Series)
-
-Evaluated side-by-side on 64 continuous industrial, marine, and meteorological observation series (NOAA ISD-Lite weather, NOAA CO-OPS tide gauge, USGS NWIS river discharge, comprising 467,550 double-precision points):
-
-| Variable | Series Count | Points | fastalp Ratio | C++ Ref Ratio | Space Saved | fastalp Enc | C++ Enc | fastalp Dec | C++ Dec | Dec Speedup |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **air_temperature** | 10 | 79,807 | **8.07x**<br>(7.93 b/v) | 7.80x | **-3.4%** | **2.55 GB/s** | 0.48 GB/s | **12.99 GB/s** | 0.59 GB/s | **22.0x** |
-| **dew_point** | 10 | 79,772 | **8.30x**<br>(7.71 b/v) | 7.95x | **-4.2%** | **2.48 GB/s** | 0.49 GB/s | **8.58 GB/s** | 0.60 GB/s | **14.3x** |
-| **sea_level_pressure** | 10 | 72,857 | **9.24x**<br>(6.93 b/v) | 7.42x | **-19.6%** | **2.32 GB/s** | 0.46 GB/s | **6.40 GB/s** | 0.58 GB/s | **11.0x** |
-| **wind_direction** | 9 | 69,384 | **7.10x**<br>(9.01 b/v) | 7.04x | **-0.8%** | **2.10 GB/s** | 0.45 GB/s | **6.48 GB/s** | 0.61 GB/s | **10.6x** |
-| **wind_speed** | 9 | 71,298 | **7.07x**<br>(9.05 b/v) | 7.83x | - | **2.21 GB/s** | 0.47 GB/s | **23.57 GB/s** | 0.62 GB/s | **38.0x** |
-| **water_level** | 4 | 29,760 | **8.51x**<br>(7.52 b/v) | 5.32x | **-37.4%** | **2.41 GB/s** | 0.42 GB/s | **10.74 GB/s** | 0.54 GB/s | **19.9x** |
-| **water_level_sigma** | 4 | 29,760 | **6.27x**<br>(10.20 b/v) | 9.36x | - | **2.15 GB/s** | 0.52 GB/s | **12.10 GB/s** | 0.64 GB/s | **18.9x** |
-| **discharge** | 4 | 17,452 | **5.36x**<br>(11.93 b/v) | 4.34x | **-19.2%** | **1.85 GB/s** | 0.38 GB/s | **4.91 GB/s** | 0.49 GB/s | **10.0x** |
-| **gage_height** | 4 | 17,460 | **9.72x**<br>(6.58 b/v) | 7.75x | **-20.3%** | **2.20 GB/s** | 0.44 GB/s | **6.66 GB/s** | 0.55 GB/s | **12.1x** |
-| **【64 Series Total】** | **64** | **467,550** | **7.72x**<br>(**8.29 b/v**) | **7.30x** | **-5.54%** | **2.35 GB/s** | **0.47 GB/s** | **11.20 GB/s** | **0.58 GB/s** | **19.3x** |
-
-- **Compression Ratio Breakthrough**: By coupling Decimal Division Exact Mode with adaptive Delta differencing, `fastalp` compresses real physical telemetry to 8.29 b/v on average, outperforming the C++ reference by 5.54% overall and by 20% to 37% on tidal and gage-height signals.
-- **Overwhelming Throughput Advantage**: Decompression throughput reaches 11.20 GB/s on a single core, surpassing the C++ reference (0.58 GB/s) by **19.3x**. Compression throughput reaches 2.35 GB/s (**5.0x faster** than C++).
+| Domain | Dataset Name | Physical Description & Data Characteristics | Official Data Source & Link |
+|---|---|---|---|
+| **IoT & Environment** | `neon_pm10_dust` | Particulate matter PM10 dust concentration (μg/m³) | [NEON Ecological Observatory Network (DOI: 10.48443/4E6X-V373)](https://doi.org/10.48443/4E6X-V373) |
+| | `neon_dew_point_temp` | Atmospheric dew point temperature series (°C) | [NEON Ecological Observatory Network (DOI: 10.48443/Z99V-0502)](https://doi.org/10.48443/Z99V-0502) |
+| | `neon_air_pressure` | Continuous barometric surface air pressure (kPa) | [NEON Ecological Observatory Network (DOI: 10.48443/RXR7-PP32)](https://doi.org/10.48443/RXR7-PP32) |
+| | `neon_wind_dir` | Ultrasonic meteorological wind direction angle (0-360°) | [NEON Ecological Observatory Network (DOI: 10.48443/S9YA-ZC81)](https://doi.org/10.48443/S9YA-ZC81) |
+| | `neon_bio_temp_c` | Infrared biological surface ground temperature (°C) | [NEON Ecological Observatory Network (DOI: 10.48443/JNWY-B177)](https://doi.org/10.48443/JNWY-B177) |
+| | `basel_temp_f` | Hourly ground temperature in Basel, Switzerland (°C) | [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
+| | `basel_wind_f` | Continuous ground wind speed in Basel (km/h) | [Meteoblue Weather History Archive](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
+| | `city_temperature_f` | Daily average temperature records of global cities | [Kaggle Global Daily City Temperature Dataset](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities) |
+| | `air_sensor_f` | High-frequency multi-sensor air quality telemetry | [CWI PublicBI Time-Series Database Benchmark](https://github.com/cwida/public_bi_benchmark) |
+| | `arade4` | Arade hydrometric gauging river stage height | [CWI PublicBI Hydrometric Station Dataset](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/) |
+| | `scene_sensor` | Multi-channel industrial decimal sensor stream (1024 pts) | Real-world physical telemetry composite block |
+| **Finance & Crypto** | `stocks_usa_c` | US stock market order book execution price stream | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
+| | `stocks_de` | Frankfurt Stock Exchange (Xetra) trade prices | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
+| | `stocks_uk` | London Stock Exchange equity trade execution stream | [Zenodo Global Quantitative Financial Dataset](https://zenodo.org/record/3886895) |
+| | `bitcoin_f` | Historical Bitcoin USD price index series | [InfluxDB Sample Bitcoin Time Series](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv) |
+| | `bitcoin_transactions_f` | Bitcoin mainnet transaction transfer volumes | [Blockchair Bitcoin Ledger High-Value Transactions](https://gz.blockchair.com/bitcoin/transactions/) |
+| | `food_prices` | UN Food and Agriculture Organization staple food index | [UN Humanitarian Data Exchange (WFP)](https://data.humdata.org/dataset/wfp-food-prices) |
+| | `scene_finance` | High-frequency quantitative order book stream (1024 pts) | Real-world microsecond exchange matching stream |
+| **Civic & Healthcare** | `gov10` | Fiscal government expenditure and municipal budget items | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov26` | National census demographic ultra-low entropy series | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov30` | Macroeconomic indicator survey and fiscal operations | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov31` | Fiscal equalization transfers and regional subsidies | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov40` | Municipal utility network survey and pipe mapping | [CWI PublicBI CommonGovernment Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `medicare1` | Outpatient Medicare billing and insurance claims | [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
+| | `medicare9` | Specialty consultation grants and subsidy timestamps | [CWI PublicBI Medicare Healthcare Benchmark](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
+| | `cms1` | Healthcare provider reimbursement billing logs | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `cms9` | Prescription pharmaceutical reimbursement prices | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `cms25` | Medical equipment usage and specialty therapy charges | [CWI PublicBI CMSProvider Healthcare Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `scene_macro` | Macro civic indicators and public healthcare bills (1024 pts) | Real-world public finance & insurance composite block |
+| **Geospatial & GPS** | `poi_lat` | Global points of interest high-precision latitude | [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
+| | `poi_lon` | Global points of interest high-precision longitude | [Kaggle POI Global Geospatial Database](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
+| | `bird_migration_f` | Wild avian migration high-precision satellite GPS track | [InfluxDB Bird Migration Tracking Dataset](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv) |
+| | `nyc29` | NYC Yellow Taxi trip GPS distance tracking stream | [CWI PublicBI NYC Taxi Geospatial Database](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/) |
+| | `scene_geo` | Drone telemetry and continuous navigation track (1024 pts) | High-precision continuous geospatial trajectory |
+| **Storage & Waveforms** | `ssd_hdd_benchmarks_f` | Storage device sequential and random I/O throughput | [Kaggle SSD & HDD I/O Benchmark Dataset](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks) |
+| | `scene_ramp` | Smooth ramp slopes and monotonic counters (1024 pts) | Industrial PID loops, hydrometric discharge & counters |
+| | `scene_steady` | Steady-state telemetry and heartbeat monitors (1024 pts) | Redundant sensor heartbeat & fault-free constant stream |
 
 ---
 
-## Architecture Comparison & Engineering Optimizations
+## Architecture Evolution & Optimization Breakdown
 
-Compared with the reference C++ implementation, `fastalp` not only multiplies throughput performance, but also introduces major algorithmic innovations that break through the compression ratio limitations of the reference implementation.
+fastalp is not a literal translation, but an engineering overhaul engineered to fully exploit modern superscalar pipelines while solving the core pain points of columnar time-series storage.
 
-### Algorithmic Innovations on Compression Ratio (vs Reference C++)
+### 1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)
 
-#### 1. Decimal Division Exact Mode — Eliminating Multiplication Rounding Exceptions
-- **Reference C++ Limitation**:<br>
-  C++ ALP exclusively uses multiplication for inverse reconstruction: `v = (encoded * frac_exp) / fac`. Because binary IEEE 754 cannot represent decimal fractions like `0.1` exactly, multiplication introduces unavoidable roundoff discrepancies (e.g. `123 * 0.1` evaluates to `12.30000000000000071... != 12.3`). This causes the reference implementation to misclassify clean decimal measurements as "Exceptions", requiring an 8-byte original float plus a 2-byte index (an 80-bit penalty per outlier in standard 1024-element blocks). In real-world weather and oceanographic telemetry, this inflated exception count severely degrades compression ratios.
-- **fastalp Algorithmic Innovation**:<br>
-  `fastalp` introduces **Decimal Division Exact Mode (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**. During parameter evaluation and decoding, dividing by powers of ten (e.g. `/ 10.0`) reconstructs the exact original IEEE 754 bit pattern without truncation error.
-  - **Compression Gain**: On real-world time-series (such as NOAA tidal heights and surface temperatures), the exception count drops from hundreds in C++ ALP to **zero**. Eliminating the exception dictionary shrinks compressed size by an additional **20% to 38%** (e.g. ocean tidal series compression improves from 5.32x to 8.51x).
-  - **Zero-Latency Decoding**: To prevent hardware division latency from impacting decompression throughput, `fastalp` couples this with a 256-entry stack-allocated lookup table (LUT), preserving maximum compression ratio while sustaining 55+ GB/s throughput.
-
-#### 2. Adaptive Delta-ALP Differential Encoding — Breaking Global Dynamic Range Bounds
-- **Reference C++ Limitation**:<br>
-  C++ ALP relies solely on Frame-of-Reference (FOR) base subtraction: `stored = encoded - min_encoded`. For continuous physical time-series (such as diurnal temperature cycles, tidal oscillations, river stage ramps, and monotonic metric counters), the dynamic range `(max - min)` across a 1024-element block is wide (often spanning thousands of integer units, requiring 12 to 16 bits per element). FOR cannot exploit the strong local correlation between adjacent points.
-- **fastalp Algorithmic Innovation**:<br>
-  `fastalp` introduces **Adaptive Delta-ALP (`TYPE_F64_DELTA` / `TYPE_F32_DEC_DELTA`)**:
-  1. **Adaptive Benefit Evaluation**: Dynamically evaluates the bit-width required by FOR versus first-order differences (`delta[i] = encoded[i] - encoded[i-1]`), activating Delta-ALP only when differences yield measurable savings;
-  2. **Tightly Packed Adjacent Differences**: Stores the initial element as a baseline, bitpacking `(delta - min_delta)`. Physical sensor delta bit-widths routinely collapse to 1 to 6 bits;
-  3. **Compression Gain**: Yields a **50% to 90%** size reduction on smooth and monotonic time-series. In monotonic ramp benchmarks, bits per value fall from 68.09 b/v in the reference implementation to 0.16 b/v, elevating compression ratio to **390x** (compared to 0.94x in C++ ALP).
-
-#### 3. Outlier Smoothing Isolation — Safeguarding Delta Bit-Width from Noise
-- **Reference C++ Limitation**:<br>
-  In traditional differential encoding pipelines, a single sensor spike or outlier pollutes two adjacent deltas (the jump upward and the drop downward), causing the maximum delta range across the entire block to explode and degrading bit-width for all points.
-- **fastalp Algorithmic Innovation**:<br>
-  `fastalp` designs an **Outlier Smoothing Isolation** mechanism for Delta encoding: when a floating-point exception occurs, the delta stream records an increment of 0 (carrying forward the previous valid integer), while the true outlier float is isolated in the patch dictionary. On decompression, a branchless register prefix-sum pass reconstructs the base integers before patching outliers in-place. This preserves minimal delta bit-widths without compromising 100% bit-exact lossless fidelity.
-
-#### 4. Raw Fallback Safeguard Against Negative Compression
-- **Reference C++ Limitation**:<br>
-  On high-entropy unstructured floats or high-precision geographic coordinates (such as POI latitude/longitude), exception tables expand beyond uncompressed payload size, leading to negative compression (down to 0.51x, doubling storage size).
-- **fastalp Algorithmic Innovation**:<br>
-  At the end of the encoding pipeline, `fastalp` checks the compressed payload size. If it exceeds the raw data plus a compact metadata header (only 1 byte for 1024-element blocks), the encoder instantly falls back to `TYPE_RAW` mode, storing raw bytes directly. This eliminates negative compression entirely, lifting overall dataset compression from 1.94x to 2.29x across the 31 paper datasets.
+1. **Stateful Encoder & Parameter Caching**:
+   - **Purpose**: Eliminates the high cost of re-sampling and evaluating dozens of parameter combinations for every single chunk during continuous writes.
+   - **Mechanism**: In continuous time-series streams, adjacent 1024-element blocks of the same column share identical unit magnitudes and decimal precision. fastalp caches the best `exp` and `fac` from previous blocks. When verified against the current block, it skips exhaustive sampling entirely, raising continuous compression throughput from ~4-5 GB/s to **15-20+ GB/s**.
+2. **12.5% Exception Threshold RAW Fallback**:
+   - **Purpose**: Prevents space expansion ("negative compression") on high-entropy floats.
+   - **Mechanism**: When exception counts exceed 128 (12.5% of a 1024 block), the block is proven unsuitable for decimal transformation. fastalp instantly aborts further encoding and falls back to a compact single-byte header RAW stream, preventing the 2x space expansion seen in naive schemes.
+3. **Decimal Division Exact Mode**:
+   - **Purpose**: Eliminates "pseudo-exceptions" caused by IEEE 754 multiplication rounding errors.
+   - **Mechanism**: Multiplying by floating-point powers (e.g., `* 0.1`) introduces inexact binary truncation. fastalp uses precise decimal division during reconstruction, eliminating pseudo-exceptions and reducing compressed size by 20% to 38% on real physical sensor data.
 
 ---
 
-### Engineering Micro-Architecture & Throughput Optimizations (vs Reference C++)
+### 2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)
 
-#### Constant Sequence Fast Detection & Zero-Heap Allocation
-
-- **Reference C++ Implementation**:<br>
-  Executes full parameter sampling, intermediate integer transformation, and bit-width analysis even on completely constant sequences, requiring 9.25 µs end-to-end.<br>
-- **fastalp Optimization**:<br>
-  Inspects raw IEEE 754 bits at compression entry (`v.is_exact_same(first)`), strictly differentiating `+0.0` and `-0.0` sign bits;<br>
-  Directly emits a self-describing compact header and base value (`bit_width = 0`) upon match, skipping parameter search and vector allocation, reducing compression time to 351 ns (26x speedup).
-
-#### Zero-Heap Direct Streaming Decompression
-
-- **Reference C++ Implementation**:<br>
-  Employs a two-stage decompression pipeline: stage 1 unpacks bitstream to an intermediate heap array, and stage 2 iterates over the array to compute float unscaling and patch exceptions, incurring 8 B/elem heap allocation and cache pressure.<br>
-- **fastalp Optimization**:<br>
-  Executes a single-pass direct streaming reconstruction pipeline. Bits are unpacked within CPU registers and written directly to the caller destination slice, keeping L1/L2 caches hot;<br>
-  For Delta differential time series, leverages 1024-element byte-alignment to stream-decode in fixed 1024-element stack batches, reducing additional heap allocations for arbitrary large arrays to 0 bytes while keeping stack buffers hot in L1 data cache;<br>
-  Provides `compress_into` and `decompress_into` zero-allocation APIs.
-
-#### Pure-Register SIMD Vectorized Decompression & Hybrid Local Table Acceleration
-
-- **Reference C++ Implementation**:<br>
-  Inner loop relies on two-stage heap buffering and scalar arithmetic, failing to saturate modern SIMD execution pipelines.<br>
-- **fastalp Optimization**:<br>
-  Eliminates large stack tables that induce indirect gather memory stalls; bit-widths of 8, 16, 32, and 64 bits execute pure linear register arithmetic with a dedicated `fac1` path (omitting integer multiplication), enabling LLVM to emit optimal SIMD vector instructions; 1, 2, and 4 bit-widths utilize tiny register-resident tables, driving single-core decode throughput up to 57+ GB/s.
-
-#### Two-Pass SIMD Vectorized Encoding & Early-Exit Sampling
-
-- **Reference C++ Implementation**:<br>
-  Complex multi-level sampling logic with dense conditional branches inside the encoding loop, fragmenting basic blocks.<br>
-- **fastalp Optimization**:<br>
-  Introduces an `EARLY_EXIT_BIT_WIDTH` threshold during sampling to halt immediately once a high-compression model is identified, bypassing wasteful checks across 135 parameter combinations; adopts a Two-Pass decoupled encoding architecture (Pass 1 branchless register-level float-to-int rounding, Pass 2 centralized exception verification), eliminating per-element pipeline stalls and driving batch compression throughput up to 5.4+ GB/s.
-
-#### Pure 128-bit Register Bitpacker
-
-- **Reference C++ Implementation**:<br>
-  Generates extensive template code across multiple compilation units, creating large binaries with architecture-specific intrinsics.<br>
-- **fastalp Optimization**:<br>
-  Maintains a sliding bit window with a single 128-bit register accumulator (`acc: u128`, `bits_in_acc: u32`), executing 64-bit word writes and reads in single instructions;<br>
-  Pure safe Rust with zero external C++ toolchain dependencies, cross-compiling seamlessly for x86_64, ARM64, and WebAssembly.
-
-#### Sample-Space Cost Lower-Bound Pruning
-
-- **Reference C++ Implementation**:<br>
-  Evaluates all samples across 135 `(exp, fac)` parameter combinations unconditionally.<br>
-- **fastalp Optimization**:<br>
-  Applies dynamic lower-bound pruning: breaks inner verification immediately once running exception penalty (`exceptions * penalty`) surpasses current global `best_cost`, skipping unnecessary parameter iterations.
-
-#### Branchless Arithmetic & Precomputed Constants
-
-- Pre-extracts exponent factor tables outside inner loops to eliminate repeated array lookups;<br>
-- Calculates bit-width using hardware CLZ instructions and applies compile-time bitmasks to eliminate conditional branch mispredictions.
+1. **Fused Delta Bitpacking**:
+   - **Purpose**: Eliminates the memory bandwidth and cache pollution of allocating and writing an intermediate 8KB difference buffer.
+   - **Mechanism**: Conventional compressors run two passes: compute diffs into an 8KB memory slice, then read it back for bitpacking. fastalp's 8-way register pipeline computes adjacent deltas, subtracts the baseline, and shifts bits into a 128-bit packing accumulator in a single fused pass with **zero memory writes and zero heap allocations**, boosting delta compression throughput by >30%.
+2. **Mathematical Delta Early Pruning**:
+   - **Purpose**: Prevents expensive full-chunk differencing on disordered or oscillating series.
+   - **Mechanism**: By the mathematical axiom that subset extrema difference is always $\le$ global extrema difference, fastalp samples the first 16 points. If their delta bit-width already matches or exceeds FOR bit-width, delta encoding is mathematically proven to be non-beneficial, exiting instantly.
+3. **4-Way Loop Unrolling & Inlined Pipeline**:
+   - **Purpose**: Maximizes instruction-level parallelism (ILP) across modern CPU superscalar ALUs.
+   - **Mechanism**: Completely avoids dynamic closures and indirect branches in the inner loop. Inlines a dedicated 4-way unrolled pipeline that processes 4 values per iteration through registers without exception checks when within range.
+4. **Identical Floats Fast-Skip**:
+   - **Purpose**: Instantaneous compression of idle sensor heartbeats and disconnected lines.
+   - **Mechanism**: Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**, **88.9 GB/s decode speed**).
+5. **Outlier Pruning with 0-bit Compression**:
+   - **Purpose**: Unlocks >150x compression on series with 99% identical base values and rare spikes (e.g., `gov30`).
+   - **Mechanism**: Isolates rare pulse values into the exception dictionary, allowing the main bitstream to use a 0-bit bit-width (storing only length and baseline). Combined with 16-sample outlier pre-screening, high-entropy blocks exit within 2 samples with zero penalty.
+6. **Non-Decimal Two-Tier Sampling Early Break**:
+   - **Purpose**: Halts fruitless exploration of 170 factor combinations on non-decimal scientific data.
+   - **Mechanism**: Tier 1 tests 32 sample points under decimal exponents. If exception rate is 100%, the data is identified as high-entropy scientific float, skipping Tier 2 factor search and reducing sampling time by 80%.
+7. **Batched Exception Writing & Zero Extra Allocations**:
+   - **Purpose**: Eliminates memory fragmentation and dynamic reallocation during exception handling.
+   - **Mechanism**: Gathers exception indices and IEEE 754 bit representations in fixed-size stack arrays and writes them to the output buffer in a single batch, halving vector management overhead. Public `compress_into` and `decompress_into` APIs operate with zero heap allocations.
 
 
 ---
@@ -504,7 +392,7 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Y0/DouQ1jSjTmmXN6uZ0BtQ.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@h8/jH5a1Wl8dkKGgASAat-A.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -526,25 +414,10 @@ Compared with the reference C++ implementation, `fastalp` not only multiplies th
 - [性能评测与多算法对比](#性能评测与多算法对比)
   - [测试环境与编译配置](#测试环境与编译配置)
   - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
-    - [公开数据集全量综合对比](#公开数据集全量综合对比)
-    - [典型时序与物理传感器场景细分对比](#典型时序与物理传感器场景细分对比)
-  - [同机实测吞吐量对比](#同机实测吞吐量对比)
-  - [真实公开数据集压缩率对比](#真实公开数据集压缩率对比)
-  - [真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)](#真实物理观测时序数据集对比-noaa-usgs-全量-64-时序)
-- [架构对比与工程优化设计](#架构对比与工程优化设计)
-  - [核心压缩率算法优化对比](#核心压缩率算法优化对比)
-    - [十进制精确除法重构模式 —— 消除乘法舍入伪异常](#十进制精确除法重构模式-消除乘法舍入伪异常)
-    - [自适应一阶差分时序编码 —— 突破全局极值跨度瓶颈](#自适应一阶差分时序编码-突破全局极值跨度瓶颈)
-    - [异常点前值平滑隔离补丁 —— 避免尖峰噪声污染差分流](#异常点前值平滑隔离补丁-避免尖峰噪声污染差分流)
-    - [原始保底机制消除负压缩](#原始保底机制消除负压缩)
-  - [工程微架构与吞吐性能优化](#工程微架构与吞吐性能优化)
-    - [全等序列常数探测与零堆分配](#全等序列常数探测与零堆分配)
-    - [零堆内存分配与单遍流式解码](#零堆内存分配与单遍流式解码)
-    - [纯寄存器 SIMD 向量化解压与局部查表混合加速](#纯寄存器-simd-向量化解压与局部查表混合加速)
-    - [Two-Pass 向量化编码转换与采样早期退出](#two-pass-向量化编码转换与采样早期退出)
-    - [纯寄存器 128 位累加器与紧凑位打包](#纯寄存器-128-位累加器与紧凑位打包)
-    - [采样搜索代价下界剪枝](#采样搜索代价下界剪枝)
-    - [编译期常量提取与无分支位运算](#编译期常量提取与无分支位运算)
+  - [评测数据集全景与公开数据源 (35 项工业与学术基准)](#评测数据集全景与公开数据源-35-项工业与学术基准)
+- [架构演进与优化全景 (Architecture & Optimization Breakdown)](#架构演进与优化全景-architecture-optimization-breakdown)
+  - [一、参考与借鉴 C++ ALP 的架构设计（用于解决什么问题）](#一参考与借鉴-c-alp-的架构设计用于解决什么问题)
+  - [二、fastalp 自主研发的极致原创优化（用于解决什么问题）](#二fastalp-自主研发的极致原创优化用于解决什么问题)
 
 ## 功能特性
 
@@ -801,190 +674,95 @@ fastalp/
 - **Chimp128** (VLDB 2022 浮点时序压缩)
 - **Gorilla** (VLDB 2015 XOR 浮点时序压缩)
 
-#### 公开数据集全量综合对比
+### 评测数据集全景与公开数据源 (35 项工业与学术基准)
 
-对 ALP 论文全部 31 个真实公开数据集（共 253,952 字节原始浮点数据）进行同机全量评测：
+本评测严格采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 4 个工业真实极端负载场景（共 35 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
 
-| 压缩算法 | 算法类型 | 31 集压缩后总大小 | 综合压缩比 | 点均比特 (b/v) | 平均解码吞吐 | 平均编码吞吐 |
-|---|---|---|---|---|---|---|
-| **fastalp (Rust)** | 专用浮点时序 | **97,943 B** | **2.59x** | **24.68 b/v** | **18.0 GB/s** | **2.32 GB/s** |
-| **C++ ALP (Reference)** | 专用浮点时序 | 102,873 B | 2.47x | 25.93 b/v | 21.85 GB/s (峰值) | 0.84 GB/s |
-| **Pcodec (pco)** | 专用数值熵编码 | 82,888 B | 3.06x | 20.89 b/v | 1.99 GB/s | 0.24 GB/s |
-| **Zstd (level 3)** | 通用字节字典 | 101,317 B | 2.51x | 25.53 b/v | 1.42 GB/s | 0.89 GB/s |
-| **Chimp128** | 专用浮点 XOR | 119,725 B | 2.12x | 30.17 b/v | 0.52 GB/s | 0.69 GB/s |
-| **Snappy (snap)** | 通用极速字节 | 127,290 B | 2.00x | 32.08 b/v | 7.51 GB/s | 3.76 GB/s |
-| **LZ4 (lz4_flex)** | 通用极速字节 | 129,189 B | 1.97x | 32.56 b/v | 7.74 GB/s | 3.11 GB/s |
-| **Gorilla** | 专用浮点 XOR | 167,601 B | 1.52x | 42.24 b/v | 0.65 GB/s | 1.19 GB/s |
-
-#### 典型时序与物理传感器场景细分对比
-
-| 场景负载 (1024 点标准块) | fastalp (Rust) | C++ ALP 原版 | Pcodec (pco) | Zstd (level 3) | LZ4 (lz4_flex) | Gorilla |
-|---|---|---|---|---|---|---|
-| **物理传感时序 (Sensor)**<br>压缩比 / 解码吞吐 | **7.91x** (8.09 b/v)<br>**22.60 GB/s** | 7.86x (8.14 b/v)<br>21.85 GB/s | **99.90x** (0.64 b/v)<br>1.58 GB/s | 30.01x (2.13 b/v)<br>1.99 GB/s | 12.21x (5.24 b/v)<br>11.30 GB/s | 1.11x (57.67 b/v)<br>0.39 GB/s |
-| **单调递增时序 (Ramp)**<br>压缩比 / 解码吞吐 | **431.16x** (0.15 b/v)<br>**28.08 GB/s** | 0.94x (膨胀)<br>0.58 GB/s | 44.52x (1.44 b/v)<br>0.85 GB/s | 6.93x (9.23 b/v)<br>0.90 GB/s | 1.98x (32.27 b/v)<br>2.72 GB/s | 1.16x (55.07 b/v)<br>0.39 GB/s |
-| **常数稳定时序 (Constant)**<br>压缩比 / 解码吞吐 | **744.73x** (0.09 b/v)<br>**45.20 GB/s** | 455.11x (0.14 b/v)<br>21.85 GB/s | 282.48x (0.23 b/v)<br>4.82 GB/s | 292.57x (0.22 b/v)<br>3.37 GB/s | 146.29x (0.44 b/v)<br>2.08 GB/s | 30.45x (2.10 b/v)<br>1.82 GB/s |
-
-### 同机实测吞吐量对比
-
-| 测试场景 | 数据规模 | fastalp 吞吐 | C++ 原版 吞吐 | 吞吐比 (fastalp / C++) |
-|---|---|---|---|---|
-| **f64 压缩** (常数同值序列) | 1024 个 f64 (8 KB) | **23.15 GB/s** | 7.02 GB/s | **3.30x** |
-| **f64 压缩** (传感器十进制) | 1024 个 f64 (8 KB) | **6.10 GB/s** | 0.84 GB/s | **7.26x** |
-| **f64 压缩** (大块批量) | 65535 个 f64 (512 KB) | **6.57 GB/s** | 5.85 GB/s | **1.12x** |
-| **f32 压缩** (传感器十进制) | 1024 个 f32 (4 KB) | **3.52 GB/s** | 2.46 GB/s | **1.43x** |
-| **f64 解压** (同值序列) | 1024 个 f64 (8 KB) | **77.01 GB/s** | 21.85 GB/s | **3.52x** |
-| **f64 解压** (传感器十进制) | 1024 个 f64 (8 KB) | **57.32 GB/s** | 21.85 GB/s | **2.62x** |
-| **f64 解压** (大块批量) | 65535 个 f64 (512 KB) | **55.93 GB/s** | 18.42 GB/s | **3.04x** |
-| **f32 解压** (传感器十进制) | 1024 个 f32 (4 KB) | **57.45 GB/s** | 32.77 GB/s | **1.75x** |
-
-### 真实公开数据集压缩率对比
-
-对 ALP 论文全部 31 个真实公开数据集（共 253,952 字节原始浮点数据）进行精确到 bit 的无损往返验证与压缩率评测：
-
-| 数据集名称 | 原始大小 | fastalp 压缩大小 | fastalp 压缩率 | C++ 原版 压缩率 |
-|---|---|---|---|---|
-| **gov26**<br>政府公开统计 | 8192 B | 13 B | **630.15x**<br>(0.10 b/v) | 455.11x |
-| **gov31**<br>政府公开统计 | 8192 B | 25 B | **327.68x**<br>(0.20 b/v) | 292.57x |
-| **gov30**<br>政府公开统计 | 8192 B | 55 B | **148.95x**<br>(0.43 b/v) | 141.24x |
-| **stocks_uk**<br>英国股票时序 | 8192 B | 1165 B | **7.03x**<br>(9.10 b/v) | 7.00x |
-| **cms9**<br>医疗报销监测 | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
-| **medicare9**<br>医疗就诊监测 | 8192 B | 1421 B | **5.76x**<br>(11.10 b/v) | 5.74x |
-| **neon_pm10_dust**<br>PM10粉尘传感 | 8192 B | 1553 B | **5.27x**<br>(12.13 b/v) | 5.26x |
-| **stocks_usa_c**<br>美股时序数据 | 8192 B | 1951 B | **4.20x**<br>(15.24 b/v) | 4.19x |
-| **gov40**<br>政府时序数据 | 8192 B | 2445 B | **3.35x**<br>(19.10 b/v) | 3.34x |
-| **stocks_de**<br>德国股票时序 | 8192 B | 2625 B | **3.12x**<br>(20.51 b/v) | 3.12x |
-| **bird_migration_f**<br>鸟类迁徙GPS | 8192 B | 2651 B | **3.09x**<br>(20.71 b/v) | 3.09x |
-| **neon_bio_temp_c**<br>生物温度传感 | 8192 B | 2957 B | **2.77x**<br>(23.10 b/v) | 2.77x |
-| **food_prices**<br>食品价格指数 | 8192 B | 3285 B | **2.49x**<br>(25.66 b/v) | 2.49x |
-| **city_temperature_f**<br>城市气温数据 | 8192 B | 3363 B | **2.44x**<br>(26.27 b/v) | 2.43x |
-| **ssd_hdd_benchmarks_f**<br>硬盘性能 | 8192 B | 3621 B | **2.26x**<br>(28.29 b/v) | 2.26x |
-| **neon_wind_dir**<br>风向角度传感 | 8192 B | 3725 B | **2.20x**<br>(29.10 b/v) | 2.20x |
-| **neon_air_pressure**<br>气压传感 | 8192 B | 3743 B | **2.19x**<br>(29.24 b/v) | 2.19x |
-| **basel_wind_f**<br>巴塞尔风速 | 8192 B | 3817 B | **2.15x**<br>(29.82 b/v) | 2.14x |
-| **arade4**<br>水文传感器 | 8192 B | 4063 B | **2.02x**<br>(31.74 b/v) | 2.01x |
-| **basel_temp_f**<br>巴塞尔气温 | 8192 B | 4069 B | **2.01x**<br>(31.79 b/v) | 2.01x |
-| **bitcoin_f**<br>比特币行情 | 8192 B | 4195 B | **1.95x**<br>(32.77 b/v) | 1.95x |
-| **bitcoin_transactions_f**<br>链上交易 | 8192 B | 4861 B | **1.69x**<br>(37.98 b/v) | 1.68x |
-| **medicare1**<br>医疗门诊统计 | 8192 B | 5249 B | **1.56x**<br>(41.01 b/v) | 1.56x |
-| **cms1**<br>医疗报销记录 | 8192 B | 5363 B | **1.53x**<br>(41.90 b/v) | 1.53x |
-| **cms25**<br>医疗处方记录 | 8192 B | 5451 B | **1.50x**<br>(42.59 b/v) | 1.50x |
-| **nyc29**<br>纽约出租车数据 | 8192 B | 5441 B | **1.51x**<br>(42.51 b/v) | 1.50x |
-| **air_sensor_f**<br>高频空气传感 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.52x (膨胀) |
-| **poi_lat**<br>POI高精度纬度 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.51x (膨胀) |
-| **poi_lon**<br>POI高精度经度 | 8192 B | 8195 B (保底) | **1.00x**<br>(回退) | 0.64x (膨胀) |
-| **总计 / 全数据集平均** | **253,952 B** | **110,773 B** | **2.29x** | **1.94x** |
-
-得益于原始保底机制，`fastalp` 消除了高精双精度浮点数在 ALP 模型下的负压缩现象，总压缩体积由 130,597 字节降至 110,773 字节，平均压缩率提升至 **2.29x**。
-
-### 真实物理观测时序数据集对比 (NOAA & USGS 全量 64 时序)
-
-针对现实生产中最核心的物理传感与环境监测场景（包括 NOAA ISD-Lite 气象、NOAA CO-OPS 海洋潮位、USGS NWIS 河流流量水文监测，共 64 条真实长时序，467,550 个 64 位浮点数），进行端到端同机实测对比：
-
-| 观测变量 (Variable) | 序列数量 | 数据点数 | fastalp 压缩率 | C++ 原版 压缩率 | 体积缩减率 | fastalp 压缩吞吐 | C++ 压缩吞吐 | fastalp 解压吞吐 | C++ 解压吞吐 | 解压加速比 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **air_temperature** (地面气温) | 10 | 79,807 | **8.07x**<br>(7.93 b/v) | 7.80x | **-3.4%** | **2.55 GB/s** | 0.48 GB/s | **12.99 GB/s** | 0.59 GB/s | **22.0x** |
-| **dew_point** (露点温度) | 10 | 79,772 | **8.30x**<br>(7.71 b/v) | 7.95x | **-4.2%** | **2.48 GB/s** | 0.49 GB/s | **8.58 GB/s** | 0.60 GB/s | **14.3x** |
-| **sea_level_pressure** (海平面气压) | 10 | 72,857 | **9.24x**<br>(6.93 b/v) | 7.42x | **-19.6%** | **2.32 GB/s** | 0.46 GB/s | **6.40 GB/s** | 0.58 GB/s | **11.0x** |
-| **wind_direction** (气象风向) | 9 | 69,384 | **7.10x**<br>(9.01 b/v) | 7.04x | **-0.8%** | **2.10 GB/s** | 0.45 GB/s | **6.48 GB/s** | 0.61 GB/s | **10.6x** |
-| **wind_speed** (观测风速) | 9 | 71,298 | **7.07x**<br>(9.05 b/v) | 7.83x | - | **2.21 GB/s** | 0.47 GB/s | **23.57 GB/s** | 0.62 GB/s | **38.0x** |
-| **water_level** (海洋潮位) | 4 | 29,760 | **8.51x**<br>(7.52 b/v) | 5.32x | **-37.4%** | **2.41 GB/s** | 0.42 GB/s | **10.74 GB/s** | 0.54 GB/s | **19.9x** |
-| **water_level_sigma** (潮位标准差) | 4 | 29,760 | **6.27x**<br>(10.20 b/v) | 9.36x | - | **2.15 GB/s** | 0.52 GB/s | **12.10 GB/s** | 0.64 GB/s | **18.9x** |
-| **discharge** (河流水量流量) | 4 | 17,452 | **5.36x**<br>(11.93 b/v) | 4.34x | **-19.2%** | **1.85 GB/s** | 0.38 GB/s | **4.91 GB/s** | 0.49 GB/s | **10.0x** |
-| **gage_height** (水文水尺高度) | 4 | 17,460 | **9.72x**<br>(6.58 b/v) | 7.75x | **-20.3%** | **2.20 GB/s** | 0.44 GB/s | **6.66 GB/s** | 0.55 GB/s | **12.1x** |
-| **【物理时序 64 序列 总计】** | **64** | **467,550** | **7.72x**<br>(**8.29 b/v**) | **7.30x** | **-5.54%** | **2.35 GB/s** | **0.47 GB/s** | **11.20 GB/s** | **0.58 GB/s** | **19.3x** |
-
-- **压缩体积突破**：得益于十进制精确除法重构与 Delta 自适应差分，在真实物理观测时序中，`fastalp` 将每点平均占用压缩至 8.29 bits，较 C++ 原版体积进一步缩减 5.54%，在潮位与水尺高度上体积缩减达 20%~37%。
-- **吞吐量压倒性领先**：单核解压吞吐达 11.20 GB/s，达到 C++ 原版（0.58 GB/s）的 **19.3 倍**；压缩吞吐达 2.35 GB/s，达到 C++ 原版的 **5.0 倍**。
+| 领域分类 | 数据集名称 | 数据特征与物理意义 | 官方数据源与权威链接 |
+|---|---|---|---|
+| **物联网与环境传感** | `neon_pm10_dust` | PM10 悬浮微粒粉尘浓度传感 (μg/m³) | [NEON 官方生态观测网络 (DOI: 10.48443/4E6X-V373)](https://doi.org/10.48443/4E6X-V373) |
+| | `neon_dew_point_temp` | 气象露点温度连续观测时序 (°C) | [NEON 官方生态观测网络 (DOI: 10.48443/Z99V-0502)](https://doi.org/10.48443/Z99V-0502) |
+| | `neon_air_pressure` | 大气海平面连续气压传感 (kPa) | [NEON 官方生态观测网络 (DOI: 10.48443/RXR7-PP32)](https://doi.org/10.48443/RXR7-PP32) |
+| | `neon_wind_dir` | 超声波气象风向角度传感 (0-360°) | [NEON 官方生态观测网络 (DOI: 10.48443/S9YA-ZC81)](https://doi.org/10.48443/S9YA-ZC81) |
+| | `neon_bio_temp_c` | 红外土壤地表温度物理遥测 (°C) | [NEON 官方生态观测网络 (DOI: 10.48443/JNWY-B177)](https://doi.org/10.48443/JNWY-B177) |
+| | `basel_temp_f` | 瑞士巴塞尔地表历史逐时气温 (°C) | [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
+| | `basel_wind_f` | 瑞士巴塞尔观测站地表连续风速 (km/h) | [Meteoblue 历史高精度气象观测数据库](https://www.meteoblue.com/en/weather/archive/export/basel_switzerland) |
+| | `city_temperature_f` | 全球主要城市日平均气温实测时序 | [Kaggle 全球城市气温历史基准集](https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities) |
+| | `air_sensor_f` | 高频空气质量多传感器监测阵列 | [CWI PublicBI 时序数据库公开基准](https://github.com/cwida/public_bi_benchmark) |
+| | `arade4` | 葡萄牙 Arade 水文站水尺高度监控 | [CWI PublicBI Arade 水文站观测数据](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Arade/) |
+| | `scene_sensor` | 工业物联网十进制环境传感聚合基准 (1024 点) | 真实物理传感多参数聚合切片 |
+| **量化金融与资产行情** | `stocks_usa_c` | 美股微秒级高频订单簿成交价时序 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
+| | `stocks_de` | 德股法兰克福证券交易所交易成交价 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
+| | `stocks_uk` | 英股伦敦证券交易所股票交易价格 | [Zenodo 真实全球金融量化交易公开数据集](https://zenodo.org/record/3886895) |
+| | `bitcoin_f` | 历史比特币美元交易指数时序 | [InfluxDB 官方比特币时序分析样本集](https://raw.githubusercontent.com/influxdata/influxdb2-sample-data/master/bitcoin-price-data/bitcoin-historical-annotated.csv) |
+| | `bitcoin_transactions_f` | 比特币区块链主网微秒级单笔转账金额 | [Blockchair 比特币主链历史大宗转账流水](https://gz.blockchair.com/bitcoin/transactions/) |
+| | `food_prices` | 联合国粮农组织全球基础食品价格指数 | [联合国粮农与人道救援数据平台 (WFP)](https://data.humdata.org/dataset/wfp-food-prices) |
+| | `scene_finance` | 高频量化金融交易深度行情基准 (1024 点) | 真实交易所逐笔撮合行情切片 |
+| **政务普查与医疗医保** | `gov10` | 财政预算与公共支出明细统计指标 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov26` | 国家人口普查极低熵常数序列流 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov30` | 宏观经济运行指标与财政综合统计 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov31` | 财政转移支付与地区扶持资金时序 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `gov40` | 市政公用管网工程高精测绘与统计 | [CWI PublicBI CommonGovernment 统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CommonGovernment/) |
+| | `medicare1` | 门诊医疗保险理赔结算账单流水 | [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
+| | `medicare9` | 专科就诊补贴与报销费用时序 | [CWI PublicBI Medicare 医疗卫生统计集](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/Medicare3/) |
+| | `cms1` | 医疗保险供应商结算明细记录 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `cms9` | 专科处方药品报销结算价格流水 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `cms25` | 医疗设备使用与专科诊疗收费项目 | [CWI PublicBI CMSProvider 医疗保险数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/CMSprovider/) |
+| | `scene_macro` | 宏观政务指标与公共医疗结算基准 (1024 点) | 真实公共财政与医保综合报销切片 |
+| **地理测绘与轨迹跟踪** | `poi_lat` | 全球兴趣点高精度地理纬度坐标 | [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
+| | `poi_lon` | 全球兴趣点高精度地理经度坐标 | [Kaggle POI 全球地理空间数据库](https://www.kaggle.com/datasets/ehallmar/points-of-interest-poi-database) |
+| | `bird_migration_f` | 野生候鸟迁徙微秒级卫星 GPS 坐标 | [InfluxDB 候鸟迁徙高精地理时序追踪集](https://github.com/influxdata/influxdb2-sample-data/blob/master/bird-migration-data/bird-migration.csv) |
+| | `nyc29` | 纽约出租车连续营运 GPS 轨迹与计程 | [CWI PublicBI NYC 出租车地理时序数据库](https://homepages.cwi.nl/~boncz/PublicBIbenchmark/NYC/) |
+| | `scene_geo` | 无人机航迹与连续经纬度测绘基准 (1024 点) | 高精卫星轨迹与连续导航定位切片 |
+| **硬件存储与物理波形** | `ssd_hdd_benchmarks_f` | 固态硬盘与机械硬盘连续 I/O 吞吐基准 | [Kaggle 存储设备吞吐实测数据库](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks) |
+| | `scene_ramp` | 平滑升降坡道、连续物理量与单调时序 (1024 点) | 工业 PID 调节、水文流量与连续步进计数器 |
+| | `scene_steady` | 恒定传感、无故障零冗余与心跳流 (1024 点) | 设备自检心跳流与高频常数工业监控 |
 
 ---
 
-## 架构对比与工程优化设计
+## 架构演进与优化全景 (Architecture & Optimization Breakdown)
 
-相比 C++ 原版实现，`fastalp` 不仅在吞吐性能上实现成倍提升，更在底层算法上做出了重大革新，突破了 C++ 原版在特定场景下的压缩率瓶颈。
+fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓的基础上，针对现代多核流水线与时序数据库列存痛点重构的高性能压缩引擎。
 
-### 核心压缩率算法优化对比
+### 一、参考与借鉴 C++ ALP 的架构设计（用于解决什么问题）
 
-#### 十进制精确除法重构模式 —— 消除乘法舍入伪异常
-- **C++ 原版局限**：<br>
-  C++ ALP 仅采用基于乘法的逆变换 `v = (encoded * frac_exp) / fac`。由于二进制无法完全精确表示 `0.1`，浮点乘法会引入不可逆的微小截断误差（例如 `123 * 0.1` 的实际计算结果为 `12.30000000000000071...`，并不等于十进制输入的 `12.3`）。这导致原版 ALP 将大量原本为严格十进制的真实物理数据误判为无法无损还原的异常点（Exceptions），每个异常点在标准 1024 块中必须单独记录 8 字节原始浮点数 + 2 字节位置索引（单个异常代价高达 80 比特！）。在真实气象与潮位观测时序中，异常点比例居高不下，极大地蚕食了压缩率。
-- **fastalp 算法革新**：<br>
-  `fastalp` 引入**十进制精确除法重构模式 (`TYPE_F64_DEC` / `TYPE_F32_DEC`)**。在采样与重构中，通过直接除以精确的十进制整数幂（如 `/ 10.0`），使截断误差归零。
-  - **压缩收益**：在 NOAA 海洋潮位、地表气温等真实时序中，异常点数量直接由 C++ 原版的数百个骤降至 **0 个**！省去庞大的异常字典开销，压缩体积直接额外缩减 **20% ~ 38%**（如潮位数据压缩比从 C++ 的 5.32x 提升至 8.51x）。
-  - **性能解耦**：为防止硬件浮点除法的高延迟拖累解压速度，`fastalp` 结合 256 项栈上微型查表（LUT），在享受 0 异常最高压缩率的同时，维持 55+ GB/s 的高吞吐。
+在架构演进中，fastalp 完整保留并吸收了 C++ ALP 经数学严密证明的优秀工业设计：
 
-#### 自适应一阶差分时序编码 —— 突破全局极值跨度瓶颈
-- **C++ 原版局限**：<br>
-  C++ ALP 仅采用全局基准偏移（Frame-of-Reference, FOR）：`stored = encoded - min_encoded`。对于真实世界具有物理连续性的时序数据（如气温昼夜周期、水尺高度起伏、河流流量平缓变化、单调递增计数器），1024 个点内的数据极值跨度 `(max - min)` 往往很大（如温度跨越数十度，对应整型跨度达数千），这强制该数据块内所有 1024 个点必须采用 12~16 位的打包位宽，完全无法利用时序数据相邻点极度接近的强局部相关性。
-- **fastalp 算法革新**：<br>
-  `fastalp` 首创自适应 **Delta-ALP (`TYPE_F64_DELTA` / `TYPE_F32_DEC_DELTA`) 算法**：
-  1. **自适应收益决策**：在采样阶段动态比对 FOR 全局位宽与一阶差分位宽（`delta[i] = encoded[i] - encoded[i-1]`），仅在差分确有收益时才启用，兼顾乱序与有序时序；
-  2. **相邻差分紧凑打包**：以首元素为基准，对相邻差分序列 `(delta - min_delta)` 进行位打包。物理传感序列的差分位宽通常直接骤降至 1~6 位；
-  3. **压缩收益**：在单调与平滑时序上，压缩体积较 C++ 原版缩减 **50% ~ 90%**。在单调递增时序测试中，每点占用由原版的 68.09 bits 降至 0.16 bits，压缩比跃升至 **390x**（C++ 原版仅为 0.94x）。
-
-#### 异常点前值平滑隔离补丁 —— 避免尖峰噪声污染差分流
-- **C++ 原版局限**：<br>
-  在传统的差分压缩流水线中，若遭遇单点仪器噪声或异常尖峰，该异常点会同时污染相邻的两个差分值（突变上升与突变下跌），导致整块数据的最大差分跨度剧烈膨胀，使得整个数据块的打包位宽急剧恶化。
-- **fastalp 算法革新**：<br>
-  `fastalp` 在 Delta 编码时设计了**前值平滑隔离补丁机制**：当遇到无法缩放的浮点异常点时，差分流中记录增量为 0（平滑沿用前一个有效整数），将真实的异常浮点数独立提取进 Patch 字典。解码时，先以单遍无分支前缀和流水线还原基准整型，再就地修补异常点。既保护了差分位流不受尖峰干扰、维持最低位宽，又确保了 100% 比特精确无损。
-
-#### 原始保底机制消除负压缩
-- **C++ 原版局限**：<br>
-  遇到高熵非结构化浮点或高精度随机坐标（如 POI 经纬度、高频电磁传感）时，原版 C++ ALP 的异常表膨胀导致体积比原始数据还要大（负压缩，压缩比低至 0.51x，产生 2 倍空间膨胀）。
-- **fastalp 算法革新**：<br>
-  在编码流水线末端精确计算压缩产物大小；一旦发现压缩大小超过原始数据加上极简元数据头部（1024 满块仅占 1 字节），自动瞬间回退至 `TYPE_RAW` 模式，将数据按原样存储。在标准 31 数据集评测中，杜绝了 0.51x 的膨胀，全量数据集平均压缩比从 C++ 的 1.94x 提高到了 2.29x。
+1. **状态化编码器与跨块参数缓存（Stateful Encoder & Parameter Caching）**：
+   - **用途**：解决时序数据库连续写入时频繁重复采样的性能瓶颈。
+   - **机制**：在工业时序流中，同一指标列（如温度）相邻数据块的量纲和精度具有高度连续性。fastalp 借鉴 C++ 设计，支持跨 1024 块复用上一数据块探测出的指数 `exp` 与因子 `fac`。连续写入时直接跳过昂贵的全部样本扫描，使连续压缩吞吐由 4~5 GB/s 跃升至 **15~20+ GB/s**。
+2. **12.5% 异常阈值保底回退（Exception Threshold RAW Fallback）**：
+   - **用途**：彻底消除高熵浮点数（如高精 GPS 坐标、科学计算随机数）压缩时空间膨胀的“负压缩”隐患。
+   - **机制**：当异常值数量超过 128 个（占 1024 元素的 12.5%）时，强制判定该数据块不可有效进行十进制变换，立即终止后续分析，直接降级存储为单字节头部的 RAW 紧凑原始流，杜绝 C++ 原版中曾出现的 2 倍体积膨胀。
+3. **十进制除法重构模式（Decimal Division Mode）**：
+   - **用途**：消除 IEEE 754 乘法舍入误差导致的“虚假异常点”。
+   - **机制**：浮点乘法 `x * 0.1` 无法精确表示十进制小数，会导致大量本可无损还原的工业传感器数据（如 `12.3`）因尾数截断误差而被误判为不可缩放的异常。fastalp 借鉴并优化了除法重构模式，以精确除法将虚假异常彻底清零，使真实环境传感数据的每点占用减少 20%~38%。
 
 ---
 
-### 工程微架构与吞吐性能优化
+### 二、fastalp 自主研发的极致原创优化（用于解决什么问题）
 
-#### 全等序列常数探测与零堆分配
+为了突破 C++ 原版的吞吐上限与时序压缩率天花板，fastalp 自主研发了以下核心架构创新：
 
-- **C++ 原版实现**：<br>
-  面对全量常数序列时，依然需要执行完整的样本采集、临时整型数组转换与位宽分析，端到端耗时达 9.25 微秒。<br>
-- **fastalp 优化**：<br>
-  在压缩入口通过底层原始比特比对（`v.is_exact_same(first)`，严格区分 `+0.0` 与 `-0.0` 符号位）；<br>
-  命中后直接写入自描述紧凑头部与基准值（`bit_width = 0`），跳过所有采样与中间数组分配，压缩耗时降至 351 纳秒，相对提速 26 倍。
-
-#### 零堆内存分配与单遍流式解码
-
-- **C++ 原版实现**：<br>
-  采用两阶段解码架构：阶段一解包位流到中间堆数组，阶段二遍历中间数组计算浮点逆缩放并修补异常，引发 8 字节/元素的堆分配与 L1/L2 缓存挤占。<br>
-- **fastalp 优化**：<br>
-  采用单遍直解流式架构；位流在 CPU 寄存器中解包的同时直接计算并写入目标切片，消除中间堆分配与内存往返传输，保持 CPU 缓存高效命中；<br>
-  针对 Delta 差分时序数据，利用 1024 元素位打包天然对齐字节边界的特性，采用固定 1024 元素栈流式分批解包，将大数组解码时的额外堆内存分配降为 0 字节，同时栈缓存常驻于 CPU L1 Data Cache；<br>
-  对外提供 `compress_into` 与 `decompress_into` 零分配接口。
-
-#### 纯寄存器 SIMD 向量化解压与局部查表混合加速
-
-- **C++ 原版实现**：<br>
-  解包内层循环依赖两阶段堆缓冲传递与标量乘除运算，在非连续加载下难以充分饱和向量单元。<br>
-- **fastalp 优化**：<br>
-  摒弃会引发间接 gather 寻址与缓存停顿的大尺寸表；针对 8、16、32、64 位宽直接采用纯寄存器线性算术指令流，配合 `fac1` 路径消除整数乘法，使 LLVM 自动生成 SIMD 矢量流水；针对 1、2、4 超小位宽采用微型寄存器局部表快速解包，单核解压吞吐跃升至 57+ GB/s。
-
-#### Two-Pass 向量化编码转换与采样早期退出
-
-- **C++ 原版实现**：<br>
-  多层采样逻辑复杂度高，编码循环混合了密集条件分支，导致基本块碎片化。<br>
-- **fastalp 优化**：<br>
-  在压缩采样中引入 `EARLY_EXIT_BIT_WIDTH` 优质参数即停机制，避免对 135 种组合的盲目遍历；在数据编码阶段采用 Two-Pass 分离架构（Pass 1 纯寄存器无分支舍入转换整型，Pass 2 集中校验异常），消除单元素内的多重分支停顿，批量压缩吞吐飙升至 5.4+ GB/s。
-
-#### 纯寄存器 128 位累加器与紧凑位打包
-
-- **C++ 原版实现**：<br>
-  采用多层宏与模板元编程生成大量打包函数，编译生成的目标代码体积庞大，且高度耦合特定硬件平台的指令扩展。<br>
-- **fastalp 优化**：<br>
-  采用单一 `u128` 寄存器作为滑动窗口（`acc: u128` 与 `bits_in_acc: u32`），单指令 64 位写入或读取；<br>
-  纯安全 Rust 实现，不依赖外部 C++ 编译链，天然跨平台支持 x86_64、ARM64 以及 WebAssembly。
-
-#### 采样搜索代价下界剪枝
-
-- **C++ 原版实现**：<br>
-  参数搜索时遍历 135 种 `(exp, fac)` 组合的全部样本，遍历开销较高。<br>
-- **fastalp 优化**：<br>
-  引入代价下界动态剪枝：在单次采样的内层循环中，若已累计的异常惩罚（`exceptions * penalty`）已超过当前全局最优代价 `best_cost`，则立即中断探测，跳过剩余的所有样本测试，显著降低参数搜索耗时。
-
-#### 编译期常量提取与无分支位运算
-
-- Exponent factor 预先在外层提取，消除采样与编码循环内对全局表的重复数组索引；<br>
-- 采用硬件级前导零指令（CLZ）计算位宽，利用常量位掩码替代分支判断，减少流水线损耗。
+1. **熔合一阶差分位打包（Fused Delta Bitpacking）**：
+   - **用途**：消除差分压缩时 8KB 内存回写带来的内存带宽与缓存挤占开销。
+   - **机制**：传统实现采用“遍历计算差分并写回 8KB 临时内存 + 另起循环读取临时内存做 Bitpacking”的两遍扫描模式。fastalp 独创 8 路寄存器级熔合流水线：在读取相邻元素求差的同时，直接减去基准、并流水线移位推入 128 位寄存器打包输出，全过程**零临时内存分配、零内存回写**，差分压缩吞吐提升 30% 以上。
+2. **数学前置短路差分快筛（Mathematical Delta Early Pruning）**：
+   - **用途**：消除对无序/震荡数据无意义的全量一阶差分计算。
+   - **机制**：基于数学定理“局部子集的一阶极值跨度必小于等于全局极值跨度”，在决定是否启用差分模式时，仅探测前 16 个采样点。若前 16 项的差分位宽已大于等于 FOR 基准位宽，则数学证明全局差分绝不可能更优，即刻早停跳出，避免了 90% 非平滑序列的全量差分扫描。
+3. **4 路流水线无闭包展开编码（4-Way Loop Unrolling & Inlined Pipeline）**：
+   - **用途**：释放现代 CPU 超标量流水线的乱序执行与多算术逻辑单元（ALU）吞吐潜能。
+   - **机制**：将核心采样与整型缩放循环彻底消除动态闭包与间接跳转，特化为专用的 4 路展开指令流。连续 4 项无异常时走全寄存器极值更新路径，使压缩吞吐从 C++ 原版的 0.84 GB/s 暴增至 **4.4~6.8 GB/s**。
+4. **单次比较全等快跳（Identical Floats Fast-Skip）**：
+   - **用途**：应对工业断线、设备待机与心跳常数流的极致瞬时压缩。
+   - **机制**：在编码入口仅用 1 次 `slice[1] == slice[0]` 快速比对。非全等序列仅耗费 1 个 CPU 时钟周期即可退出；全等序列仅需 11 字节即可压缩 1024 元素（压缩比高达 **744x**，解压吞吐达 **88.9 GB/s**）。
+5. **智能离群点剪枝与 0-bit 稀疏常数压缩（Outlier Pruning with 0-bit Compression）**：
+   - **用途**：针对 99% 为 0.0 仅有极少突变脉冲的数据集（如财政公共支出 `gov30`），实现百倍压缩比。
+   - **机制**：自动将少量脉冲离群值分离到异常字典中，主位流以 0-bit 存储，压缩体积从原版的 2100 字节骤降至 43 字节（压缩比突破 **150x**）。配合前 16 采样离群点快筛，高熵数据 2 个采样点即刻早停，零额外性能损耗。
+6. **两级采样探测非十进制全面早停（Non-Decimal Sampling Early Break）**：
+   - **用途**：防止对不可压缩浮点数据盲目枚举 170 种乘除因子导致编码性能崩塌。
+   - **机制**：在第 1 级 32 点快筛中，若在基础十进制指数下异常率已达 100%，判定为科学高熵浮点，直接跳过第 2 级因子枚举，将不可压缩数据的编码耗时缩减 80%。
+7. **栈缓冲融合与异常值单次批量提交（Batched Exception Writing & Zero Extra Allocations）**：
+   - **用途**：杜绝动态扩容与堆内存碎片。
+   - **机制**：解码与编码全程利用固定大小栈缓存；异常值位置索引与原始值在栈上定长组装后单次批量推入，将异常写出的系统开销降低 50%。对外提供 `compress_into` 与 `decompress_into` 零内存分配接口。
 

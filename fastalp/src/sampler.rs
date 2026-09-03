@@ -50,11 +50,11 @@ pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int>
 /// 全等/常数浮点数序列的极速指数与基准值探测（零堆分配、O(1) 搜索）
 #[inline]
 pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
+  const FAC_INT: i64 = 1;
   for exp in 0..=F::MAX_EXPONENT {
     let frac_exp = F::frac_exp(exp);
     let exp_factor = F::exp_factor(exp, 0);
-    let fac_int = F::fac_int(0);
-    if let Some(base) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
+    if let Some(base) = F::try_encode_fast(val, exp_factor, FAC_INT, frac_exp) {
       return Some((exp, base));
     }
   }
@@ -105,6 +105,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
   const EXP_PRIORITY: [u8; 19] = [
     2, 1, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
   ];
+  let mut any_decimal = false;
   for &exp in &EXP_PRIORITY {
     if exp > F::MAX_EXPONENT {
       continue;
@@ -113,11 +114,33 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     let exp_factor = F::exp_factor(exp, 0);
     let fac_int = 1i64;
 
-    let mut exceptions = 0usize;
+    // 前置 6 采样快筛：若前 6 个独立采样全部无法编码，其在 1024 全集产生 <=128 异常的概率低于 26 万分之一，直接跳过
+    let pre_n = active_samples.len().min(6);
+    let mut pre_enc = [None; 6];
+    let mut pre_exc = 0;
+    for (i, &val) in active_samples[..pre_n].iter().enumerate() {
+      let res = F::try_encode_fast(val, exp_factor, fac_int, frac_exp);
+      if res.is_none() {
+        pre_exc += 1;
+      }
+      pre_enc[i] = res;
+    }
+    if pre_exc == pre_n {
+      continue;
+    }
+
+    let mut exceptions = pre_exc;
     let mut min_val = F::MAX_INT;
     let mut max_val = F::MIN_INT;
 
-    for &val in active_samples {
+    for &enc_opt in &pre_enc[..pre_n] {
+      if let Some(enc) = enc_opt {
+        min_val = min_val.min(enc);
+        max_val = max_val.max(enc);
+      }
+    }
+
+    for &val in &active_samples[pre_n..] {
       if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
         min_val = min_val.min(enc);
         max_val = max_val.max(enc);
@@ -129,24 +152,27 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
       }
     }
 
-    if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY < best_cost {
-      let max_offset = if min_val <= max_val {
-        F::calc_range(min_val, max_val)
-      } else {
-        0
-      };
-      let bit_width = F::bits_needed(max_offset) as usize;
-      let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
-
-      if total_cost < best_cost {
-        best_cost = total_cost;
-        best_params = BestParams {
-          exp,
-          fac: 0,
-          use_div: false,
+    if exceptions != sample_len {
+      any_decimal = true;
+      if exceptions * F::EXCEPTION_PENALTY < best_cost {
+        let max_offset = if min_val <= max_val {
+          F::calc_range(min_val, max_val)
+        } else {
+          0
         };
-        if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
-          return best_params;
+        let bit_width = F::bits_needed(max_offset) as usize;
+        let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
+
+        if total_cost < best_cost {
+          best_cost = total_cost;
+          best_params = BestParams {
+            exp,
+            fac: 0,
+            use_div: false,
+          };
+          if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
+            return best_params;
+          }
         }
       }
     }
@@ -169,28 +195,36 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
         }
       }
 
-      if div_exceptions != sample_len && div_exceptions * F::EXCEPTION_PENALTY < best_cost {
-        let max_offset = if div_min <= div_max {
-          F::calc_range(div_min, div_max)
-        } else {
-          0
-        };
-        let bit_width = F::bits_needed(max_offset) as usize;
-        let total_cost = bit_width * sample_len + div_exceptions * F::EXCEPTION_PENALTY;
-
-        if total_cost < best_cost {
-          best_cost = total_cost;
-          best_params = BestParams {
-            exp,
-            fac: 0,
-            use_div: true,
+      if div_exceptions != sample_len {
+        any_decimal = true;
+        if div_exceptions * F::EXCEPTION_PENALTY < best_cost {
+          let max_offset = if div_min <= div_max {
+            F::calc_range(div_min, div_max)
+          } else {
+            0
           };
-          if total_cost == 0 || (div_exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
-            return best_params;
+          let bit_width = F::bits_needed(max_offset) as usize;
+          let total_cost = bit_width * sample_len + div_exceptions * F::EXCEPTION_PENALTY;
+
+          if total_cost < best_cost {
+            best_cost = total_cost;
+            best_params = BestParams {
+              exp,
+              fac: 0,
+              use_div: true,
+            };
+            if total_cost == 0 || (div_exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
+              return best_params;
+            }
           }
         }
       }
     }
+  }
+
+  // 若采样数据在纯十进制各指数下全部 100% 无法编码，说明数据完全非十进制浮点序列，直接短路早停
+  if !any_decimal {
+    return best_params;
   }
 
   // 第二轮：当纯十进制无法满足极低开销时，扩展搜索混合因子 (fac > 0)

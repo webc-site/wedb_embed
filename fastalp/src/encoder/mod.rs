@@ -93,7 +93,8 @@ fn compress_impl<F: AlpFloat>(
 
   // 极速全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
   let first = slice[0];
-  if slice.iter().all(|&v| v.is_exact_same(first))
+  if (slice.len() <= 1 || slice[1].is_exact_same(first))
+    && slice.iter().all(|&v| v.is_exact_same(first))
     && let Some((exp, base)) = find_identical_base(first)
   {
     let total_needed = header_len(count) + F::BASE_SIZE;
@@ -112,18 +113,16 @@ fn compress_impl<F: AlpFloat>(
     let exp_factor = F::exp_factor(p.exp, p.fac);
     let fac_int = F::fac_int(p.fac);
     let frac_exp = F::frac_exp(p.exp);
-    let mut valid = true;
     let check_n = slice.len().min(4);
+    let mut valid = true;
     for &v in &slice[..check_n] {
-      if v.is_impossible() {
-        continue;
-      }
-      let ok = if p.use_div {
-        v.try_encode_div(exp_factor).is_some()
+      let enc = v.fast_round_to_int(exp_factor);
+      let dec = if p.use_div {
+        F::decode_from_int_div(enc, exp_factor)
       } else {
-        F::try_encode_fast(v, exp_factor, fac_int, frac_exp).is_some()
+        F::decode_from_int(enc, fac_int, frac_exp)
       };
-      if !ok {
+      if dec.to_raw_bits() != v.to_raw_bits() {
         valid = false;
         break;
       }
@@ -150,19 +149,16 @@ fn compress_impl<F: AlpFloat>(
 
   let (mut min_val, mut max_val) = unsafe {
     if best_params.use_div {
-      encode_loop(
-        slice,
-        enc_ptr,
-        |v| v.try_encode_div(exp_factor),
-        &mut exceptions,
-      )
+      encode_loop_div(slice, enc_ptr, exp_factor, &mut exceptions)
     } else if fac_int == 1 {
       encode_loop_fac1(slice, enc_ptr, exp_factor, frac_exp, &mut exceptions)
     } else {
-      encode_loop(
+      encode_loop_fac(
         slice,
         enc_ptr,
-        |v| v.try_encode_fast(exp_factor, fac_int, frac_exp),
+        exp_factor,
+        fac_int,
+        frac_exp,
         &mut exceptions,
       )
     }
@@ -178,19 +174,16 @@ fn compress_impl<F: AlpFloat>(
       frac_exp = F::frac_exp(fresh_params.exp);
       let bounds = unsafe {
         if fresh_params.use_div {
-          encode_loop(
-            slice,
-            enc_ptr,
-            |v| v.try_encode_div(exp_factor),
-            &mut exceptions,
-          )
+          encode_loop_div(slice, enc_ptr, exp_factor, &mut exceptions)
         } else if fac_int == 1 {
           encode_loop_fac1(slice, enc_ptr, exp_factor, frac_exp, &mut exceptions)
         } else {
-          encode_loop(
+          encode_loop_fac(
             slice,
             enc_ptr,
-            |v| v.try_encode_fast(exp_factor, fac_int, frac_exp),
+            exp_factor,
+            fac_int,
+            frac_exp,
             &mut exceptions,
           )
         }
@@ -293,88 +286,98 @@ fn compress_impl<F: AlpFloat>(
   };
 
   // FOR 模式专用：离群值异常剪枝优化 (Outlier Pruning to Exceptions)
-  // 仅在未启用 Delta 模式时尝试剪枝，避免破坏一阶差分的时间平滑性。
-  // 当绝大多数数据集中在极窄区间，仅少数离群点拉大整个数组位宽时，
-  // 将离群点剥离至异常表可换取全量位打包大幅精简。
-  let total_needed = if !use_delta && for_bit_width >= 16 && exceptions.len() < 16 {
-    let entry_size = if is_large {
-      F::EXC_ENTRY_SIZE_U32
-    } else {
-      F::EXC_ENTRY_SIZE
-    };
-    let current_cost = for_packed_len + exceptions.len() * entry_size;
-
-    let candidate_widths = [0u8, 1, 2, 4, 8, 16];
-    let mut best_target_bw = for_bit_width;
-    let mut min_cost = current_cost;
-
-    for &target_bw in &candidate_widths {
-      if target_bw >= for_bit_width {
-        break;
-      }
-      let max_allowed = if target_bw == 0 {
-        0u64
+  // 仅在未启用 Delta 模式、且位宽在 16~32 区间时尝试 16 位剪枝，避免不可压缩浮点数据（位宽 > 32）产生多轮无谓扫描。
+  let total_needed =
+    if !use_delta && for_bit_width > 4 && exceptions.len() < 16 {
+      let entry_size = if is_large {
+        F::EXC_ENTRY_SIZE_U32
       } else {
-        (1u64 << target_bw) - 1
+        F::EXC_ENTRY_SIZE
       };
+      let current_cost = for_packed_len + exceptions.len() * entry_size;
 
-      let mut extra_exceptions = 0usize;
-      for &val in encoded_ints.iter() {
-        let diff = F::int_diff_to_u64(val, base);
-        if diff > max_allowed {
-          extra_exceptions += 1;
-          if extra_exceptions > 16 {
-            break;
+      let candidate_widths = [0u8, 8, 16];
+      let mut best_target_bw = for_bit_width;
+      let mut min_cost = current_cost;
+
+      for &target_bw in &candidate_widths {
+        if target_bw >= for_bit_width {
+          break;
+        }
+        let max_allowed = if target_bw == 0 {
+          0u64
+        } else {
+          (1u64 << target_bw) - 1
+        };
+
+        // 前置 16 采样快筛：若在前 16 个元素中已出现超过 1 个离群点，直接短路跳过
+        let pre_check_n = encoded_ints.len().min(16);
+        let mut pre_outliers = 0;
+        for &val in &encoded_ints[..pre_check_n] {
+          if F::int_diff_to_u64(val, base) > max_allowed {
+            pre_outliers += 1;
+            if pre_outliers > 1 {
+              break;
+            }
+          }
+        }
+        if pre_outliers > 1 {
+          continue;
+        }
+
+        let mut extra_exceptions = pre_outliers;
+        for &val in &encoded_ints[pre_check_n..] {
+          let diff = F::int_diff_to_u64(val, base);
+          if diff > max_allowed {
+            extra_exceptions += 1;
+            if extra_exceptions > 16 {
+              break;
+            }
+          }
+        }
+
+        if extra_exceptions <= 16 {
+          let new_total_exc = exceptions.len() + extra_exceptions;
+          let new_cost = packed_byte_size(slice.len(), target_bw) + new_total_exc * entry_size;
+          if new_cost < min_cost {
+            min_cost = new_cost;
+            best_target_bw = target_bw;
           }
         }
       }
 
-      if extra_exceptions <= 16 {
-        let new_total_exc = exceptions.len() + extra_exceptions;
-        let new_cost = packed_byte_size(slice.len(), target_bw) + new_total_exc * entry_size;
-        if new_cost < min_cost {
-          min_cost = new_cost;
-          best_target_bw = target_bw;
+      if best_target_bw < for_bit_width {
+        let max_allowed = (1u64 << best_target_bw) - 1;
+        for (pos, &val) in encoded_ints.iter().enumerate() {
+          let diff = F::int_diff_to_u64(val, base);
+          if diff > max_allowed {
+            exceptions.push(Exception {
+              pos,
+              bits: slice[pos].to_raw_bits(),
+            });
+          }
         }
-      }
-    }
+        exceptions.sort_unstable_by_key(|e| e.pos);
+        exceptions.dedup_by_key(|e| e.pos);
 
-    if best_target_bw < for_bit_width {
-      let max_allowed = if best_target_bw == 0 {
-        0u64
-      } else {
-        (1u64 << best_target_bw) - 1
-      };
-      for (pos, &val) in encoded_ints.iter().enumerate() {
-        let diff = F::int_diff_to_u64(val, base);
-        if diff > max_allowed {
-          exceptions.push(Exception {
-            pos,
-            bits: slice[pos].to_raw_bits(),
-          });
+        // 为离群点回填基准值，确保打包时不溢出目标位宽
+        for exc in &exceptions {
+          unsafe {
+            *encoded_ints.get_unchecked_mut(exc.pos) = base;
+          }
         }
+        for_bit_width = best_target_bw;
+        for_packed_len = packed_byte_size(slice.len(), for_bit_width);
+        exc_len = if is_large {
+          EXC_COUNT_LEN_U32 + exceptions.len() * F::EXC_ENTRY_SIZE_U32
+        } else {
+          EXC_COUNT_LEN + exceptions.len() * F::EXC_ENTRY_SIZE
+        };
       }
-      exceptions.sort_unstable_by_key(|e| e.pos);
-      exceptions.dedup_by_key(|e| e.pos);
-
-      // 为离群点回填基准值，确保打包时不溢出目标位宽
-      for exc in &exceptions {
-        unsafe {
-          *encoded_ints.get_unchecked_mut(exc.pos) = base;
-        }
-      }
-      for_bit_width = best_target_bw;
-      for_packed_len = packed_byte_size(slice.len(), for_bit_width);
-      exc_len = if is_large {
-        EXC_COUNT_LEN_U32 + exceptions.len() * F::EXC_ENTRY_SIZE_U32
-      } else {
-        EXC_COUNT_LEN + exceptions.len() * F::EXC_ENTRY_SIZE
-      };
-    }
-    hdr_len + F::BASE_SIZE + for_packed_len + exc_len
-  } else {
-    total_needed
-  };
+      hdr_len + F::BASE_SIZE + for_packed_len + exc_len
+    } else {
+      total_needed
+    };
 
   let raw_len = size_of_val(slice);
   let raw_hdr = raw_header_len(count);
@@ -539,13 +542,12 @@ unsafe fn encode_loop_fac1<F: AlpFloat>(
   }
 }
 
-/// Encodes slice using a given encoding function, tracking min/max values and pushing exceptions.
-/// 单遍执行浮点数整型转换与极值追踪，统一异常收集（泛型闭包完全内联，零额外开销）
+/// 专有 4-way 展开除法流水线编码循环
 #[inline(always)]
-unsafe fn encode_loop<F: AlpFloat, E: Fn(F) -> Option<F::Int>>(
+unsafe fn encode_loop_div<F: AlpFloat>(
   slice: &[F],
   enc_ptr: *mut F::Int,
-  encode_fn: E,
+  exp_factor: F,
   exceptions: &mut Vec<Exception<F::RawBits>>,
 ) -> (F::Int, F::Int) {
   unsafe {
@@ -561,41 +563,159 @@ unsafe fn encode_loop<F: AlpFloat, E: Fn(F) -> Option<F::Int>>(
       let v2 = *slice.get_unchecked(i + 2);
       let v3 = *slice.get_unchecked(i + 3);
 
-      let e0 = encode_fn(v0);
-      let e1 = encode_fn(v1);
-      let e2 = encode_fn(v2);
-      let e3 = encode_fn(v3);
+      let enc0 = v0.fast_round_to_int(exp_factor);
+      let enc1 = v1.fast_round_to_int(exp_factor);
+      let enc2 = v2.fast_round_to_int(exp_factor);
+      let enc3 = v3.fast_round_to_int(exp_factor);
 
-      macro_rules! handle_elem {
-        ($idx:expr, $val:expr, $enc:expr) => {
-          if let Some(enc) = $enc {
-            enc_ptr.add($idx).write(enc);
-            min_val = min_val.min(enc);
-            max_val = max_val.max(enc);
+      let d0 = F::decode_from_int_div(enc0, exp_factor);
+      let d1 = F::decode_from_int_div(enc1, exp_factor);
+      let d2 = F::decode_from_int_div(enc2, exp_factor);
+      let d3 = F::decode_from_int_div(enc3, exp_factor);
+
+      let ok0 = d0.to_raw_bits() == v0.to_raw_bits();
+      let ok1 = d1.to_raw_bits() == v1.to_raw_bits();
+      let ok2 = d2.to_raw_bits() == v2.to_raw_bits();
+      let ok3 = d3.to_raw_bits() == v3.to_raw_bits();
+
+      macro_rules! handle_one {
+        ($idx:expr, $val:expr, $enc:expr, $ok:expr) => {
+          if $ok {
+            enc_ptr.add($idx).write($enc);
+            min_val = min_val.min($enc);
+            max_val = max_val.max($enc);
           } else {
             enc_ptr.add($idx).write(F::ZERO_INT);
             exceptions.push(Exception {
               pos: $idx,
               bits: $val.to_raw_bits(),
             });
-            if exceptions.len() > 128 {
-              return (F::MAX_INT, F::MIN_INT);
-            }
           }
         };
       }
 
-      handle_elem!(i, v0, e0);
-      handle_elem!(i + 1, v1, e1);
-      handle_elem!(i + 2, v2, e2);
-      handle_elem!(i + 3, v3, e3);
-
+      if ok0 && ok1 && ok2 && ok3 {
+        enc_ptr.add(i).write(enc0);
+        enc_ptr.add(i + 1).write(enc1);
+        enc_ptr.add(i + 2).write(enc2);
+        enc_ptr.add(i + 3).write(enc3);
+        min_val = min_val.min(enc0).min(enc1).min(enc2).min(enc3);
+        max_val = max_val.max(enc0).max(enc1).max(enc2).max(enc3);
+      } else {
+        handle_one!(i, v0, enc0, ok0);
+        handle_one!(i + 1, v1, enc1, ok1);
+        handle_one!(i + 2, v2, enc2, ok2);
+        handle_one!(i + 3, v3, enc3, ok3);
+        if exceptions.len() > 128 {
+          return (F::MAX_INT, F::MIN_INT);
+        }
+      }
       i += 4;
     }
 
     while i < len {
       let val = *slice.get_unchecked(i);
-      if let Some(enc) = encode_fn(val) {
+      let enc = val.fast_round_to_int(exp_factor);
+      let d = F::decode_from_int_div(enc, exp_factor);
+      if d.to_raw_bits() == val.to_raw_bits() {
+        enc_ptr.add(i).write(enc);
+        min_val = min_val.min(enc);
+        max_val = max_val.max(enc);
+      } else {
+        enc_ptr.add(i).write(F::ZERO_INT);
+        exceptions.push(Exception {
+          pos: i,
+          bits: val.to_raw_bits(),
+        });
+        if exceptions.len() > 128 {
+          return (F::MAX_INT, F::MIN_INT);
+        }
+      }
+      i += 1;
+    }
+
+    (min_val, max_val)
+  }
+}
+
+/// 专有 4-way 展开因子流水线编码循环
+#[inline(always)]
+unsafe fn encode_loop_fac<F: AlpFloat>(
+  slice: &[F],
+  enc_ptr: *mut F::Int,
+  exp_factor: F,
+  fac_int: i64,
+  frac_exp: F,
+  exceptions: &mut Vec<Exception<F::RawBits>>,
+) -> (F::Int, F::Int) {
+  unsafe {
+    let mut min_val = F::MAX_INT;
+    let mut max_val = F::MIN_INT;
+    let len = slice.len();
+    let unroll_len = len & !3;
+    let mut i = 0;
+
+    while i < unroll_len {
+      let v0 = *slice.get_unchecked(i);
+      let v1 = *slice.get_unchecked(i + 1);
+      let v2 = *slice.get_unchecked(i + 2);
+      let v3 = *slice.get_unchecked(i + 3);
+
+      let enc0 = v0.fast_round_to_int(exp_factor);
+      let enc1 = v1.fast_round_to_int(exp_factor);
+      let enc2 = v2.fast_round_to_int(exp_factor);
+      let enc3 = v3.fast_round_to_int(exp_factor);
+
+      let d0 = F::decode_from_int(enc0, fac_int, frac_exp);
+      let d1 = F::decode_from_int(enc1, fac_int, frac_exp);
+      let d2 = F::decode_from_int(enc2, fac_int, frac_exp);
+      let d3 = F::decode_from_int(enc3, fac_int, frac_exp);
+
+      let ok0 = d0.to_raw_bits() == v0.to_raw_bits();
+      let ok1 = d1.to_raw_bits() == v1.to_raw_bits();
+      let ok2 = d2.to_raw_bits() == v2.to_raw_bits();
+      let ok3 = d3.to_raw_bits() == v3.to_raw_bits();
+
+      macro_rules! handle_one {
+        ($idx:expr, $val:expr, $enc:expr, $ok:expr) => {
+          if $ok {
+            enc_ptr.add($idx).write($enc);
+            min_val = min_val.min($enc);
+            max_val = max_val.max($enc);
+          } else {
+            enc_ptr.add($idx).write(F::ZERO_INT);
+            exceptions.push(Exception {
+              pos: $idx,
+              bits: $val.to_raw_bits(),
+            });
+          }
+        };
+      }
+
+      if ok0 && ok1 && ok2 && ok3 {
+        enc_ptr.add(i).write(enc0);
+        enc_ptr.add(i + 1).write(enc1);
+        enc_ptr.add(i + 2).write(enc2);
+        enc_ptr.add(i + 3).write(enc3);
+        min_val = min_val.min(enc0).min(enc1).min(enc2).min(enc3);
+        max_val = max_val.max(enc0).max(enc1).max(enc2).max(enc3);
+      } else {
+        handle_one!(i, v0, enc0, ok0);
+        handle_one!(i + 1, v1, enc1, ok1);
+        handle_one!(i + 2, v2, enc2, ok2);
+        handle_one!(i + 3, v3, enc3, ok3);
+        if exceptions.len() > 128 {
+          return (F::MAX_INT, F::MIN_INT);
+        }
+      }
+      i += 4;
+    }
+
+    while i < len {
+      let val = *slice.get_unchecked(i);
+      let enc = val.fast_round_to_int(exp_factor);
+      let d = F::decode_from_int(enc, fac_int, frac_exp);
+      if d.to_raw_bits() == val.to_raw_bits() {
         enc_ptr.add(i).write(enc);
         min_val = min_val.min(enc);
         max_val = max_val.max(enc);
