@@ -34,6 +34,10 @@ pub fn stream_ack<E: Engine, K: AsRef<[u8]>>(
 where
   Error: From<E::Error>,
 {
+  if entry_ids.is_empty() {
+    return Ok(0);
+  }
+
   let key_bytes = key.as_ref();
   let kc = db.kc();
   let data_ks = db.data();
@@ -44,6 +48,38 @@ where
     None => return Ok(0),
   };
   let mut group_meta = StreamConsumerGroupMeta::decode(&group_bytes).unwrap_or_default();
+  if group_meta.pending_number == 0 {
+    return Ok(0);
+  }
+
+  // 单 ID 确认高频快路径（零 HashSet / HashMap 堆分配）
+  if entry_ids.len() == 1 {
+    let id = entry_ids[0];
+    let pel_k = key::pel_item(&kc, key_bytes, group_name.as_bytes(), id.ms, id.seq);
+    if let Some(pel_bytes) = data_ks.get(&pel_k)? {
+      let mut batch = db.batch();
+      if let Some(pel_entry) = StreamPelEntry::decode(&pel_bytes) {
+        let consumer_k = key::consumer_meta(
+          &kc,
+          key_bytes,
+          group_name.as_bytes(),
+          pel_entry.consumer_name.as_bytes(),
+        );
+        if let Some(c_bytes) = data_ks.get(&consumer_k)?
+          && let Some(mut c_meta) = StreamConsumerMeta::decode(&c_bytes)
+        {
+          c_meta.pending_number = c_meta.pending_number.saturating_sub(1);
+          batch.insert_data(&consumer_k, &c_meta.encode());
+        }
+      }
+      batch.rm_data(&pel_k);
+      group_meta.pending_number = group_meta.pending_number.saturating_sub(1);
+      batch.insert_data(&group_k, &group_meta.encode());
+      batch.commit()?;
+      return Ok(1);
+    }
+    return Ok(0);
+  }
 
   let mut acknowledged = 0u64;
   let mut consumer_acks: HashMap<String, u64> = HashMap::new();

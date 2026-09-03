@@ -91,7 +91,21 @@ where
 
   let key_bytes = key.as_ref();
   let now_ms = current_now_ms();
-  if get_stream_meta(db, key_bytes, now_ms)?.is_none() {
+  let meta = match get_stream_meta(db, key_bytes, now_ms)? {
+    Some(m) => m,
+    None => return Ok(Vec::new()),
+  };
+
+  if meta.base.size == 0 {
+    return Ok(Vec::new());
+  }
+
+  // O(1) 内存级快速边界校验：若查询区间完全落在当前流的 [first_entry_id, last_entry_id] 之外，直接短路返回
+  if !options.reverse {
+    if options.start > meta.last_entry_id || options.end < meta.first_entry_id {
+      return Ok(Vec::new());
+    }
+  } else if options.start < meta.first_entry_id || options.end > meta.last_entry_id {
     return Ok(Vec::new());
   }
 
@@ -111,7 +125,7 @@ where
   let data_ks = db.data();
   let prefix = key::prefix_stack(&kc, key_bytes);
   let max_count = options.count.unwrap_or(usize::MAX);
-  let mut results = Vec::with_capacity(max_count.min(1024));
+  let mut results = Vec::with_capacity(max_count.min(meta.base.size as usize));
 
   let mut process_entry = |sid: StreamId, v: &[u8]| -> bool {
     if !options.reverse {
