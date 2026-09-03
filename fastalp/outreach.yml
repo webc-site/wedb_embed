@@ -316,5 +316,78 @@ records:
     pr_number: 46
     url: https://github.com/cwida/ALP/pull/46
     title: "docs: add fastalp to list of systems using and implementing ALP"
+    status: closed
+    date: 2026-09-04
+
+  - type: pull_request
+    repo: cwida/ALP
+    pr_number: 47
+    url: https://github.com/cwida/ALP/pull/47
+    title: "feat(bench): integrate fastalp Rust benchmark runner and comparison target"
     status: submitted
     date: 2026-09-04
+
+  - type: discussion
+    repo: taosdata/TDengine
+    discussion: 35456
+    url: https://github.com/taosdata/TDengine/discussions/35456
+    title: "Sharing benchmark observations on decimal floating-point compression in industrial time-series: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: apache/iotdb
+    discussion: 18581
+    url: https://github.com/apache/iotdb/discussions/18581
+    title: "Sharing benchmark observations on decimal floating-point compression in IoT time-series: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: risingwavelabs/risingwave
+    discussion: 26936
+    url: https://github.com/orgs/risingwavelabs/discussions/26936
+    title: "Exploring fast decimal floating-point compression in Rust: benchmark observations and SIMD throughput from fastalp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: databendlabs/databend
+    discussion: 20437
+    url: https://github.com/databendlabs/databend/discussions/20437
+    title: "Sharing benchmark observations on decimal floating-point compression in columnar analytics: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: facebookincubator/velox
+    discussion: 18840
+    url: https://github.com/facebookincubator/velox/discussions/18840
+    title: "Sharing benchmark observations on decimal floating-point compression for columnar vectors: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: timeplus-io/proton
+    discussion: 1220
+    url: https://github.com/timeplus-io/proton/discussions/1220
+    title: "Sharing benchmark observations on decimal floating-point compression in streaming time-series: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: paradedb/paradedb
+    discussion: 6204
+    url: https://github.com/orgs/paradedb/discussions/6204
+    title: "Sharing benchmark observations on decimal floating-point compression in columnar analytics: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
+  - type: discussion
+    repo: apache/doris
+    discussion: 67516
+    url: https://github.com/apache/doris/discussions/67516
+    title: "Sharing benchmark observations on decimal floating-point compression in columnar analytics: comparing integer mapping with Gorilla/Chimp"
+    status: posted
+    date: 2026-09-04
+
