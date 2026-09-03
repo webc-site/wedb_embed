@@ -1,5 +1,5 @@
 use core::hint::unreachable_unchecked;
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, iter::once};
 
 use memchr::memchr;
 use rapidhash::RapidHashMap as HashMap;
@@ -642,9 +642,7 @@ where
     item: I,
     opt_li: impl IntoIterator<Item = CfInsert>,
   ) -> Result<bool> {
-    let mut opts: Vec<_> = opt_li.into_iter().collect();
-    opts.push(CfInsert::Nx);
-    let res = self.cf_insert(key, &[item], opts)?;
+    let res = self.cf_insertnx(key, &[item], opt_li)?;
     Ok(res.first().copied().unwrap_or(false))
   }
 
@@ -655,9 +653,7 @@ where
     items: &[I],
     opt_li: impl IntoIterator<Item = CfInsert>,
   ) -> Result<Vec<bool>> {
-    let mut opts: Vec<_> = opt_li.into_iter().collect();
-    opts.push(CfInsert::Nx);
-    self.cf_insert(key, items, opts)
+    self.cf_insert(key, items, opt_li.into_iter().chain(once(CfInsert::Nx)))
   }
 
   #[inline]
@@ -934,7 +930,6 @@ where
     let kc = self.kc();
     let key_bytes = key.as_ref();
     let meta_k = key::cuckoo_meta(&kc, key_bytes);
-    let _meta_ks = self.meta();
     let data_ks = self.data();
 
     let now_ms = current_now_ms();

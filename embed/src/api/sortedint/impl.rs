@@ -55,7 +55,6 @@ where
     let prefix = compose_si_prefix_stack(&kc, k_bytes);
     let now_ms = current_now_ms();
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let mut batch = self.batch();
     let (mut meta, is_fresh) =
@@ -66,28 +65,17 @@ where
     let prefix_len = item_buf.len();
     item_buf.extend_from_slice(&[0u8; BE_LEN]);
 
-    if ids.len() == 1 {
-      let id = ids[0];
+    let mut seen = HashSet::with_capacity(ids.len());
+    for &id in ids {
+      if !seen.insert(id) {
+        continue;
+      }
       let be_bytes = encode_be_u64(id);
       item_buf[prefix_len..].copy_from_slice(&be_bytes);
       if is_fresh || !data_ks.contains_key(&item_buf)? {
-        added = 1;
+        added += 1;
         meta.base.size = meta.base.size.saturating_add(1);
         batch.insert_data(&item_buf, b"");
-      }
-    } else {
-      let mut seen = HashSet::with_capacity(ids.len());
-      for &id in ids {
-        if !seen.insert(id) {
-          continue;
-        }
-        let be_bytes = encode_be_u64(id);
-        item_buf[prefix_len..].copy_from_slice(&be_bytes);
-        if is_fresh || !data_ks.contains_key(&item_buf)? {
-          added += 1;
-          meta.base.size = meta.base.size.saturating_add(1);
-          batch.insert_data(&item_buf, b"");
-        }
       }
     }
 
@@ -114,7 +102,6 @@ where
     let meta_k = compose_si_meta_key(&kc, k_bytes);
     let now_ms = current_now_ms();
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let mut meta = match get_meta_checked::<SortedintMeta, _>(self, k_bytes, &meta_k, now_ms)? {
       Some(m) => m,
@@ -128,28 +115,17 @@ where
     let mut deleted = 0usize;
     let mut batch = self.batch();
 
-    if ids.len() == 1 {
-      let id = ids[0];
+    let mut seen = HashSet::with_capacity(ids.len());
+    for &id in ids {
+      if !seen.insert(id) {
+        continue;
+      }
       let be_bytes = encode_be_u64(id);
       item_buf[prefix_len..].copy_from_slice(&be_bytes);
       if data_ks.contains_key(&item_buf)? {
-        deleted = 1;
+        deleted += 1;
         batch.rm_weak_data(&item_buf);
         meta.base.size = meta.base.size.saturating_sub(1);
-      }
-    } else {
-      let mut seen = HashSet::with_capacity(ids.len());
-      for &id in ids {
-        if !seen.insert(id) {
-          continue;
-        }
-        let be_bytes = encode_be_u64(id);
-        item_buf[prefix_len..].copy_from_slice(&be_bytes);
-        if data_ks.contains_key(&item_buf)? {
-          deleted += 1;
-          batch.rm_weak_data(&item_buf);
-          meta.base.size = meta.base.size.saturating_sub(1);
-        }
       }
     }
 

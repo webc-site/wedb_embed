@@ -158,47 +158,41 @@ where
       Bound::Included(end_k.as_slice())
     };
 
+    let mut results = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
+    let mut pos = 0usize;
+    let mut scan_entry = |k: &[u8]| -> bool {
+      if let Some(id) = extract_id(k, prefix_len) {
+        if pos < spec.offset {
+          pos += 1;
+          return true;
+        }
+        results.push(id);
+        if let Some(cnt) = spec.count
+          && results.len() >= cnt
+        {
+          return false;
+        }
+      }
+      true
+    };
+
+    let range = self.data().range((start_bound, end_bound));
     if !spec.reversed {
-      let mut results = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
-      let mut pos = 0usize;
-      for g in self.data().range((start_bound, end_bound)) {
+      for g in range {
         let entry = g?;
-        let k = entry.key();
-        if let Some(id) = extract_id(k, prefix_len) {
-          if pos < spec.offset {
-            pos += 1;
-            continue;
-          }
-          results.push(id);
-          if let Some(cnt) = spec.count
-            && results.len() >= cnt
-          {
-            break;
-          }
+        if !scan_entry(entry.key()) {
+          break;
         }
       }
-      Ok(results)
     } else {
-      let mut results = Vec::with_capacity(spec.count.unwrap_or(16).min(1024));
-      let mut pos = 0usize;
-      for g in self.data().range((start_bound, end_bound)).rev() {
+      for g in range.rev() {
         let entry = g?;
-        let k = entry.key();
-        if let Some(id) = extract_id(k, prefix_len) {
-          if pos < spec.offset {
-            pos += 1;
-            continue;
-          }
-          results.push(id);
-          if let Some(cnt) = spec.count
-            && results.len() >= cnt
-          {
-            break;
-          }
+        if !scan_entry(entry.key()) {
+          break;
         }
       }
-      Ok(results)
     }
+    Ok(results)
   }
 
   #[inline]

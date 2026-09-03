@@ -11,7 +11,7 @@ use crate::{
   key::{clear_prefix_in_batch, get_meta_checked},
   meta::current_now_ms,
   normalize_range,
-  wedb::Db,
+  wedb::{Db, DbBatch},
 };
 
 /// Range removal operations for Sortedint (ZREMRANGEBYRANK, ZREMRANGEBYSCORE equivalents).
@@ -72,16 +72,7 @@ where
       batch.rm_weak_data(entry.key());
     }
 
-    if deleted > 0 {
-      meta.base.size = meta.base.size.saturating_sub(deleted as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(meta_k.as_slice());
-      } else {
-        batch.insert_meta(meta_k.as_slice(), &meta.encode());
-      }
-      batch.commit()?;
-    }
-
+    commit_deleted_meta(meta_k.as_slice(), &mut meta, deleted, batch)?;
     Ok(deleted)
   }
 
@@ -139,16 +130,29 @@ where
       }
     }
 
-    if deleted > 0 {
-      meta.base.size = meta.base.size.saturating_sub(deleted as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(meta_k.as_slice());
-      } else {
-        batch.insert_meta(meta_k.as_slice(), &meta.encode());
-      }
-      batch.commit()?;
-    }
-
+    commit_deleted_meta(meta_k.as_slice(), &mut meta, deleted, batch)?;
     Ok(deleted)
   }
+}
+
+#[inline]
+fn commit_deleted_meta<E: Engine>(
+  meta_k: &[u8],
+  meta: &mut SortedintMeta,
+  deleted: usize,
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  if deleted > 0 {
+    meta.base.size = meta.base.size.saturating_sub(deleted as u64);
+    if meta.base.size == 0 {
+      batch.rm_meta(meta_k);
+    } else {
+      batch.insert_meta(meta_k, &meta.encode());
+    }
+    batch.commit()?;
+  }
+  Ok(())
 }

@@ -15,6 +15,7 @@ use crate::{
   engine::{Engine, Partition},
   error::{Error, Result},
   key::get_meta_checked,
+  key_composer::KeyComposer,
   meta::current_now_ms,
   wedb::Db,
 };
@@ -191,22 +192,7 @@ where
       if !seen.insert(k_bytes) {
         continue;
       }
-      let meta_k = compose_hll_meta_key(&kc, k_bytes);
-      let meta =
-        match get_meta_checked::<HyperLogLogMeta, _>(self, k_bytes, meta_k.as_slice(), now_ms)? {
-          Some(meta) => meta,
-          None => continue,
-        };
-      let data_k = compose_hll_data_key(&kc, k_bytes);
-      if let Some(reg) = data_ks.get(data_k.as_slice())? {
-        match meta.encode_type {
-          HllEncodeType::Dense => {
-            hll_merge_bytes(&mut merged, &reg);
-          }
-          HllEncodeType::Sparse => {
-            hll_merge_sparse_into_dense(&mut merged, &reg);
-          }
-        }
+      if merge_hll_source(self, &kc, k_bytes, now_ms, &mut merged)? {
         has_any = true;
       }
     }
@@ -269,23 +255,7 @@ where
       if !seen.insert(k_bytes) {
         continue;
       }
-      let meta_k = compose_hll_meta_key(&kc, k_bytes);
-      let meta =
-        match get_meta_checked::<HyperLogLogMeta, _>(self, k_bytes, meta_k.as_slice(), now_ms)? {
-          Some(meta) => meta,
-          None => continue,
-        };
-      let data_k = compose_hll_data_key(&kc, k_bytes);
-      if let Some(reg) = data_ks.get(data_k.as_slice())? {
-        match meta.encode_type {
-          HllEncodeType::Dense => {
-            hll_merge_bytes(&mut merged, &reg);
-          }
-          HllEncodeType::Sparse => {
-            hll_merge_sparse_into_dense(&mut merged, &reg);
-          }
-        }
-      }
+      let _ = merge_hll_source(self, &kc, k_bytes, now_ms, &mut merged)?;
     }
 
     dest_meta.base.size = HLL_DENSE_SIZE as u64;
@@ -300,5 +270,37 @@ where
   #[inline]
   pub fn pfselftest(&self) -> bool {
     HyperLogLog::selftest()
+  }
+}
+
+#[inline]
+fn merge_hll_source<E: Engine>(
+  db: &Db<E>,
+  kc: &KeyComposer,
+  k_bytes: &[u8],
+  now_ms: u64,
+  merged: &mut [u8],
+) -> Result<bool>
+where
+  Error: From<E::Error>,
+{
+  let meta_k = compose_hll_meta_key(kc, k_bytes);
+  let meta = match get_meta_checked::<HyperLogLogMeta, _>(db, k_bytes, meta_k.as_slice(), now_ms)? {
+    Some(meta) => meta,
+    None => return Ok(false),
+  };
+  let data_k = compose_hll_data_key(kc, k_bytes);
+  if let Some(reg) = db.data().get(data_k.as_slice())? {
+    match meta.encode_type {
+      HllEncodeType::Dense => {
+        hll_merge_bytes(merged, &reg);
+      }
+      HllEncodeType::Sparse => {
+        hll_merge_sparse_into_dense(merged, &reg);
+      }
+    }
+    Ok(true)
+  } else {
+    Ok(false)
   }
 }
