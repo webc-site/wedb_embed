@@ -4,7 +4,7 @@ use crate::{
   api::timeseries::{
     BucketTimestampType, GroupReducerType, IntoTsRange, TSChunk, TimeSeriesLabelFilter,
     TimeSeriesMeta, TsFilter, TsMGet, TsMGetResult, TsMRange, TsMRangeResult,
-    group_samples_and_reduce, r#impl::TsRangeQuery, key,
+    group_samples_and_reduce, key, range::TsRangeQuery,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},

@@ -7,7 +7,9 @@ pub mod key;
 pub mod meta;
 pub mod mrange;
 pub mod opt;
+pub mod range;
 pub mod reducer;
+pub mod rule;
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 pub use chunk::{ChunkHeader, MergeStats, TSChunk};
