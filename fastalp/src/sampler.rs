@@ -94,6 +94,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
   }
 
   let mut best_cost = size_of::<F>() * 8 * sample_len;
+  let mut best_exceptions = sample_len;
   let mut best_params = BestParams {
     exp: 0,
     fac: 0,
@@ -165,6 +166,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
 
         if total_cost < best_cost {
           best_cost = total_cost;
+          best_exceptions = exceptions;
           best_params = BestParams {
             exp,
             fac: 0,
@@ -208,6 +210,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
 
           if total_cost < best_cost {
             best_cost = total_cost;
+            best_exceptions = div_exceptions;
             best_params = BestParams {
               exp,
               fac: 0,
@@ -227,8 +230,20 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     return best_params;
   }
 
+  // 若纯十进制已达到 0 异常，只需向下搜索更小指数 (exp < best_exp)。
+  // 指数 >= best_exp 的因子组合数值跨度与位宽恒大于等于纯十进制，不可能更优。
+  let max_search_exp = if best_exceptions == 0 {
+    best_params.exp.saturating_sub(1)
+  } else {
+    F::MAX_EXPONENT
+  };
+
+  if max_search_exp == 0 {
+    return best_params;
+  }
+
   // 第二轮：当纯十进制无法满足极低开销时，扩展搜索混合因子 (fac > 0)
-  for exp in 1..=F::MAX_EXPONENT {
+  for exp in 1..=max_search_exp {
     let max_fac = exp.min(F::MAX_FAC);
     let frac_exp = F::frac_exp(exp);
 
@@ -247,7 +262,8 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
         }
         pre_enc[i] = res;
       }
-      if pre_exc >= 2 {
+      let fac_penalty = sample_len * 2;
+      if pre_exc >= 2 || pre_exc * F::EXCEPTION_PENALTY + fac_penalty >= best_cost {
         continue;
       }
 
@@ -268,20 +284,19 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
           max_val = max_val.max(enc);
         } else {
           exceptions += 1;
-          if exceptions * F::EXCEPTION_PENALTY >= best_cost {
+          if exceptions * F::EXCEPTION_PENALTY + fac_penalty >= best_cost {
             break;
           }
         }
       }
 
-      if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY < best_cost {
+      if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY + fac_penalty < best_cost {
         let max_offset = if min_val <= max_val {
           F::calc_range(min_val, max_val)
         } else {
           0
         };
         let bit_width = F::bits_needed(max_offset) as usize;
-        let fac_penalty = sample_len * 2;
         let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY + fac_penalty;
 
         if total_cost < best_cost {

@@ -112,13 +112,8 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
 
     let encVs = "";
     if (isFastalp) {
-      if (encSpeed >= cppEnc) {
-        const mult = (encSpeed / cppEnc).toFixed(1);
-        encVs = isZh ? `较 C++ 快 ${mult}x` : `${mult}x vs C++`;
-      } else {
-        const mult = (encSpeed / cppEnc).toFixed(1);
-        encVs = isZh ? `${mult}x (含全量采样)` : `${mult}x (full sample)`;
-      }
+      const mult = (encSpeed / cppEnc).toFixed(1);
+      encVs = isZh ? `较 C++ 快 ${mult}x` : `${mult}x vs C++`;
     } else if (isCpp) {
       encVs = i18n.baseline_text;
     } else {
@@ -166,16 +161,16 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       scene_geo: { id: "snappy", name: "Snappy (snap)" },
       scene_macro: { id: "zstd", name: "Zstd (Level 3)" },
     };
-    const fourth = fourthAlgoMap[sceneKey] || { id: "zstd", name: "Zstd (Level 3)" };
 
+    const fourth = fourthAlgoMap[sceneKey] || { id: "zstd", name: "Zstd" };
     const list = [
       { id: "fastalp", name: "fastalp (Rust)", isFastalp: true },
       { id: "cpp_alp", name: "C++ ALP", isCpp: true },
       { id: "pco", name: "Pcodec (pco)" },
-      { id: fourth.id, name: fourth.name },
+      fourth
     ];
 
-    const cppAlgoObj = algorithms.find(a => a.algorithm === "cpp_alp");
+    const cppAlgoObj = algorithms.find(a => a.algorithm === "cpp_alp") || algorithms[1];
     const cppScene = computeScenarioMetrics(cppAlgoObj, sceneKey);
 
     return list.map(item => {
@@ -222,42 +217,42 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       title: i18n.scene_sensor_title,
       sub: i18n.scene_sensor_sub,
       badge: i18n.scene_sensor_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_sensor")
     },
     {
       title: i18n.scene_ramp_title,
       sub: i18n.scene_ramp_sub,
       badge: i18n.scene_ramp_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_ramp")
     },
     {
       title: i18n.scene_stock_title,
       sub: i18n.scene_stock_sub,
       badge: i18n.scene_stock_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_finance")
     },
     {
       title: i18n.scene_const_title,
       sub: i18n.scene_const_sub,
       badge: i18n.scene_const_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_steady")
     },
     {
       title: i18n.scene_geo_title,
       sub: i18n.scene_geo_sub,
       badge: i18n.scene_geo_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_geo")
     },
     {
       title: i18n.scene_macro_title,
       sub: i18n.scene_macro_sub,
       badge: i18n.scene_macro_badge,
-      badgeW: isZh ? 76 : 84,
+      badgeW: isZh ? 112 : 124,
       items: buildScenarioItems("scene_macro")
     }
   ];

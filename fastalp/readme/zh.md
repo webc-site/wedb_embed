@@ -3,7 +3,7 @@
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Zs/yTq_oHQ_1GlnxxIr1LKg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@h3/ImUta3Tt0h11UPnnCqRg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -258,7 +258,7 @@ fastalp/
 
 在完全相同的测试硬件与数据负载下，对比业界主流浮点与时序压缩库：
 - **fastalp** (Rust Edition 2024, SIMD NEON)
-- **C++ ALP** (官方 C++ 论文原版实现, Clang 22.1.8 -O3)
+- **C++ ALP** (论文原版实现, Clang 22.1.8 -O3)
 - **Pcodec / pco 1.0.3** (现代列式数值压缩, ANS 熵编码)
 - **Zstandard / zstd 0.13** (通用流式字典压缩, Level 3)
 - **LZ4 / lz4_flex 0.14** (极速通用字节压缩)
@@ -266,9 +266,20 @@ fastalp/
 - **Chimp128** (VLDB 2022 浮点时序压缩)
 - **Gorilla** (VLDB 2015 XOR 浮点时序压缩)
 
-### 评测数据集全景与公开数据源 (35 项工业与学术基准)
+### C++ ALP 测试机制与 Fork 开源仓库
 
-本评测严格采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 4 个工业真实极端负载场景（共 35 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
+- **C++ ALP Fork 仓库地址**：[github.com/x-at-01/ALP](https://github.com/x-at-01/ALP)
+- **测试代码与核心逻辑说明**：
+  - **核心算法保持 100% 官方原貌**：Fork 仓库未对 C++ ALP 的核心算法逻辑（`include/` 目录）做任何修改，原汁原味保留官方实现的向量化与十进制反向映射逻辑；
+  - **端到端测试口径统一**：
+    - C++ ALP 官方原版测试套件（`ALP/benchmarks/benchmark.cpp`）在计时循环外执行了 `alp::encoder<PT>::init`（即未将采样开销计入压缩耗时）；
+    - 在 Fork 仓库中，我们将 `alp::encoder<PT>::init` 纳入计时测试循环，并在 macOS ARM64 环境下以高精度时钟（`std::chrono::high_resolution_clock`）统计端到端全量压缩耗时；
+    - 同时在 `ALP/data/samples/` 与 `your_own_dataset.csv` 中补充了 6 大典型工业场景，使 C++ ALP 在本物理机上完整跑完全量全部 37 个评测数据集（31 个论文公开数据集 + 6 个工业场景补充数据集）；
+  - **全量无偏统计**：所有算法统一以全量 37 项评测数据计算几何平均值（Geometric Mean），杜绝任何采样偏倚。
+
+### 评测数据集全景与公开数据源 (37 项工业与学术全集)
+
+本评测严格采用 ALP 官方论文收录的全部 31 个公开时序与列存测试集，并补充 6 个工业真实极端负载场景（共 37 项基准），涵盖物联网、工业制造、量化金融、地理测绘、医疗社保及政务统计：
 
 | 领域分类 | 数据集名称 | 数据特征与物理意义 | 官方数据源与权威链接 |
 |---|---|---|---|

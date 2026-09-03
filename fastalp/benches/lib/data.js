@@ -104,6 +104,11 @@ export const datasetMeta = {
 export const computeScenarioMetrics = (algo, sceneKey) => {
   if (!algo) return { dec_gb_s: 1.0, enc_gb_s: 0.5, ratio: 1.0 };
   const ds = algo.paper_31?.datasets || [];
+  const exact = ds.find((d) => d.name === sceneKey);
+  if (exact) {
+    return { dec_gb_s: exact.dec_gb_s, enc_gb_s: exact.enc_gb_s, ratio: exact.ratio };
+  }
+
   if (sceneKey === "scene_ramp") {
     if (algo.micro_benchmarks?.ramp_1024) {
       const mb = algo.micro_benchmarks.ramp_1024;
@@ -162,13 +167,15 @@ export const loadBenchData = async () => {
 
     // Compute dynamic scenario metrics from real run datasets
     for (const scKey of scenarioKeys) {
-      const m = computeScenarioMetrics(content, scKey);
-      allDatasets.push({
-        name: scKey,
-        dec_gb_s: m.dec_gb_s,
-        enc_gb_s: m.enc_gb_s,
-        ratio: m.ratio
-      });
+      if (!allDatasets.some((d) => d.name === scKey)) {
+        const m = computeScenarioMetrics(content, scKey);
+        allDatasets.push({
+          name: scKey,
+          dec_gb_s: m.dec_gb_s,
+          enc_gb_s: m.enc_gb_s,
+          ratio: m.ratio
+        });
+      }
     }
 
     // Calculate Comprehensive Geometric Mean across ALL datasets + ALL scenarios

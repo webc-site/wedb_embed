@@ -3,7 +3,7 @@
 Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compression) algorithm with unified generic interfaces supporting `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@V3/sMETzDPoWnuKmS2eSC7Q.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@GO/7tfPLVX02ItlFICmX3sQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -266,9 +266,20 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 - **Chimp128** (VLDB 2022 floating-point time series)
 - **Gorilla** (VLDB 2015 XOR floating-point time series)
 
-### Evaluation Datasets & Authoritative Data Sources (All 35 Benchmarks)
+### C++ ALP Benchmark Methodology & Fork Repository
 
-This benchmark strictly adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 4 industrial extreme-load scenarios (35 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
+- **C++ ALP Fork Repository**: [github.com/x-at-01/ALP](https://github.com/x-at-01/ALP)
+- **Methodology & Architectural Verification**:
+  - **Zero Modifications to Core Logic**: The fork preserves all core algorithm implementations in `include/` 100% untouched, ensuring true reference fidelity;
+  - **Unified End-to-End Measurement**:
+    - The original C++ ALP benchmark suite (`ALP/benchmarks/benchmark.cpp`) invoked `alp::encoder<PT>::init` outside the timing loop, measuring only raw encoding with pre-determined parameters rather than the end-to-end compression pipeline;
+    - In our fork, `init` is integrated into the benchmark loop and measured using `std::chrono::high_resolution_clock` on ARM64 macOS;
+    - All 6 industrial scenario datasets were integrated into `data/samples/` and `your_own_dataset.csv`, ensuring C++ ALP executed the complete suite of all 37 datasets (31 paper datasets + 6 industrial scenarios) on the exact same physical host;
+  - **Strict Geometric Mean Aggregation**: All 37 benchmarks are evaluated end-to-end and aggregated via Geometric Mean across all algorithms.
+
+### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
+
+This benchmark strictly adopts all 31 real-world public time-series and columnar datasets from the original ALP publication, augmented with 6 industrial extreme-load scenarios (37 benchmarks in total) spanning IoT telemetry, quantitative finance, civic governance, healthcare billing, and high-precision geospatial tracking:
 
 | Domain | Dataset Name | Physical Description & Data Characteristics | Official Data Source & Link |
 |---|---|---|---|

@@ -48,24 +48,38 @@ pub fn decode_delta<F: AlpFloat>(
     unsafe {
       let ptr = dst.as_mut_ptr().add(start_idx);
       let mut curr = first;
+      macro_rules! reconstruct_unrolled {
+        ($dec_expr:expr) => {{
+          let d2 = F::int_add(min_delta, min_delta);
+          let d3 = F::int_add(d2, min_delta);
+          let d4 = F::int_add(d2, d2);
+          let unroll_end = 1 + ((count - 1) & !3);
+          let mut i = 1;
+          while i < unroll_end {
+            *ptr.add(i) = $dec_expr(F::int_add(curr, min_delta));
+            *ptr.add(i + 1) = $dec_expr(F::int_add(curr, d2));
+            *ptr.add(i + 2) = $dec_expr(F::int_add(curr, d3));
+            *ptr.add(i + 3) = $dec_expr(F::int_add(curr, d4));
+            curr = F::int_add(curr, d4);
+            i += 4;
+          }
+          while i < count {
+            curr = F::int_add(curr, min_delta);
+            *ptr.add(i) = $dec_expr(curr);
+            i += 1;
+          }
+        }};
+      }
+
       if use_div {
         *ptr = F::decode_from_int_div(first, exp_factor);
-        for i in 1..count {
-          curr = F::int_add(curr, min_delta);
-          *ptr.add(i) = F::decode_from_int_div(curr, exp_factor);
-        }
+        reconstruct_unrolled!(|c| F::decode_from_int_div(c, exp_factor));
       } else if fac_int == 1 {
         *ptr = F::decode_from_int(first, 1, frac_flt);
-        for i in 1..count {
-          curr = F::int_add(curr, min_delta);
-          *ptr.add(i) = F::decode_from_int(curr, 1, frac_flt);
-        }
+        reconstruct_unrolled!(|c| F::decode_from_int(c, 1, frac_flt));
       } else {
         *ptr = F::decode_from_int(first, fac_int, frac_flt);
-        for i in 1..count {
-          curr = F::int_add(curr, min_delta);
-          *ptr.add(i) = F::decode_from_int(curr, fac_int, frac_flt);
-        }
+        reconstruct_unrolled!(|c| F::decode_from_int(c, fac_int, frac_flt));
       }
       dst.set_len(start_idx + count);
     }
@@ -150,10 +164,13 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
       let d2 = F::u64_to_int_add(chunk[2], min_delta);
       let d3 = F::u64_to_int_add(chunk[3], min_delta);
 
+      let s01 = F::int_add(d0, d1);
+      let s23 = F::int_add(d2, d3);
+
       let c0 = F::int_add(*curr, d0);
-      let c1 = F::int_add(c0, d1);
+      let c1 = F::int_add(*curr, s01);
       let c2 = F::int_add(c1, d2);
-      let c3 = F::int_add(c2, d3);
+      let c3 = F::int_add(c1, s23);
       *curr = c3;
 
       *out_ptr.add(idx) = decode_fn(c0);
