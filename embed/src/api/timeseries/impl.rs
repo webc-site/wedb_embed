@@ -130,9 +130,14 @@ where
     let mut final_value = value;
 
     if meta.total_samples == 0 {
-      let encoded_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
       let item_k = key::chunk(&kc, key_bytes, timestamp);
-      batch.insert_data(&item_k, &encoded_chunk);
+      if meta.chunk_type == ChunkType::Uncompressed {
+        let encoded_chunk = TSChunk::encode_single_uncompressed(sample);
+        batch.insert_data(&item_k, &encoded_chunk);
+      } else {
+        let encoded_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
+        batch.insert_data(&item_k, &encoded_chunk);
+      }
       meta.total_samples = 1;
       meta.base.size = 1;
       meta.first_time = timestamp;
@@ -146,24 +151,29 @@ where
         ))
         .next_back()
         .transpose()?;
-      let (old_k, old_data) = match found_entry {
+      let (chunk_first_ts, old_data) = match found_entry {
         Some(entry) if entry.key().starts_with(&prefix) => {
-          (entry.key().to_vec(), entry.value().to_vec())
+          let ts = if let Ok(b8) = entry.key()[prefix.len()..].try_into() {
+            u64::from_be_bytes(b8)
+          } else {
+            0
+          };
+          (ts, entry.value().to_vec())
         }
         _ => {
           let entry = data_ks
             .prefix(&prefix)
             .next()
             .ok_or_else(|| Error::invalid_data(ERR_TSDB_CORRUPTED_DATA_INDEX))??;
-          (entry.key().to_vec(), entry.value().to_vec())
+          let ts = if let Ok(b8) = entry.key()[prefix.len()..].try_into() {
+            u64::from_be_bytes(b8)
+          } else {
+            0
+          };
+          (ts, entry.value().to_vec())
         }
       };
-
-      let chunk_first_ts = if let Ok(b8) = old_k[prefix.len()..].try_into() {
-        u64::from_be_bytes(b8)
-      } else {
-        0
-      };
+      let old_k = key::chunk(&kc, key_bytes, chunk_first_ts);
 
       // 极致优化快路径：未压缩 Chunk 单调递增快速原地追加（避免 O(K) 反序列化与重新编码，零中间堆分配）
       let fast_can_append = if meta.chunk_type == ChunkType::Uncompressed
@@ -222,9 +232,14 @@ where
               && samples.len() >= meta.chunk_size as usize
               && timestamp > last_sample_ts
             {
-              let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
               let new_item_k = key::chunk(&kc, key_bytes, timestamp);
-              batch.insert_data(&new_item_k, &new_chunk);
+              if meta.chunk_type == ChunkType::Uncompressed {
+                let encoded_chunk = TSChunk::encode_single_uncompressed(sample);
+                batch.insert_data(&new_item_k, &encoded_chunk);
+              } else {
+                let new_chunk = TSChunk::encode_with_type(&[sample], meta.chunk_type);
+                batch.insert_data(&new_item_k, &new_chunk);
+              }
               meta.base.size += 1;
             } else {
               samples.insert(insert_idx, sample);
