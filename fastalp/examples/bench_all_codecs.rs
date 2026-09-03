@@ -73,7 +73,7 @@ fn as_u8_slice(data: &[f64]) -> &[u8] {
 /// 通过 `compress_into` 和 `decompress_into` 复用预分配内存切片，
 /// 实现零冗余堆内存分配的纯算法性能测量。
 fn bench_fastalp(data: &[f64]) -> CodecResult {
-  let iters = 20;
+  let iters = 100;
   let mut compressed = Vec::with_capacity(data.len() * 2 + 64);
   let mut restored: Vec<f64> = Vec::with_capacity(data.len());
 

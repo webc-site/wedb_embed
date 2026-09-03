@@ -148,41 +148,57 @@ pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u
     let src_ptr = src.as_ptr();
 
     let mut i = 0;
-    while i + 4 <= count {
-      let bit_pos3 = (i + 3) * bw;
-      if (bit_pos3 >> 3) <= safe_limit_bytes {
-        let bit_pos0 = i * bw;
-        let bit_pos1 = (i + 1) * bw;
-        let bit_pos2 = (i + 2) * bw;
-        let w0 = u64::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u64>().read_unaligned());
-        let w1 = u64::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u64>().read_unaligned());
-        let w2 = u64::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u64>().read_unaligned());
-        let w3 = u64::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u64>().read_unaligned());
-        *dst_ptr.add(i) = (w0 >> (bit_pos0 & 7)) & mask;
-        *dst_ptr.add(i + 1) = (w1 >> (bit_pos1 & 7)) & mask;
-        *dst_ptr.add(i + 2) = (w2 >> (bit_pos2 & 7)) & mask;
-        *dst_ptr.add(i + 3) = (w3 >> (bit_pos3 & 7)) & mask;
-        i += 4;
-      } else {
-        break;
+    if bit_width <= 56 {
+      while i + 4 <= count {
+        let bit_pos3 = (i + 3) * bw;
+        if (bit_pos3 >> 3) <= safe_limit_bytes {
+          let bit_pos0 = i * bw;
+          let bit_pos1 = (i + 1) * bw;
+          let bit_pos2 = (i + 2) * bw;
+          let w0 = u64::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u64>().read_unaligned());
+          let w1 = u64::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u64>().read_unaligned());
+          let w2 = u64::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u64>().read_unaligned());
+          let w3 = u64::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u64>().read_unaligned());
+          *dst_ptr.add(i) = (w0 >> (bit_pos0 & 7)) & mask;
+          *dst_ptr.add(i + 1) = (w1 >> (bit_pos1 & 7)) & mask;
+          *dst_ptr.add(i + 2) = (w2 >> (bit_pos2 & 7)) & mask;
+          *dst_ptr.add(i + 3) = (w3 >> (bit_pos3 & 7)) & mask;
+          i += 4;
+        } else {
+          break;
+        }
       }
-    }
 
-    while i < count {
-      let bit_pos = i * bw;
-      let byte_offset = bit_pos >> 3;
-      let word = if byte_offset <= safe_limit_bytes {
-        u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-      } else {
-        let mut buf = [0u8; 8];
-        let available = src.len().saturating_sub(byte_offset).min(8);
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let word = if byte_offset <= safe_limit_bytes {
+          u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+        } else {
+          let mut buf = [0u8; 8];
+          let available = src.len().saturating_sub(byte_offset).min(8);
+          if available > 0 {
+            buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+          }
+          u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+        };
+        *dst_ptr.add(i) = (word >> (bit_pos & 7)) & mask;
+        i += 1;
+      }
+    } else {
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let mut buf = [0u8; 16];
+        let available = src.len().saturating_sub(byte_offset).min(16);
         if available > 0 {
           buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
         }
-        u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-      };
-      *dst_ptr.add(i) = (word >> (bit_pos & 7)) & mask;
-      i += 1;
+        let word =
+          (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
+        *dst_ptr.add(i) = word & mask;
+        i += 1;
+      }
     }
   }
 
@@ -416,39 +432,116 @@ pub fn bitunpack_into<F: AlpFloat>(
     }
 
     let mask = bit_mask(bit_width);
-    let mut acc: u128 = 0;
-    let mut bits_in_acc: u32 = 0;
-    let mut src_ptr = src.as_ptr();
-    let src_end = src.as_ptr().add(src.len());
+    let bw = bit_width as usize;
+    let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
+    let src_ptr = src.as_ptr();
 
     let mut i = 0;
-    while i < count && src_end.offset_from(src_ptr) >= BYTES_U64 as isize {
-      if bits_in_acc < bit_width as u32 {
-        let chunk = u64::from_le(src_ptr.cast::<u64>().read_unaligned());
-        acc |= (chunk as u128) << bits_in_acc;
-        bits_in_acc += BITS_U64 as u32;
-        src_ptr = src_ptr.add(BYTES_U64);
-      }
-      let off = (acc as u64) & mask;
-      acc >>= bit_width;
-      bits_in_acc -= bit_width as u32;
-      *dst_ptr = F::decode_from_offset(off, base, fac_int, frac_flt);
-      dst_ptr = dst_ptr.add(1);
-      i += 1;
-    }
+    if bit_width <= 56 {
+      if fac_int == 1 {
+        while i + 4 <= count {
+          let bit_pos3 = (i + 3) * bw;
+          if (bit_pos3 >> 3) <= safe_limit_bytes {
+            let bit_pos0 = i * bw;
+            let bit_pos1 = (i + 1) * bw;
+            let bit_pos2 = (i + 2) * bw;
+            let w0 = u64::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u64>().read_unaligned());
+            let w1 = u64::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u64>().read_unaligned());
+            let w2 = u64::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u64>().read_unaligned());
+            let w3 = u64::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u64>().read_unaligned());
+            let o0 = (w0 >> (bit_pos0 & 7)) & mask;
+            let o1 = (w1 >> (bit_pos1 & 7)) & mask;
+            let o2 = (w2 >> (bit_pos2 & 7)) & mask;
+            let o3 = (w3 >> (bit_pos3 & 7)) & mask;
+            *dst_ptr.add(i) = F::decode_from_offset_fac1(o0, base, frac_flt);
+            *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(o1, base, frac_flt);
+            *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(o2, base, frac_flt);
+            *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(o3, base, frac_flt);
+            i += 4;
+          } else {
+            break;
+          }
+        }
 
-    while i < count {
-      while bits_in_acc < bit_width as u32 && src_ptr < src_end {
-        acc |= (*src_ptr as u128) << bits_in_acc;
-        bits_in_acc += BITS_PER_BYTE as u32;
-        src_ptr = src_ptr.add(1);
+        while i < count {
+          let bit_pos = i * bw;
+          let byte_offset = bit_pos >> 3;
+          let word = if byte_offset <= safe_limit_bytes {
+            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+          } else {
+            let mut buf = [0u8; 8];
+            let available = src.len().saturating_sub(byte_offset).min(8);
+            if available > 0 {
+              buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+            }
+            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+          };
+          let off = (word >> (bit_pos & 7)) & mask;
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+          i += 1;
+        }
+      } else {
+        while i + 4 <= count {
+          let bit_pos3 = (i + 3) * bw;
+          if (bit_pos3 >> 3) <= safe_limit_bytes {
+            let bit_pos0 = i * bw;
+            let bit_pos1 = (i + 1) * bw;
+            let bit_pos2 = (i + 2) * bw;
+            let w0 = u64::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u64>().read_unaligned());
+            let w1 = u64::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u64>().read_unaligned());
+            let w2 = u64::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u64>().read_unaligned());
+            let w3 = u64::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u64>().read_unaligned());
+            let o0 = (w0 >> (bit_pos0 & 7)) & mask;
+            let o1 = (w1 >> (bit_pos1 & 7)) & mask;
+            let o2 = (w2 >> (bit_pos2 & 7)) & mask;
+            let o3 = (w3 >> (bit_pos3 & 7)) & mask;
+            *dst_ptr.add(i) = F::decode_from_offset(o0, base, fac_int, frac_flt);
+            *dst_ptr.add(i + 1) = F::decode_from_offset(o1, base, fac_int, frac_flt);
+            *dst_ptr.add(i + 2) = F::decode_from_offset(o2, base, fac_int, frac_flt);
+            *dst_ptr.add(i + 3) = F::decode_from_offset(o3, base, fac_int, frac_flt);
+            i += 4;
+          } else {
+            break;
+          }
+        }
+
+        while i < count {
+          let bit_pos = i * bw;
+          let byte_offset = bit_pos >> 3;
+          let word = if byte_offset <= safe_limit_bytes {
+            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+          } else {
+            let mut buf = [0u8; 8];
+            let available = src.len().saturating_sub(byte_offset).min(8);
+            if available > 0 {
+              buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+            }
+            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+          };
+          let off = (word >> (bit_pos & 7)) & mask;
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+          i += 1;
+        }
       }
-      let off = (acc as u64) & mask;
-      acc >>= bit_width;
-      bits_in_acc = bits_in_acc.saturating_sub(bit_width as u32);
-      *dst_ptr = F::decode_from_offset(off, base, fac_int, frac_flt);
-      dst_ptr = dst_ptr.add(1);
-      i += 1;
+    } else {
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let mut buf = [0u8; 16];
+        let available = src.len().saturating_sub(byte_offset).min(16);
+        if available > 0 {
+          buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+        }
+        let word =
+          (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
+        let off = word & mask;
+        if fac_int == 1 {
+          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
+        } else {
+          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
+        }
+        i += 1;
+      }
     }
 
     dst.set_len(old_len + count);
@@ -655,39 +748,68 @@ pub fn bitunpack_into_div<F: AlpFloat>(
     }
 
     let mask = bit_mask(bit_width);
-    let mut acc: u128 = 0;
-    let mut bits_in_acc: u32 = 0;
-    let mut src_ptr = src.as_ptr();
-    let src_end = src.as_ptr().add(src.len());
+    let bw = bit_width as usize;
+    let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
+    let src_ptr = src.as_ptr();
 
     let mut i = 0;
-    while i < count && src_end.offset_from(src_ptr) >= BYTES_U64 as isize {
-      if bits_in_acc < bit_width as u32 {
-        let chunk = u64::from_le(src_ptr.cast::<u64>().read_unaligned());
-        acc |= (chunk as u128) << bits_in_acc;
-        bits_in_acc += BITS_U64 as u32;
-        src_ptr = src_ptr.add(BYTES_U64);
+    if bit_width <= 56 {
+      while i + 4 <= count {
+        let bit_pos3 = (i + 3) * bw;
+        if (bit_pos3 >> 3) <= safe_limit_bytes {
+          let bit_pos0 = i * bw;
+          let bit_pos1 = (i + 1) * bw;
+          let bit_pos2 = (i + 2) * bw;
+          let w0 = u64::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u64>().read_unaligned());
+          let w1 = u64::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u64>().read_unaligned());
+          let w2 = u64::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u64>().read_unaligned());
+          let w3 = u64::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u64>().read_unaligned());
+          let o0 = (w0 >> (bit_pos0 & 7)) & mask;
+          let o1 = (w1 >> (bit_pos1 & 7)) & mask;
+          let o2 = (w2 >> (bit_pos2 & 7)) & mask;
+          let o3 = (w3 >> (bit_pos3 & 7)) & mask;
+          *dst_ptr.add(i) = F::decode_from_offset_div(o0, base, exp_factor);
+          *dst_ptr.add(i + 1) = F::decode_from_offset_div(o1, base, exp_factor);
+          *dst_ptr.add(i + 2) = F::decode_from_offset_div(o2, base, exp_factor);
+          *dst_ptr.add(i + 3) = F::decode_from_offset_div(o3, base, exp_factor);
+          i += 4;
+        } else {
+          break;
+        }
       }
-      let off = (acc as u64) & mask;
-      acc >>= bit_width;
-      bits_in_acc -= bit_width as u32;
-      *dst_ptr = F::decode_from_offset_div(off, base, exp_factor);
-      dst_ptr = dst_ptr.add(1);
-      i += 1;
-    }
 
-    while i < count {
-      while bits_in_acc < bit_width as u32 && src_ptr < src_end {
-        acc |= (*src_ptr as u128) << bits_in_acc;
-        bits_in_acc += BITS_PER_BYTE as u32;
-        src_ptr = src_ptr.add(1);
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let word = if byte_offset <= safe_limit_bytes {
+          u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+        } else {
+          let mut buf = [0u8; 8];
+          let available = src.len().saturating_sub(byte_offset).min(8);
+          if available > 0 {
+            buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+          }
+          u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+        };
+        let off = (word >> (bit_pos & 7)) & mask;
+        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
+        i += 1;
       }
-      let off = (acc as u64) & mask;
-      acc >>= bit_width;
-      bits_in_acc = bits_in_acc.saturating_sub(bit_width as u32);
-      *dst_ptr = F::decode_from_offset_div(off, base, exp_factor);
-      dst_ptr = dst_ptr.add(1);
-      i += 1;
+    } else {
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let mut buf = [0u8; 16];
+        let available = src.len().saturating_sub(byte_offset).min(16);
+        if available > 0 {
+          buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+        }
+        let word =
+          (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
+        let off = word & mask;
+        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
+        i += 1;
+      }
     }
 
     dst.set_len(old_len + count);
