@@ -48,7 +48,7 @@ version = "3.1.10"
 optional = true
 
 [dependencies.wedb_embed_engine]
-version = "0.1.8"
+version = "0.1.9"
 path = "../engine"
 
 [dependencies.fastalp]
