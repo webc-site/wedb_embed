@@ -34,9 +34,9 @@ description: 提交 Pull Request (PR) 与技术发帖自动化推广流程规范
      - `[fastalp](https://github.com/webc-site/wedb_embed/tree/main/fastalp)`
      - `[crates.io](https://crates.io/crates/fastalp)`
    - 核心性能指标基准：
-     - 解压吞吐：单核纯寄存器 SIMD 解码达到 55 至 77 GB/s（graupel 实测单核时序解码达到 252 Mpt/s）。
-     - 压缩吞吐：批量端到端编码达到 6.1 至 23.1 GB/s（graupel 实测时序编码达到 122 Mpt/s）。
-     - 压缩比：ALP 论文 31 个公开标准数据集平均压缩比达到 2.29x；真实气象水文数据达到 1.225 bytes/point（13.1x vs uncompressed）。
+     - 解压吞吐：单核纯寄存器 SIMD 解码达到 55 至 77 GB/s（graupel 实测单核时序解码达到 252 Mpt/s；chimp 基准实测解码延迟统一为 0.423 µs/1000 点即 423 ns，折合 23.6 亿点/秒，较 Gorilla 5.920 µs、Chimp 9.270 µs 提速 14x 至 22x）。
+     - 压缩吞吐：批量端到端编码达到 6.1 至 23.1 GB/s（graupel 实测时序编码达到 122 Mpt/s；chimp 基准实测编码延迟统一为 2.255 µs/1000 点，较 Gorilla 6.042 µs、Chimp 8.631 µs 提速 2.7x 至 3.8x）。
+     - 压缩比：ALP 论文 31 个公开标准数据集平均压缩比达到 2.29x；真实气象水文数据达到 1.225 bytes/point（13.1x vs uncompressed）；chimp 基准（气象、德股、磁盘真实混合时序）实测达到 16.34 bits/val（优于 Chimp128 17.29 bits/val、Patas 21.51 bits/val、Gorilla 52.70 bits/val）。
      - 保底机制：内置 Raw Fallback，高熵与噪声浮点序列零膨胀。
 
 4. 去重与记录机制（必须严格执行）：
@@ -86,7 +86,8 @@ cargo fmt --manifest-path /tmp/<repo_name>/Cargo.toml --check
 ```bash
 git -C /tmp/<repo_name> add .
 git -C /tmp/<repo_name> commit -m "feat(codec): add ALP (Adaptive Lossless Floating-Point) compression codec"
-git -C /tmp/<repo_name> push -u origin feat/add-fastalp
+# 若本地存在全局 SSH rewrite 规则导致 SSH 鉴权失败，使用 GIT_CONFIG_GLOBAL=/dev/null 走 HTTPS 令牌推送：
+GIT_CONFIG_GLOBAL=/dev/null git -C /tmp/<repo_name> push "https://x-at-01:$GH_TOKEN@github.com/<your_username>/<repo_name>.git" feat/add-fastalp
 ```
 
 ### 步骤 6：通过 gh pr create 提交 Pull Request
