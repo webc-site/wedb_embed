@@ -2,7 +2,7 @@
 
 #### Hardware & Test Environment
 
-CPU: Intel(R) Xeon(R) 6973P-C (4 cores)<br>
+CPU: AMD EPYC 7763 64-Core Processor (4 cores)<br>
 Memory: 15.6 GB<br>
 Disk: Azure Managed Virtual Disk (Cloud Standard SSD)<br>
 OS: Ubuntu 24.04.4 LTS (Linux 6.17.0-1022-azure)<br>
@@ -15,101 +15,101 @@ Redis: v8.10.1
 | :--- | :--- | :--- | :--- |
 | **Dataset Scale** | 5,000,000 Structured Items | 5,000,000 Structured Items | All 14 Data Formats |
 | **Raw Uncompressed Payload** | 4377 MB | 4377 MB | Structured Payload |
-| **Physical Disk Footprint** | **1053 MB** | **7976 MB** | **Saves 87%** |
-| **Resident Memory (RSS)** | **359 MB** | **4932 MB** | **Saves 93%** |
+| **Physical Disk Footprint** | **1053 MB** | **7656 MB** | **Saves 86%** |
+| **Resident Memory (RSS)** | **275 MB** | **4808 MB** | **Saves 94%** |
 
 #### wedb_embed vs Redis Core Command Benchmark
 
 | Command | wedb_embed P95 Latency | Redis P95 Latency | Speedup |
 | :--- | :--- | :--- | :--- |
-| `SET` | 6.6 us | 24.0 us | **3.6x** |
-| `GET` | 4.4 us | 18.5 us | **4.2x** |
-| `MSET` | 45.2 us | 28.6 us | **0.6x** |
-| `MGET` | 4.3 us | 24.0 us | **5.6x** |
-| `INCRBY` | 0.52 us | 23.5 us | **44.9x** |
-| `DECRBY` | 0.54 us | 23.6 us | **43.7x** |
-| `APPEND` | 0.62 us | 23.8 us | **38.7x** |
-| `STRLEN` | 0.24 us | 21.1 us | **87.2x** |
-| `GETDEL` | 7.3 us | 46.3 us | **6.4x** |
-| `GETRANGE` | 0.22 us | 19.7 us | **91.0x** |
-| `SETRANGE` | 0.61 us | 24.8 us | **40.9x** |
-| `HSET` | 1.7 us | 48.8 us | **29.2x** |
-| `HGET` | 0.56 us | 48.3 us | **85.5x** |
-| `HMGET` | 2.4 us | 49.0 us | **20.7x** |
-| `HEXISTS` | 0.53 us | 48.4 us | **91.7x** |
-| `HLEN` | 0.35 us | 48.4 us | **137.6x** |
-| `HDEL` | 5.2 us | 49.1 us | **9.4x** |
-| `HGETALL` | 2.7 us | 48.6 us | **18.2x** |
-| `HKEYS` | 2.4 us | 48.9 us | **20.3x** |
-| `HVALS` | 2.4 us | 48.7 us | **19.9x** |
-| `HINCRBY` | 1.7 us | 49.1 us | **29.0x** |
-| `LPUSH` | 1.6 us | 46.2 us | **28.3x** |
-| `RPUSH` | 1.5 us | 35.3 us | **23.4x** |
-| `LPOP` | 1.9 us | 18.1 us | **9.5x** |
-| `RPOP` | 2.0 us | 41.2 us | **21.1x** |
-| `LLEN` | 0.50 us | 48.3 us | **96.9x** |
-| `LRANGE` | 2.6 us | 45.9 us | **17.9x** |
-| `LINDEX` | 0.56 us | 48.7 us | **87.7x** |
-| `LSET` | 0.87 us | 48.1 us | **55.5x** |
-| `LREM` | 13.2 us | 98.3 us | **7.4x** |
-| `LTRIM` | 0.88 us | 48.4 us | **55.2x** |
-| `SADD` | 1.1 us | 35.5 us | **31.4x** |
-| `SREM` | 3.1 us | 35.2 us | **11.4x** |
-| `SISMEMBER` | 0.54 us | 34.8 us | **64.3x** |
-| `SCARD` | 0.37 us | 36.0 us | **97.6x** |
-| `SMEMBERS` | 2.8 us | 35.7 us | **12.6x** |
-| `SPOP` | 4.8 us | 71.2 us | **14.9x** |
-| `SRANDMEMBER` | 2.1 us | 34.4 us | **16.0x** |
-| `ZADD` | 2.4 us | 25.0 us | **10.2x** |
-| `ZSCORE` | 0.67 us | 19.1 us | **28.6x** |
-| `ZRANGE` | 2.9 us | 22.5 us | **7.9x** |
-| `ZCARD` | 0.42 us | 19.3 us | **46.1x** |
-| `ZCOUNT` | 2.4 us | 22.3 us | **9.3x** |
-| `ZINCRBY` | 2.2 us | 26.8 us | **11.9x** |
-| `ZRANK` | 2.4 us | 22.1 us | **9.1x** |
-| `ZREVRANGE` | 3.9 us | 23.2 us | **6.0x** |
-| `ZPOPMIN` | 9.1 us | 50.1 us | **5.5x** |
-| `ZREM` | 3.6 us | 22.6 us | **6.3x** |
-| `SETBIT` | 11.8 us | 49.1 us | **4.1x** |
-| `GETBIT` | 0.38 us | 48.7 us | **127.5x** |
-| `BITCOUNT` | 0.37 us | 19.8 us | **53.5x** |
-| `BITPOS` | 0.51 us | 24.1 us | **47.6x** |
-| `PFADD` | 2.4 us | 48.6 us | **20.1x** |
-| `PFCOUNT` | 29.6 us | 48.1 us | **1.6x** |
-| `GEOADD` | 2.1 us | 48.8 us | **23.3x** |
-| `GEODIST` | 0.79 us | 47.8 us | **60.5x** |
-| `GEOPOS` | 0.56 us | 48.5 us | **86.0x** |
-| `GEOHASH` | 0.61 us | 47.9 us | **79.1x** |
-| `XADD` | 1.5 us | 26.8 us | **17.6x** |
-| `XLEN` | 0.46 us | 18.6 us | **40.8x** |
-| `XRANGE` | 3.0 us | 27.8 us | **9.2x** |
-| `XREAD` | 3.0 us | 48.1 us | **16.1x** |
-| `XDEL` | 3.1 us | 51.8 us | **16.8x** |
-| `DEL` | 3.0 us | 47.5 us | **15.8x** |
-| `EXISTS` | 0.20 us | 47.8 us | **240.3x** |
-| `EXPIRE` | 0.80 us | 48.7 us | **61.2x** |
-| `TTL` | 0.21 us | 47.6 us | **222.0x** |
-| `JSON.SET` | 2.7 us | 48.5 us | **18.2x** |
-| `JSON.GET` | 1.0 us | 46.7 us | **45.1x** |
-| `JSON.DEL` | 7.4 us | 96.9 us | **13.0x** |
-| `JSON.NUMINCRBY` | 2.8 us | 48.7 us | **17.5x** |
-| `JSON.ARRLEN` | 0.95 us | 49.0 us | **51.6x** |
-| `JSON.TYPE` | 0.99 us | 48.5 us | **48.9x** |
-| `BF.ADD` | 12.9 us | 46.9 us | **3.6x** |
-| `BF.EXISTS` | 0.54 us | 49.4 us | **92.1x** |
-| `BF.INFO` | 0.33 us | 46.7 us | **140.4x** |
-| `CF.ADD` | 2.3 us | 47.9 us | **20.5x** |
-| `CF.EXISTS` | 0.60 us | 47.6 us | **79.1x** |
-| `CF.DEL` | 5.8 us | 95.9 us | **16.6x** |
-| `TDIGEST.ADD` | 2.2 us | 19.2 us | **8.8x** |
-| `TDIGEST.QUANTILE` | 0.78 us | 23.3 us | **30.0x** |
-| `TDIGEST.BYRANK` | 0.87 us | 22.5 us | **25.7x** |
-| `TDIGEST.CDF` | 0.92 us | 22.7 us | **24.8x** |
-| `TS.ADD` | 5.4 us | 23.7 us | **4.4x** |
-| `TS.GET` | 1.1 us | 23.0 us | **21.0x** |
-| `TS.RANGE` | 21.1 us | 22.8 us | **1.1x** |
-| `TS.INCRBY` | 6.3 us | 22.7 us | **3.6x** |
-| `FT.SEARCH` | 17.3 us | 36.6 us | **2.1x** |
-| `FT.TAG` | 17.2 us | 35.5 us | **2.1x** |
-| `VECTOR.KNN` | 5.5 us | 24.3 us | **4.4x** |
+| `SET` | 7.4 us | 40.1 us | **5.4x** |
+| `GET` | 5.1 us | 30.6 us | **6.0x** |
+| `MSET` | 49.5 us | 46.1 us | **0.9x** |
+| `MGET` | 5.2 us | 39.0 us | **7.5x** |
+| `INCRBY` | 0.82 us | 39.2 us | **47.7x** |
+| `DECRBY` | 0.66 us | 39.3 us | **59.6x** |
+| `APPEND` | 0.86 us | 39.2 us | **45.6x** |
+| `STRLEN` | 0.36 us | 30.3 us | **84.9x** |
+| `GETDEL` | 8.3 us | 79.6 us | **9.6x** |
+| `GETRANGE` | 0.28 us | 33.3 us | **121.0x** |
+| `SETRANGE` | 0.83 us | 40.1 us | **48.2x** |
+| `HSET` | 1.9 us | 42.4 us | **22.8x** |
+| `HGET` | 0.70 us | 35.0 us | **49.9x** |
+| `HMGET` | 2.8 us | 39.8 us | **14.5x** |
+| `HEXISTS` | 0.60 us | 34.3 us | **56.8x** |
+| `HLEN` | 0.42 us | 33.8 us | **79.7x** |
+| `HDEL` | 5.6 us | 40.8 us | **7.3x** |
+| `HGETALL` | 3.5 us | 39.8 us | **11.4x** |
+| `HKEYS` | 3.2 us | 35.6 us | **11.2x** |
+| `HVALS` | 3.4 us | 36.8 us | **10.8x** |
+| `HINCRBY` | 1.7 us | 43.8 us | **25.6x** |
+| `LPUSH` | 2.5 us | 39.6 us | **16.1x** |
+| `RPUSH` | 2.2 us | 39.8 us | **18.3x** |
+| `LPOP` | 2.4 us | 58.8 us | **24.8x** |
+| `RPOP` | 2.7 us | 54.8 us | **20.6x** |
+| `LLEN` | 0.44 us | 33.9 us | **76.6x** |
+| `LRANGE` | 3.4 us | 33.6 us | **10.0x** |
+| `LINDEX` | 0.69 us | 34.9 us | **50.7x** |
+| `LSET` | 1.2 us | 39.5 us | **34.3x** |
+| `LREM` | 17.4 us | 81.5 us | **4.7x** |
+| `LTRIM` | 1.1 us | 33.1 us | **31.2x** |
+| `SADD` | 1.3 us | 37.3 us | **29.0x** |
+| `SREM` | 4.9 us | 37.6 us | **7.7x** |
+| `SISMEMBER` | 0.63 us | 33.9 us | **54.0x** |
+| `SCARD` | 0.45 us | 33.5 us | **74.7x** |
+| `SMEMBERS` | 4.0 us | 33.6 us | **8.3x** |
+| `SPOP` | 9.7 us | 82.4 us | **8.5x** |
+| `SRANDMEMBER` | 2.8 us | 34.2 us | **12.1x** |
+| `ZADD` | 2.9 us | 41.1 us | **14.2x** |
+| `ZSCORE` | 0.92 us | 33.8 us | **36.6x** |
+| `ZRANGE` | 4.2 us | 36.2 us | **8.6x** |
+| `ZCARD` | 0.56 us | 33.7 us | **59.8x** |
+| `ZCOUNT` | 3.6 us | 36.0 us | **10.0x** |
+| `ZINCRBY` | 3.1 us | 41.1 us | **13.1x** |
+| `ZRANK` | 3.6 us | 33.5 us | **9.2x** |
+| `ZREVRANGE` | 6.4 us | 36.0 us | **5.6x** |
+| `ZPOPMIN` | 9.3 us | 82.7 us | **8.9x** |
+| `ZREM` | 5.2 us | 34.7 us | **6.6x** |
+| `SETBIT` | 16.7 us | 30.2 us | **1.8x** |
+| `GETBIT` | 0.68 us | 30.1 us | **44.4x** |
+| `BITCOUNT` | 0.36 us | 36.1 us | **99.3x** |
+| `BITPOS` | 0.51 us | 19.6 us | **38.8x** |
+| `PFADD` | 2.7 us | 40.6 us | **14.8x** |
+| `PFCOUNT` | 8.2 us | 33.9 us | **4.1x** |
+| `GEOADD` | 2.4 us | 43.8 us | **18.2x** |
+| `GEODIST` | 0.94 us | 36.1 us | **38.6x** |
+| `GEOPOS` | 0.68 us | 37.3 us | **55.1x** |
+| `GEOHASH` | 0.78 us | 35.2 us | **45.1x** |
+| `XADD` | 1.6 us | 42.1 us | **25.9x** |
+| `XLEN` | 0.64 us | 33.0 us | **51.5x** |
+| `XRANGE` | 4.4 us | 43.8 us | **9.9x** |
+| `XREAD` | 4.3 us | 44.7 us | **10.5x** |
+| `XDEL` | 3.9 us | 84.5 us | **21.8x** |
+| `DEL` | 4.9 us | 24.9 us | **5.1x** |
+| `EXISTS` | 0.24 us | 23.3 us | **97.4x** |
+| `EXPIRE` | 0.75 us | 43.4 us | **58.2x** |
+| `TTL` | 0.28 us | 32.7 us | **116.4x** |
+| `JSON.SET` | 3.6 us | 36.8 us | **10.3x** |
+| `JSON.GET` | 1.5 us | 35.3 us | **23.9x** |
+| `JSON.DEL` | 8.3 us | 71.0 us | **8.6x** |
+| `JSON.NUMINCRBY` | 3.9 us | 36.7 us | **9.4x** |
+| `JSON.ARRLEN` | 1.4 us | 34.0 us | **24.7x** |
+| `JSON.TYPE` | 1.4 us | 32.2 us | **22.8x** |
+| `BF.ADD` | 55.5 us | 22.5 us | **0.4x** |
+| `BF.EXISTS` | 1.0 us | 22.2 us | **21.5x** |
+| `BF.INFO` | 0.57 us | 22.5 us | **39.8x** |
+| `CF.ADD` | 3.5 us | 22.6 us | **6.5x** |
+| `CF.EXISTS` | 1.1 us | 22.1 us | **20.7x** |
+| `CF.DEL` | 13.5 us | 45.1 us | **3.3x** |
+| `TDIGEST.ADD` | 3.0 us | 33.6 us | **11.3x** |
+| `TDIGEST.QUANTILE` | 1.2 us | 32.9 us | **27.1x** |
+| `TDIGEST.BYRANK` | 1.2 us | 33.2 us | **26.8x** |
+| `TDIGEST.CDF` | 1.3 us | 34.1 us | **26.6x** |
+| `TS.ADD` | 7.3 us | 36.0 us | **4.9x** |
+| `TS.GET` | 1.6 us | 33.2 us | **21.4x** |
+| `TS.RANGE` | 20.9 us | 27.3 us | **1.3x** |
+| `TS.INCRBY` | 10.5 us | 33.5 us | **3.2x** |
+| `FT.SEARCH` | 30.0 us | 35.0 us | **1.2x** |
+| `FT.TAG` | 29.3 us | 33.3 us | **1.1x** |
+| `VECTOR.KNN` | 4.3 us | 26.7 us | **6.2x** |
 
