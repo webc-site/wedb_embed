@@ -85,20 +85,18 @@ where
     Ok(None)
   }
 
-  /// ZPOPMIN key [count] (pops lowest score members atomically).
-  /// ZPOPMIN key [count]（单批次读取并删除极小值，原子高效）
   #[inline]
-  pub fn zpopmin_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
-    self.zpop_one_internal(key, false)
-  }
-
-  #[inline]
-  pub fn zpopmin<K: AsRef<[u8]>>(&self, key: K, count: usize) -> Result<Vec<ZSetMemberScore>> {
+  pub(crate) fn zpop_internal<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    count: usize,
+    reverse: bool,
+  ) -> Result<Vec<ZSetMemberScore>> {
     if count == 0 {
       return Ok(Vec::new());
     }
     if count == 1 {
-      return Ok(match self.zpopmin_one(key)? {
+      return Ok(match self.zpop_one_internal(key, reverse)? {
         Some(item) => vec![item],
         None => Vec::new(),
       });
@@ -113,26 +111,38 @@ where
       _ => return Ok(Vec::new()),
     };
 
-    let prefix = compose_zset_score_prefix(&kc, k_bytes);
     let actual_count = count.min(meta.size() as usize);
+    let prefix = compose_zset_score_prefix(&kc, k_bytes);
     let mut popped = Vec::with_capacity(actual_count);
     let mut batch = self.batch_with_capacity(actual_count * 2 + 1);
     let data_ks = self.data();
 
-    for g in data_ks.prefix(&prefix) {
-      let entry = g?;
-      let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
-        let m_key = compose_zset_key(&kc, k_bytes, member);
-        batch.rm_weak_data(k);
-        batch.rm_weak_data(m_key.as_slice());
-        popped.push((member.to_vec(), score));
-        if popped.len() >= actual_count {
+    macro_rules! drain_entry {
+      ($g:expr) => {{
+        let entry = $g?;
+        let k = entry.key();
+        if !k.starts_with(&prefix) {
           break;
         }
+        if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
+          let m_key = compose_zset_key(&kc, k_bytes, member);
+          batch.rm_weak_data(k);
+          batch.rm_weak_data(m_key.as_slice());
+          popped.push((member.to_vec(), score));
+          if popped.len() >= actual_count {
+            break;
+          }
+        }
+      }};
+    }
+
+    if reverse {
+      for g in data_ks.prefix(&prefix).rev() {
+        drain_entry!(g);
+      }
+    } else {
+      for g in data_ks.prefix(&prefix) {
+        drain_entry!(g);
       }
     }
 
@@ -141,6 +151,18 @@ where
       commit_zset_batch(&meta_k, &meta, batch)?;
     }
     Ok(popped)
+  }
+
+  /// ZPOPMIN key [count] (pops lowest score members atomically).
+  /// ZPOPMIN key [count]（单批次读取并删除极小值，原子高效）
+  #[inline]
+  pub fn zpopmin_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
+    self.zpop_one_internal(key, false)
+  }
+
+  #[inline]
+  pub fn zpopmin<K: AsRef<[u8]>>(&self, key: K, count: usize) -> Result<Vec<ZSetMemberScore>> {
+    self.zpop_internal(key, count, false)
   }
 
   /// ZPOPMAX key [count] (pops highest score members atomically).
@@ -152,57 +174,7 @@ where
 
   #[inline]
   pub fn zpopmax<K: AsRef<[u8]>>(&self, key: K, count: usize) -> Result<Vec<ZSetMemberScore>> {
-    if count == 0 {
-      return Ok(Vec::new());
-    }
-    if count == 1 {
-      return Ok(match self.zpopmax_one(key)? {
-        Some(item) => vec![item],
-        None => Vec::new(),
-      });
-    }
-    let kc = self.kc();
-    let k_bytes = key.as_ref();
-    let meta_k = compose_zset_meta_key(&kc, k_bytes);
-    let now_ms = current_now_ms();
-
-    let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
-      Some(m) => m,
-      None => return Ok(Vec::new()),
-    };
-
-    let num_pop = count.min(meta.size() as usize);
-    if num_pop == 0 {
-      return Ok(Vec::new());
-    }
-
-    let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let mut popped = Vec::with_capacity(num_pop);
-    let mut batch = self.batch_with_capacity(num_pop * 2 + 1);
-    let data_ks = self.data();
-
-    for g in data_ks.prefix(&prefix).rev() {
-      let entry = g?;
-      let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
-        let m_key = compose_zset_key(&kc, k_bytes, member);
-        batch.rm_weak_data(k);
-        batch.rm_weak_data(m_key.as_slice());
-        popped.push((member.to_vec(), score));
-        if popped.len() >= num_pop {
-          break;
-        }
-      }
-    }
-
-    if !popped.is_empty() {
-      meta.base.size = meta.base.size.saturating_sub(popped.len() as u64);
-      commit_zset_batch(&meta_k, &meta, batch)?;
-    }
-    Ok(popped)
+    self.zpop_internal(key, count, true)
   }
 
   /// ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count] (Redis 7.0 multi-key pop).
@@ -218,13 +190,23 @@ where
       return Ok(None);
     }
     for k in keys {
-      let popped = if min {
-        self.zpopmin(k, count)?
-      } else {
-        self.zpopmax(k, count)?
-      };
+      let popped = self.zpop_internal(k, count, !min)?;
       if !popped.is_empty() {
         return Ok(Some((k.as_ref().to_vec(), popped)));
+      }
+    }
+    Ok(None)
+  }
+
+  #[inline]
+  pub(crate) fn bzpop_internal<K: AsRef<[u8]>>(
+    &self,
+    keys: &[K],
+    reverse: bool,
+  ) -> Result<Option<ZSetKeyMemberScore>> {
+    for k in keys {
+      if let Some((member, score)) = self.zpop_one_internal(k, reverse)? {
+        return Ok(Some((k.as_ref().to_vec(), member, score)));
       }
     }
     Ok(None)
@@ -234,24 +216,14 @@ where
   /// BZPOPMIN key [key ...] (检查多键并弹出第一个非空的最小值)
   #[inline]
   pub fn bzpopmin<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<ZSetKeyMemberScore>> {
-    for k in keys {
-      if let Some((member, score)) = self.zpopmin_one(k)? {
-        return Ok(Some((k.as_ref().to_vec(), member, score)));
-      }
-    }
-    Ok(None)
+    self.bzpop_internal(keys, false)
   }
 
   /// BZPOPMAX key [key ...] (checks keys and pops highest score member from first non-empty set).
   /// BZPOPMAX key [key ...] (检查多键并弹出第一个非空的最大值)
   #[inline]
   pub fn bzpopmax<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Option<ZSetKeyMemberScore>> {
-    for k in keys {
-      if let Some((member, score)) = self.zpopmax_one(k)? {
-        return Ok(Some((k.as_ref().to_vec(), member, score)));
-      }
-    }
-    Ok(None)
+    self.bzpop_internal(keys, true)
   }
 
   /// ZRANDMEMBER key (single random element extraction with zero full-scan memory).
