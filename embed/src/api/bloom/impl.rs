@@ -81,23 +81,33 @@ impl BlockSplitBloomFilter {
     Self::optimal_num_of_bits(ndv, fpp) >> 3
   }
 
+  #[inline(always)]
+  fn block_range(data_len: usize, hash: u64) -> Option<usize> {
+    if data_len < Self::BYTES_PER_FILTER_BLOCK {
+      return None;
+    }
+    let num_blocks = (data_len / Self::BYTES_PER_FILTER_BLOCK) as u64;
+    if num_blocks == 0 {
+      return None;
+    }
+    let bucket_index = (((hash >> 32).wrapping_mul(num_blocks)) >> 32) as usize;
+    let block_start = bucket_index * Self::BYTES_PER_FILTER_BLOCK;
+    if block_start + Self::BYTES_PER_FILTER_BLOCK > data_len {
+      None
+    } else {
+      Some(block_start)
+    }
+  }
+
   /// Checks whether hash value exists in block-split Bloom filter (aligned with Kvrocks FindHash).
   /// 检查哈希值是否存在于块切分布隆位图中（对标 Kvrocks FindHash，零拷贝字级切片迭代）
   #[inline]
   pub fn find_hash(data: &[u8], hash: u64) -> bool {
-    if data.len() < Self::BYTES_PER_FILTER_BLOCK {
-      return false;
-    }
-    let num_blocks = (data.len() / Self::BYTES_PER_FILTER_BLOCK) as u64;
-    if num_blocks == 0 {
-      return false;
-    }
-    let bucket_index = (((hash >> 32).wrapping_mul(num_blocks)) >> 32) as usize;
+    let block_start = match Self::block_range(data.len(), hash) {
+      Some(s) => s,
+      None => return false,
+    };
     let key = hash as u32;
-    let block_start = bucket_index * Self::BYTES_PER_FILTER_BLOCK;
-    if block_start + Self::BYTES_PER_FILTER_BLOCK > data.len() {
-      return false;
-    }
     // SAFETY: 上方已前置校验 block_start + BYTES_PER_FILTER_BLOCK <= data.len()，索引切片区间绝不越界。
     let block =
       unsafe { data.get_unchecked(block_start..block_start + Self::BYTES_PER_FILTER_BLOCK) };
@@ -118,19 +128,11 @@ impl BlockSplitBloomFilter {
   /// 将哈希值插入到块切分布隆位图中（对标 Kvrocks InsertHash）
   #[inline]
   pub fn insert_hash(data: &mut [u8], hash: u64) -> bool {
-    if data.len() < Self::BYTES_PER_FILTER_BLOCK {
-      return false;
-    }
-    let num_blocks = (data.len() / Self::BYTES_PER_FILTER_BLOCK) as u64;
-    if num_blocks == 0 {
-      return false;
-    }
-    let bucket_index = (((hash >> 32).wrapping_mul(num_blocks)) >> 32) as usize;
+    let block_start = match Self::block_range(data.len(), hash) {
+      Some(s) => s,
+      None => return false,
+    };
     let key = hash as u32;
-    let block_start = bucket_index * Self::BYTES_PER_FILTER_BLOCK;
-    if block_start + Self::BYTES_PER_FILTER_BLOCK > data.len() {
-      return false;
-    }
     // SAFETY: 上方已前置校验 block_start + BYTES_PER_FILTER_BLOCK <= data.len()，可变切片区间严格在合法内存范围内。
     let block =
       unsafe { data.get_unchecked_mut(block_start..block_start + Self::BYTES_PER_FILTER_BLOCK) };
