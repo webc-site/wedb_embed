@@ -69,6 +69,17 @@ impl TSChunk {
     buf
   }
 
+  /// Encodes a single sample into a 24-byte stack array without heap allocation.
+  /// 编码单样本为 24 字节栈数组（零堆分配）
+  #[inline]
+  pub fn encode_single_uncompressed(sample: TSSample) -> [u8; 24] {
+    let mut buf = [0u8; 24];
+    buf[4..8].copy_from_slice(&1u32.to_be_bytes());
+    buf[8..16].copy_from_slice(&sample.ts.to_be_bytes());
+    buf[16..24].copy_from_slice(&sample.v.to_be_bytes());
+    buf
+  }
+
   /// Encodes data into binary format.
   /// 编码为 FastALP 列式压缩块（Header + [ts_len: u32] + [compressed_ts] + [compressed_values_fastalp]）
   #[inline]
