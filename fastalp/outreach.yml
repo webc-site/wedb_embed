@@ -210,7 +210,7 @@ records:
   - type: issue_submission
     repo: ruanyf/weekly
     issue: 11487
-    url: https://github.com/ruanyf/weekly/issues/11487
+    url: https://github.com/ruanyf/wekly/issues/11487
     title: "【开源自荐】fastalp：最快的通用时序浮点压缩、解压"
     status: submitted
     date: 2026-09-03
@@ -230,7 +230,3 @@ records:
     title: "【开源自荐】fastalp：最快的通用时序浮点压缩、解压"
     status: submitted
     date: 2026-09-03
-
-
-
-
