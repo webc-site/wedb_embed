@@ -43,8 +43,12 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const sec2CardsY = sec2Y + 46; // Subtitle is at sec2Y + 32, cards start at sec2Y + 46 (gap = 14px)
 
   const sec2Bottom = sec2CardsY + 3 * scH + 2 * 16;
-  const footerY = sec2Bottom + 26;
-  const totalH = footerY + 28;
+  const footerLines = (i18n.footer_lines || [i18n.footer_left]).map((line) =>
+    line.replace("{cpu}", sysEnv.cpuModel || "Apple Silicon")
+  );
+  const footerLineH = 20;
+  const footerY = sec2Bottom + 28;
+  const totalH = footerY + (footerLines.length - 1) * footerLineH + 32;
 
   // Palette: Cool Sapphire Blue for Decompression, Warm Amber Gold for Compression
   // Palette: Cool Sapphire Blue for Compression, Vibrant Orange-Red for Decompression
@@ -377,8 +381,12 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     ${sec2CardsSvg}
   </g>
 
-  <!-- Footer (Centered) -->
-  <text x="${width / 2}" y="${footerY}" font-size="11.5" font-weight="500" fill="#475569" text-anchor="middle">${i18n.footer_left.replace("{cpu}", sysEnv.cpuModel || "Apple Silicon")}</text>
+  <!-- Footer Notes (Multi-line Centered) -->
+  <g class="footer-notes">
+    ${footerLines.map((line, idx) => `
+    <text x="${width / 2}" y="${footerY + idx * footerLineH}" font-size="11.5" font-weight="500" fill="#64748b" text-anchor="middle">${xmlEscape(line)}</text>
+    `).join("")}
+  </g>
 </svg>
 `;
 };
