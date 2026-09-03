@@ -1,6 +1,12 @@
-use super::Exception;
 use crate::{
-  bitpack::bitpack_fused_delta, float::AlpFloat, header::write_header, params::pack_params,
+  bitpack::{bitpack_fused_delta, packed_byte_size},
+  encoder::{
+    Exception,
+    exception::{exceptions_byte_size, write_exceptions},
+  },
+  float::AlpFloat,
+  header::{header_len, write_header},
+  params::pack_params,
 };
 
 /// Encodes integer array using Delta differential Frame-of-Reference encoding.
@@ -12,13 +18,22 @@ pub fn encode_delta<F: AlpFloat>(
   exp: u8,
   fac: u8,
   use_div: bool,
-  encoded_ints: &mut [F::Int],
+  encoded_ints: &[F::Int],
   min_delta: F::Int,
   delta_bit_width: u8,
   exceptions: &[Exception<F::RawBits>],
   dst: &mut Vec<u8>,
 ) {
-  let first = encoded_ints[0];
+  let Some(&first) = encoded_ints.first() else {
+    return;
+  };
+
+  let is_large = count > u16::MAX as usize;
+  let exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
+  let deltas_len = count.saturating_sub(1);
+  let total_len =
+    header_len(count) + F::BASE_SIZE * 2 + packed_byte_size(deltas_len, delta_bit_width) + exc_len;
+  dst.reserve(total_len);
 
   // 1. Header: 紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
   let type_byte = if use_div {
@@ -39,5 +54,5 @@ pub fn encode_delta<F: AlpFloat>(
   }
 
   // 4. Exceptions (仅在存在异常值时写入)
-  super::write_exceptions::<F>(count, exceptions, dst);
+  write_exceptions::<F>(count, exceptions, dst);
 }

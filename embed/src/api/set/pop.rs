@@ -2,8 +2,8 @@ use rapidhash::{HashSetExt, RapidHashSet as HashSet};
 
 use crate::{
   api::set::{
-    SetItemKeyComposer, compose_set_key, compose_set_meta_key, compose_set_prefix_stack,
-    r#impl::prepare_set_meta_for_write, meta::SetMeta,
+    SetItemKeyComposer, commit_set_batch, compose_set_key, compose_set_meta_key,
+    compose_set_prefix_stack, meta::SetMeta, r#impl::prepare_set_meta_for_write,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -12,6 +12,28 @@ use crate::{
   meta::current_now_ms,
   wedb::Db,
 };
+
+#[inline]
+pub(crate) fn sample_prefix_element<P: Partition>(
+  data: &P,
+  prefix: &[u8],
+  target_idx: usize,
+) -> Result<Option<Vec<u8>>>
+where
+  Error: From<P::Error>,
+{
+  for (current_idx, g) in data.prefix(prefix).enumerate() {
+    let entry = g?;
+    let k = entry.key();
+    if !k.starts_with(prefix) {
+      break;
+    }
+    if current_idx == target_idx {
+      return Ok(Some(k[prefix.len()..].to_vec()));
+    }
+  }
+  Ok(None)
+}
 
 /// Set random sampling and element relocation operations (SPOP, SRANDMEMBER, SMOVE, OVERWRITE_SET).
 /// 集合随机采样与元素迁移操作实现
@@ -34,31 +56,14 @@ where
     let card = meta.base.size as usize;
     let target = fastrand::usize(0..card);
     let prefix = compose_set_prefix_stack(&kc, k_bytes);
-    let mut popped_item = None;
-
-    for (current_idx, g) in self.data().prefix(&prefix).enumerate() {
-      let entry = g?;
-      let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if current_idx == target {
-        popped_item = Some(k[prefix.len()..].to_vec());
-        break;
-      }
-    }
+    let popped_item = sample_prefix_element(self.data(), &prefix, target)?;
 
     if let Some(item) = popped_item {
       let mut batch = self.batch_with_capacity(2);
       let item_k = compose_set_key(&kc, k_bytes, &item);
       batch.rm_weak_data(item_k.as_slice());
       meta.base.size = meta.base.size.saturating_sub(1);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_set_batch(&meta_k, &meta, batch)?;
       Ok(Some(item))
     } else {
       Ok(None)
@@ -122,12 +127,7 @@ where
     }
 
     meta.base.size = meta.base.size.saturating_sub(pop_count as u64);
-    if meta.base.size == 0 {
-      batch.rm_meta(&meta_k);
-    } else {
-      batch.insert_meta(&meta_k, &meta.encode());
-    }
-    batch.commit()?;
+    commit_set_batch(&meta_k, &meta, batch)?;
 
     Ok(popped)
   }
@@ -148,18 +148,7 @@ where
     let target = fastrand::usize(0..card);
     let prefix = compose_set_prefix_stack(&kc, k_bytes);
 
-    for (current_idx, g) in self.data().prefix(&prefix).enumerate() {
-      let entry = g?;
-      let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if current_idx == target {
-        return Ok(Some(k[prefix.len()..].to_vec()));
-      }
-    }
-
-    Ok(None)
+    sample_prefix_element(self.data(), &prefix, target)
   }
 
   #[inline]

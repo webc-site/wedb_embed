@@ -124,6 +124,10 @@ pub const LEN_TAG_U32: u8 = 0b10;
 /// 长度档位：预设 1024 满块 (0 字节存储长度，极限精简)
 pub const LEN_TAG_1024: u8 = 0b11;
 
+/// Maximum acceptable number of exceptions per block before fallback to RAW uncompressed encoding.
+/// 单块允许的最大异常值数量上限（超过此门限直接回退至 RAW 未压缩模式）
+pub const MAX_EXCEPTIONS: usize = 128;
+
 /// Exception count field length in bytes (u16).
 /// 异常总数字段长度 (字节, u16)
 pub const EXC_COUNT_LEN: usize = size_of::<u16>();

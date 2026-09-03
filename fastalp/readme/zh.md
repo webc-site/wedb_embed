@@ -100,6 +100,37 @@ fn main() -> Result<()> {
 }
 ```
 
+### 状态化编码与参数缓存（消除重复采样）
+
+针对连续数据块流式压缩场景，使用 `Encoder` 缓存采样参数并复用内部工作内存，消除重复采样开销：
+
+```rust
+use fastalp::{decompress, Encoder, Result};
+
+fn main() -> Result<()> {
+  let mut encoder = Encoder::<f64>::with_capacity(1024);
+
+  let chunk1: Vec<f64> = (0..1024).map(|i| 25.0 + (i as f64) * 0.25).collect();
+  let chunk2: Vec<f64> = (1024..2048).map(|i| 25.0 + (i as f64) * 0.25).collect();
+
+  let mut compressed = Vec::new();
+
+  // 第一个块：采样探测最优参数并缓存
+  encoder.compress_into(&chunk1, &mut compressed);
+
+  // 第二个块：命中参数缓存，跳过全量采样，吞吐大幅提升
+  compressed.clear();
+  encoder.compress_into(&chunk2, &mut compressed);
+
+  let restored: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored, chunk2);
+
+  // 切换不同数据流时重置缓存
+  encoder.reset();
+  Ok(())
+}
+```
+
 ### 单精度浮点数据处理
 
 ```rust
@@ -219,10 +250,15 @@ fastalp/
 │   │   └── delta.rs    # Delta 一阶差分解码
 │   ├── delta/          # 一阶差分自适应收益评估与前缀和
 │   │   └── mod.rs
-│   ├── encoder/        # 泛型压缩流水线与保底回退
-│   │   ├── mod.rs      # 编码门面与向量化流
-│   │   ├── standard.rs # 标准 FOR 编码流水线
-│   │   └── delta.rs    # Delta 一阶差分编码流水线
+│   ├── encoder/        # 泛型压缩流水线与参数缓存
+│   │   ├── mod.rs      # 编码门面与顶层便捷函数
+│   │   ├── state.rs    # 状态化 Encoder 结构体与工作缓冲区复用
+│   │   ├── engine.rs   # 压缩编排引擎与参数三级校验
+│   │   ├── kernel.rs   # 4-way 展开无分支向量化编码内核
+│   │   ├── outlier.rs  # FOR 模式离群值剪枝算法
+│   │   ├── exception.rs# 异常值结构与紧凑序列化
+│   │   ├── standard.rs # 标准 FOR 编码组装
+│   │   └── delta.rs    # Delta 一阶差分编码组装
 │   ├── error.rs        # 错误枚举定义与 Result 类型别名
 │   ├── float/          # AlpFloat 浮点抽象特征与泛型无损转换
 │   │   ├── mod.rs      # AlpFloat trait 定义与查表构建

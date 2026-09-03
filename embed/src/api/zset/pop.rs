@@ -8,15 +8,33 @@ use crate::{
       compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix, get_zset_meta,
       lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
     },
-    meta::decode_sortable_f64_slice,
+    meta::{ZSetMeta, decode_sortable_f64_slice},
     opt::{IntoRangeLex, IntoRangeRank, IntoRangeScore},
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key::clear_prefix_in_batch,
   meta::current_now_ms,
-  wedb::Db,
+  wedb::{Db, DbBatch},
 };
+
+#[inline]
+pub(crate) fn commit_zset_batch<E: Engine>(
+  meta_k: &[u8],
+  meta: &ZSetMeta,
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  if meta.base.size == 0 {
+    batch.rm_meta(meta_k);
+  } else {
+    batch.insert_meta(meta_k, &meta.encode());
+  }
+  batch.commit()?;
+  Ok(())
+}
 
 /// Pop and range removal operations for Sorted Set.
 /// 有序集合弹出与范围删除操作
@@ -24,10 +42,12 @@ impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
 {
-  /// ZPOPMIN key [count] (pops lowest score members atomically).
-  /// ZPOPMIN key [count]（单批次读取并删除极小值，原子高效）
   #[inline]
-  pub fn zpopmin_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
+  pub(crate) fn zpop_one_internal<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    reverse: bool,
+  ) -> Result<Option<ZSetMemberScore>> {
     let kc = self.kc();
     let k_bytes = key.as_ref();
     let meta_k = compose_zset_meta_key(&kc, k_bytes);
@@ -41,28 +61,33 @@ where
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
     let data_ks = self.data();
 
-    for g in data_ks.prefix(&prefix) {
+    let target = if reverse {
+      data_ks.prefix(&prefix).next_back()
+    } else {
+      data_ks.prefix(&prefix).next()
+    };
+
+    if let Some(g) = target {
       let entry = g?;
       let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
+      if k.starts_with(&prefix) && let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
         let m_key = compose_zset_key(&kc, k_bytes, member);
         let mut batch = self.batch_with_capacity(3);
         batch.rm_weak_data(k);
         batch.rm_weak_data(m_key.as_slice());
         meta.base.size = meta.base.size.saturating_sub(1);
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
+        commit_zset_batch(&meta_k, &meta, batch)?;
         return Ok(Some((member.to_vec(), score)));
       }
     }
     Ok(None)
+  }
+
+  /// ZPOPMIN key [count] (pops lowest score members atomically).
+  /// ZPOPMIN key [count]（单批次读取并删除极小值，原子高效）
+  #[inline]
+  pub fn zpopmin_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
+    self.zpop_one_internal(key, false)
   }
 
   #[inline]
@@ -82,8 +107,8 @@ where
     let now_ms = current_now_ms();
 
     let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
-      Some(m) => m,
-      None => return Ok(Vec::new()),
+      Some(m) if m.size() > 0 => m,
+      _ => return Ok(Vec::new()),
     };
 
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
@@ -103,7 +128,7 @@ where
         batch.rm_weak_data(k);
         batch.rm_weak_data(m_key.as_slice());
         popped.push((member.to_vec(), score));
-        if popped.len() >= count {
+        if popped.len() >= actual_count {
           break;
         }
       }
@@ -111,55 +136,16 @@ where
 
     if !popped.is_empty() {
       meta.base.size = meta.base.size.saturating_sub(popped.len() as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_zset_batch(&meta_k, &meta, batch)?;
     }
     Ok(popped)
   }
 
   /// ZPOPMAX key [count] (pops highest score members atomically).
-  /// ZPOPMAX key [count]（基于逆序单遍流式精准截取，零冗余内存分配，原子高效）
+  /// ZPOPMAX key [count]（单批次读取并删除极大值，原子高效）
   #[inline]
   pub fn zpopmax_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
-    let kc = self.kc();
-    let k_bytes = key.as_ref();
-    let meta_k = compose_zset_meta_key(&kc, k_bytes);
-    let now_ms = current_now_ms();
-
-    let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
-      Some(m) if m.size() > 0 => m,
-      _ => return Ok(None),
-    };
-
-    let prefix = compose_zset_score_prefix(&kc, k_bytes);
-    let data_ks = self.data();
-
-    for g in data_ks.prefix(&prefix).rev() {
-      let entry = g?;
-      let k = entry.key();
-      if !k.starts_with(&prefix) {
-        break;
-      }
-      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
-        let m_key = compose_zset_key(&kc, k_bytes, member);
-        let mut batch = self.batch_with_capacity(3);
-        batch.rm_weak_data(k);
-        batch.rm_weak_data(m_key.as_slice());
-        meta.base.size = meta.base.size.saturating_sub(1);
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
-        return Ok(Some((member.to_vec(), score)));
-      }
-    }
-    Ok(None)
+    self.zpop_one_internal(key, true)
   }
 
   #[inline]
@@ -212,12 +198,7 @@ where
 
     if !popped.is_empty() {
       meta.base.size = meta.base.size.saturating_sub(popped.len() as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_zset_batch(&meta_k, &meta, batch)?;
     }
     Ok(popped)
   }
@@ -409,12 +390,7 @@ where
 
     if deleted > 0 {
       meta.base.size = meta.base.size.saturating_sub(deleted as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_zset_batch(&meta_k, &meta, batch)?;
     }
 
     Ok(deleted)
@@ -473,12 +449,7 @@ where
 
     if deleted > 0 {
       meta.base.size = meta.base.size.saturating_sub(deleted as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_zset_batch(&meta_k, &meta, batch)?;
     }
 
     Ok(deleted)
@@ -539,12 +510,7 @@ where
 
     if deleted > 0 {
       meta.base.size = meta.base.size.saturating_sub(deleted as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_zset_batch(&meta_k, &meta, batch)?;
     }
 
     Ok(deleted)

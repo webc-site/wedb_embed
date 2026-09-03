@@ -15,7 +15,7 @@ use crate::{
   },
   engine::{Engine, Partition},
   error::{Error, Result},
-  wedb::Db,
+  wedb::{Db, DbBatch},
 };
 
 #[inline]
@@ -38,6 +38,71 @@ where
     ));
   }
   Ok(Some(meta))
+}
+
+#[inline]
+pub(crate) fn get_live_hfe_meta<E: Engine>(
+  db: &Db<E>,
+  key_bytes: &[u8],
+  meta_k: &[u8],
+  now_ms: u64,
+) -> Result<Option<HashMeta>>
+where
+  Error: From<E::Error>,
+{
+  match get_hfe_meta(db, key_bytes, meta_k, now_ms)? {
+    Some(m) => {
+      if m.upper != 0 && now_ms > m.upper && m.persist == 0 {
+        Ok(None)
+      } else {
+        Ok(Some(m))
+      }
+    }
+    None => Ok(None),
+  }
+}
+
+#[inline]
+pub(crate) fn commit_hash_meta_or_rm<E: Engine>(
+  meta_k: &[u8],
+  meta: &mut HashMeta,
+  batch: &mut DbBatch<E>,
+) {
+  if meta.base.size == 0 {
+    batch.rm_meta(meta_k);
+  } else {
+    meta.clear_bounds_if_no_ttl_candidates();
+    batch.insert_meta(meta_k, &meta.encode());
+  }
+}
+
+#[inline]
+pub(crate) fn commit_hash_batch<E: Engine>(
+  meta_k: &[u8],
+  meta: &mut HashMeta,
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  commit_hash_meta_or_rm(meta_k, meta, &mut batch);
+  batch.commit()?;
+  Ok(())
+}
+
+#[inline]
+pub(crate) fn purge_expired_physical_field<E: Engine>(
+  meta_k: &[u8],
+  meta: &mut HashMeta,
+  item_k: &[u8],
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  batch.rm_data(item_k);
+  meta.apply_ttl_to_deleted();
+  commit_hash_batch(meta_k, meta, batch)
 }
 
 #[inline]

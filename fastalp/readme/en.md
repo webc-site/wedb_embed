@@ -100,6 +100,37 @@ fn main() -> Result<()> {
 }
 ```
 
+### Stateful Encoding with Parameter Caching
+
+For streaming and columnar scenarios, use `Encoder` to cache optimal parameters and reuse internal scratch memory across adjacent chunks:
+
+```rust
+use fastalp::{decompress, Encoder, Result};
+
+fn main() -> Result<()> {
+  let mut encoder = Encoder::<f64>::with_capacity(1024);
+
+  let chunk1: Vec<f64> = (0..1024).map(|i| 25.0 + (i as f64) * 0.25).collect();
+  let chunk2: Vec<f64> = (1024..2048).map(|i| 25.0 + (i as f64) * 0.25).collect();
+
+  let mut compressed = Vec::new();
+
+  // First chunk: samples and caches optimal parameters
+  encoder.compress_into(&chunk1, &mut compressed);
+
+  // Second chunk: hits cache and skips sampling, boosting throughput
+  compressed.clear();
+  encoder.compress_into(&chunk2, &mut compressed);
+
+  let restored: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored, chunk2);
+
+  // Reset cache when switching streams
+  encoder.reset();
+  Ok(())
+}
+```
+
 ### Single-Precision Floating-Point Data
 
 ```rust
@@ -219,10 +250,15 @@ fastalp/
 │   │   └── delta.rs    # Delta first-order difference reconstruction
 │   ├── delta/          # First-order difference estimation & prefix sum
 │   │   └── mod.rs
-│   ├── encoder/        # Generic compression pipeline & raw fallback protection
-│   │   ├── mod.rs      # Compression facade & auto-vectorized stream
-│   │   ├── standard.rs # Standard FOR encoding pipeline
-│   │   └── delta.rs    # Delta differential encoding pipeline
+│   ├── encoder/        # Generic compression pipeline & parameter caching
+│   │   ├── mod.rs      # Compression facade and top-level convenience functions
+│   │   ├── state.rs    # Stateful Encoder struct and scratch buffer reuse
+│   │   ├── engine.rs   # Compression orchestration engine and 3-tier validation
+│   │   ├── kernel.rs   # 4-way branchless unrolled vectorized encoding kernels
+│   │   ├── outlier.rs  # FOR mode outlier pruning algorithm
+│   │   ├── exception.rs# Exception records and compact serialization
+│   │   ├── standard.rs # Standard FOR frame assembly
+│   │   └── delta.rs    # Delta differential frame assembly
 │   ├── error.rs        # Error definitions and Result type alias
 │   ├── float/          # AlpFloat abstraction trait and f32/f64 zero-cost implementation
 │   │   ├── mod.rs      # AlpFloat trait and lookup table generator

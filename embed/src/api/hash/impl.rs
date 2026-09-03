@@ -123,27 +123,7 @@ where
 
     // 单字段极致快速路径 (Zero-Alloc Fast Path for Single Field)
     if fields.len() == 1 {
-      let (f, v) = (&fields[0].0, &fields[0].1);
-      let f_bytes = f.as_ref();
-      let v_bytes = v.as_ref();
-      let item_k = composer.key_for_field(f_bytes);
-
-      let inserted_count = if metadata_existed {
-        let state_kind = if let Some(raw) = data_ks.get(item_k)? {
-          decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
-        } else {
-          HashFieldStateKind::Missing
-        };
-        usize::from(apply_field_state_to_meta(&mut meta, state_kind))
-      } else {
-        meta.apply_missing_to_persistent();
-        1
-      };
-
-      meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
-      batch.insert_meta(&meta_k, &meta.encode());
-      batch.commit()?;
-      return Ok(inserted_count);
+      return self.hset_one_internal(key_bytes, fields[0].0.as_ref(), fields[0].1.as_ref());
     }
 
     // 全新 Hash 表批量直写（免去 field 状态探测与缓存分配）
@@ -203,6 +183,43 @@ where
     Ok(inserted_count)
   }
 
+  #[inline]
+  pub(crate) fn hset_one_internal(
+    &self,
+    key_bytes: &[u8],
+    f_bytes: &[u8],
+    v_bytes: &[u8],
+  ) -> Result<usize> {
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut batch = self.batch_with_capacity(2);
+    let (mut meta, metadata_existed) =
+      prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
+
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+    let data_ks = self.data();
+
+    let inserted_count = if metadata_existed {
+      let state_kind = if let Some(raw) = data_ks.get(item_k)? {
+        decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
+      } else {
+        HashFieldStateKind::Missing
+      };
+      usize::from(apply_field_state_to_meta(&mut meta, state_kind))
+    } else {
+      meta.apply_missing_to_persistent();
+      1
+    };
+
+    meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
+    batch.insert_meta(&meta_k, &meta.encode());
+    batch.commit()?;
+    Ok(inserted_count)
+  }
+
   /// Sets multiple hash fields (HMSET, alias for HSET, aligned with Redis / Apache Kvrocks).
   /// 批量设置哈希字段（HMSET，HSET 的别名，对标 Redis / Apache Kvrocks）
   #[inline]
@@ -221,7 +238,7 @@ where
     field: F,
     val: V,
   ) -> Result<usize> {
-    self.hset(key, &[(field, val)])
+    self.hset_one_internal(key.as_ref(), field.as_ref(), val.as_ref())
   }
 
   #[inline]
@@ -276,7 +293,43 @@ where
 
   #[inline]
   pub fn hdel_one<K: AsRef<[u8]>, F: AsRef<[u8]>>(&self, key: K, field: F) -> Result<usize> {
-    self.hdel(key, &[field])
+    self.hdel_one_internal(key.as_ref(), field.as_ref())
+  }
+
+  #[inline]
+  pub(crate) fn hdel_one_internal(&self, key_bytes: &[u8], f_bytes: &[u8]) -> Result<usize> {
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(0),
+    };
+
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+    if let Some(raw) = self.data().get(item_k)?
+      && let Some((exp, _)) = meta.decode_subkey_value(&raw)
+    {
+      let mut batch = self.batch_with_capacity(2);
+      batch.rm_weak_data(item_k);
+      let deleted = usize::from(!is_field_expired(exp, now_ms));
+      if exp == 0 {
+        meta.apply_persistent_to_deleted();
+      } else {
+        meta.apply_ttl_to_deleted();
+      }
+      if meta.base.size == 0 {
+        batch.rm_meta(&meta_k);
+      } else {
+        meta.clear_bounds_if_no_ttl_candidates();
+        batch.insert_meta(&meta_k, &meta.encode());
+      }
+      batch.commit()?;
+      return Ok(deleted);
+    }
+    Ok(0)
   }
 
   #[inline]
@@ -285,6 +338,9 @@ where
       return Ok(0);
     }
     let key_bytes = key.as_ref();
+    if fields.len() == 1 {
+      return self.hdel_one_internal(key_bytes, fields[0].as_ref());
+    }
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
     let now_ms = current_now_ms();
@@ -296,32 +352,6 @@ where
 
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let data_ks = self.data();
-
-    if fields.len() == 1 {
-      let f_bytes = fields[0].as_ref();
-      let item_k = composer.key_for_field(f_bytes);
-      if let Some(raw) = data_ks.get(item_k)?
-        && let Some((exp, _)) = meta.decode_subkey_value(&raw)
-      {
-        let mut batch = self.batch_with_capacity(2);
-        batch.rm_weak_data(item_k);
-        let deleted = usize::from(!is_field_expired(exp, now_ms));
-        if exp == 0 {
-          meta.apply_persistent_to_deleted();
-        } else {
-          meta.apply_ttl_to_deleted();
-        }
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          meta.clear_bounds_if_no_ttl_candidates();
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
-        return Ok(deleted);
-      }
-      return Ok(0);
-    }
 
     let mut deleted = 0usize;
     let mut physical_removed = 0usize;

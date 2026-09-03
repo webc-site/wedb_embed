@@ -6,7 +6,7 @@ use crate::{
     r#const::{
       HASH_EXPIRE_COND_FAILED, HASH_EXPIRE_DELETED, HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND,
     },
-    hfe::{get_hfe_meta, load_field_state},
+    hfe::{commit_hash_batch, get_live_hfe_meta, load_field_state, purge_expired_physical_field},
     meta::{
       HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, hexpire_condition_passes,
       is_immediate_expire,
@@ -162,7 +162,7 @@ where
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
 
-    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_live_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(HASH_FIELD_NOT_FOUND),
     };
@@ -177,15 +177,7 @@ where
     match entry.kind {
       HashFieldStateKind::Missing => Ok(HASH_FIELD_NOT_FOUND),
       HashFieldStateKind::ExpiredTTLPhysical => {
-        let mut batch = self.batch_with_capacity(2);
-        batch.rm_data(item_k);
-        meta.apply_ttl_to_deleted();
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
+        purge_expired_physical_field(&meta_k, &mut meta, item_k, self.batch_with_capacity(2))?;
         Ok(HASH_FIELD_NOT_FOUND)
       }
       HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
@@ -200,12 +192,7 @@ where
           } else {
             meta.apply_ttl_to_deleted();
           }
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
+          commit_hash_batch(&meta_k, &mut meta, batch)?;
           Ok(HASH_EXPIRE_DELETED)
         } else {
           if entry.kind == HashFieldStateKind::Persistent {
@@ -221,8 +208,7 @@ where
             .unwrap_or(b"");
           meta
             .with_encoded_subkey_value(payload, expire_at_ms, |enc| batch.insert_data(item_k, enc));
-          batch.insert_meta(&meta_k, &meta.encode());
-          batch.commit()?;
+          commit_hash_batch(&meta_k, &mut meta, batch)?;
           Ok(HASH_EXPIRE_SET_OK)
         }
       }
@@ -255,7 +241,7 @@ where
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
 
-    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_live_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]),
     };
@@ -352,12 +338,7 @@ where
     }
 
     if meta_changed {
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_hash_batch(&meta_k, &mut meta, batch)?;
     }
 
     Ok(results)

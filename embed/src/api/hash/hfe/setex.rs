@@ -4,7 +4,7 @@ use crate::{
   api::hash::{
     CachedFieldState,
     r#const::ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
-    hfe::load_field_state,
+    hfe::{commit_hash_batch, load_field_state},
     meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire},
     opt::{HSet, HashFieldSetCondition, HashSetEx, TTLAction},
     prepare_hash_meta_for_write,
@@ -113,12 +113,7 @@ where
         }
       }
       batch.rm_data(item_k);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_hash_batch(&meta_k, &mut meta, batch)?;
       return Ok(true);
     }
 
@@ -159,8 +154,7 @@ where
     }
 
     meta.with_encoded_subkey_value(v_bytes, target_expire, |enc| batch.insert_data(item_k, enc));
-    batch.insert_meta(&meta_k, &meta.encode());
-    batch.commit()?;
+    commit_hash_batch(&meta_k, &mut meta, batch)?;
     Ok(true)
   }
 
@@ -343,16 +337,7 @@ where
       );
     }
 
-    if meta.base.size == 0 {
-      if metadata_existed {
-        batch.rm_meta(&meta_k);
-        batch.commit()?;
-      }
-    } else {
-      batch.insert_meta(&meta_k, &meta.encode());
-      batch.commit()?;
-    }
-
+    commit_hash_batch(&meta_k, &mut meta, batch)?;
     Ok(true)
   }
 }

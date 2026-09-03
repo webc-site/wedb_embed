@@ -19,26 +19,6 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
 
 ---
 
-- [Overview](#overview)
-- [Usage](#usage)
-  - [Installation](#installation)
-  - [Basic Compression and Decompression](#basic-compression-and-decompression)
-  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
-  - [Single-Precision Floating-Point Data](#single-precision-floating-point-data)
-- [Features](#features)
-- [Architecture & Design](#architecture-design)
-  - [Compression Pipeline](#compression-pipeline)
-  - [Decompression Pipeline](#decompression-pipeline)
-- [Tech Stack](#tech-stack)
-- [Directory Structure](#directory-structure)
-- [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
-  - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
-  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
-  - [C++ ALP Benchmark Methodology & Criteria Unification](#c-alp-benchmark-methodology-criteria-unification)
-  - [Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)](#evaluation-datasets-authoritative-data-sources-all-37-benchmarks)
-- [Architecture Evolution & Optimization Breakdown](#architecture-evolution-optimization-breakdown)
-  - [1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)](#1-architecture-patterns-adopted-refined-from-c-alp-and-their-purposes)
-  - [2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)](#2-novel-high-performance-optimizations-invented-in-fastalp-and-their-purposes)
 
 ## Overview
 
@@ -125,6 +105,37 @@ fn main() -> Result<()> {
   decompress_into(&compressed_buf, &mut restored)?;
 
   assert_eq!(restored, batch);
+  Ok(())
+}
+```
+
+### Stateful Encoding with Parameter Caching
+
+For streaming and columnar scenarios, use `Encoder` to cache optimal parameters and reuse internal scratch memory across adjacent chunks:
+
+```rust
+use fastalp::{decompress, Encoder, Result};
+
+fn main() -> Result<()> {
+  let mut encoder = Encoder::<f64>::with_capacity(1024);
+
+  let chunk1: Vec<f64> = (0..1024).map(|i| 25.0 + (i as f64) * 0.25).collect();
+  let chunk2: Vec<f64> = (1024..2048).map(|i| 25.0 + (i as f64) * 0.25).collect();
+
+  let mut compressed = Vec::new();
+
+  // First chunk: samples and caches optimal parameters
+  encoder.compress_into(&chunk1, &mut compressed);
+
+  // Second chunk: hits cache and skips sampling, boosting throughput
+  compressed.clear();
+  encoder.compress_into(&chunk2, &mut compressed);
+
+  let restored: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored, chunk2);
+
+  // Reset cache when switching streams
+  encoder.reset();
   Ok(())
 }
 ```
@@ -248,10 +259,15 @@ fastalp/
 │   │   └── delta.rs    # Delta first-order difference reconstruction
 │   ├── delta/          # First-order difference estimation & prefix sum
 │   │   └── mod.rs
-│   ├── encoder/        # Generic compression pipeline & raw fallback protection
-│   │   ├── mod.rs      # Compression facade & auto-vectorized stream
-│   │   ├── standard.rs # Standard FOR encoding pipeline
-│   │   └── delta.rs    # Delta differential encoding pipeline
+│   ├── encoder/        # Generic compression pipeline & parameter caching
+│   │   ├── mod.rs      # Compression facade and top-level convenience functions
+│   │   ├── state.rs    # Stateful Encoder struct and scratch buffer reuse
+│   │   ├── engine.rs   # Compression orchestration engine and 3-tier validation
+│   │   ├── kernel.rs   # 4-way branchless unrolled vectorized encoding kernels
+│   │   ├── outlier.rs  # FOR mode outlier pruning algorithm
+│   │   ├── exception.rs# Exception records and compact serialization
+│   │   ├── standard.rs # Standard FOR frame assembly
+│   │   └── delta.rs    # Delta differential frame assembly
 │   ├── error.rs        # Error definitions and Result type alias
 │   ├── float/          # AlpFloat abstraction trait and f32/f64 zero-cost implementation
 │   │   ├── mod.rs      # AlpFloat trait and lookup table generator
@@ -422,7 +438,6 @@ To break through the throughput limits and compression ceiling of the original C
     - **Purpose**: Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.
     - **Mechanism**: Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.
 
-
 ---
 
 <a name="zh"></a>
@@ -439,26 +454,6 @@ To break through the throughput limits and compression ceiling of the original C
 
 ---
 
-- [功能特性](#功能特性)
-- [使用示例](#使用示例)
-  - [添加依赖](#添加依赖)
-  - [基础压缩与解压](#基础压缩与解压)
-  - [内存缓冲区复用](#内存缓冲区复用)
-  - [单精度浮点数据处理](#单精度浮点数据处理)
-- [核心特性](#核心特性)
-- [架构设计](#架构设计)
-  - [压缩流程](#压缩流程)
-  - [解压流程](#解压流程)
-- [技术栈](#技术栈)
-- [目录结构](#目录结构)
-- [性能评测与多算法对比](#性能评测与多算法对比)
-  - [测试环境与编译配置](#测试环境与编译配置)
-  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
-  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
-  - [评测数据集全景与公开数据源（共 37 项）](#评测数据集全景与公开数据源共-37-项)
-- [架构演进与优化全景](#架构演进与优化全景)
-  - [一、参考与借鉴 C++ ALP 的架构设计](#一参考与借鉴-c-alp-的架构设计)
-  - [二、fastalp 自主研发的极致原创优化](#二fastalp-自主研发的极致原创优化)
 
 ## 功能特性
 
@@ -545,6 +540,37 @@ fn main() -> Result<()> {
   decompress_into(&compressed_buf, &mut restored)?;
 
   assert_eq!(restored, batch);
+  Ok(())
+}
+```
+
+### 状态化编码与参数缓存（消除重复采样）
+
+针对连续数据块流式压缩场景，使用 `Encoder` 缓存采样参数并复用内部工作内存，消除重复采样开销：
+
+```rust
+use fastalp::{decompress, Encoder, Result};
+
+fn main() -> Result<()> {
+  let mut encoder = Encoder::<f64>::with_capacity(1024);
+
+  let chunk1: Vec<f64> = (0..1024).map(|i| 25.0 + (i as f64) * 0.25).collect();
+  let chunk2: Vec<f64> = (1024..2048).map(|i| 25.0 + (i as f64) * 0.25).collect();
+
+  let mut compressed = Vec::new();
+
+  // 第一个块：采样探测最优参数并缓存
+  encoder.compress_into(&chunk1, &mut compressed);
+
+  // 第二个块：命中参数缓存，跳过全量采样，吞吐大幅提升
+  compressed.clear();
+  encoder.compress_into(&chunk2, &mut compressed);
+
+  let restored: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored, chunk2);
+
+  // 切换不同数据流时重置缓存
+  encoder.reset();
   Ok(())
 }
 ```
@@ -668,10 +694,15 @@ fastalp/
 │   │   └── delta.rs    # Delta 一阶差分解码
 │   ├── delta/          # 一阶差分自适应收益评估与前缀和
 │   │   └── mod.rs
-│   ├── encoder/        # 泛型压缩流水线与保底回退
-│   │   ├── mod.rs      # 编码门面与向量化流
-│   │   ├── standard.rs # 标准 FOR 编码流水线
-│   │   └── delta.rs    # Delta 一阶差分编码流水线
+│   ├── encoder/        # 泛型压缩流水线与参数缓存
+│   │   ├── mod.rs      # 编码门面与顶层便捷函数
+│   │   ├── state.rs    # 状态化 Encoder 结构体与工作缓冲区复用
+│   │   ├── engine.rs   # 压缩编排引擎与参数三级校验
+│   │   ├── kernel.rs   # 4-way 展开无分支向量化编码内核
+│   │   ├── outlier.rs  # FOR 模式离群值剪枝算法
+│   │   ├── exception.rs# 异常值结构与紧凑序列化
+│   │   ├── standard.rs # 标准 FOR 编码组装
+│   │   └── delta.rs    # Delta 一阶差分编码组装
 │   ├── error.rs        # 错误枚举定义与 Result 类型别名
 │   ├── float/          # AlpFloat 浮点抽象特征与泛型无损转换
 │   │   ├── mod.rs      # AlpFloat trait 定义与查表构建
@@ -843,4 +874,3 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 12. **统一泛型零成本抽象与预计算常数表**：
     - **用途**：一套代码兼顾 `f64` 与 `f32`，杜绝代码膨胀与运行时分支开销。
     - **机制**：通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的极致内联。
-

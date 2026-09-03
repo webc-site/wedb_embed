@@ -1,5 +1,13 @@
-use super::Exception;
-use crate::{bitpack::bitpack_encoded, float::AlpFloat, header::write_header, params::pack_params};
+use crate::{
+  bitpack::{bitpack_encoded, packed_byte_size},
+  encoder::{
+    Exception,
+    exception::{exceptions_byte_size, write_exceptions},
+  },
+  float::AlpFloat,
+  header::{header_len, write_header},
+  params::pack_params,
+};
 
 /// Encodes integer array using standard Frame-of-Reference (FOR) ALP encoding.
 /// 使用标准基准值对齐（FOR）ALP 编码写入字节缓冲区
@@ -16,6 +24,11 @@ pub fn encode_standard<F: AlpFloat>(
   exceptions: &[Exception<F::RawBits>],
   dst: &mut Vec<u8>,
 ) {
+  let is_large = count > u16::MAX as usize;
+  let exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
+  let total_len = header_len(count) + F::BASE_SIZE + packed_byte_size(count, bit_width) + exc_len;
+  dst.reserve(total_len);
+
   // 1. Header: 紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
   let type_byte = if use_div {
     F::TYPE_DEC_BYTE
@@ -32,5 +45,5 @@ pub fn encode_standard<F: AlpFloat>(
   bitpack_encoded::<F>(encoded_ints, base, bit_width, dst);
 
   // 4. Exceptions (仅在存在异常值时写入)
-  super::write_exceptions::<F>(count, exceptions, dst);
+  write_exceptions::<F>(count, exceptions, dst);
 }

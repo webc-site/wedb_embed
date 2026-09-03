@@ -35,13 +35,56 @@ where
   }
 }
 
+#[inline]
+pub(crate) fn commit_set_batch<E: Engine>(
+  meta_k: &[u8],
+  meta: &SetMeta,
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  if meta.base.size == 0 {
+    batch.rm_meta(meta_k);
+  } else {
+    batch.insert_meta(meta_k, &meta.encode());
+  }
+  batch.commit()?;
+  Ok(())
+}
+
 impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
 {
   #[inline]
   pub fn sadd_one<K: AsRef<[u8]>, M: AsRef<[u8]>>(&self, key: K, member: M) -> Result<usize> {
-    self.sadd(key, &[member])
+    self.sadd_one_internal(key.as_ref(), member.as_ref())
+  }
+
+  #[inline]
+  pub(crate) fn sadd_one_internal(&self, k_bytes: &[u8], m_bytes: &[u8]) -> Result<usize> {
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
+    let now_ms = current_now_ms();
+    let mut batch = self.batch_with_capacity(2);
+
+    let (mut meta, is_new) =
+      prepare_set_meta_for_write(self, k_bytes, &prefix, &meta_k, now_ms, &mut batch)?;
+
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+    let item_k = composer.key_for_member(m_bytes);
+
+    if is_new || !self.data().contains_key(item_k)? {
+      batch.insert_data(item_k, b"");
+      meta.base.size += 1;
+      batch.insert_meta(&meta_k, &meta.encode());
+      batch.commit()?;
+      Ok(1)
+    } else {
+      Ok(0)
+    }
   }
 
   #[inline]
@@ -50,6 +93,10 @@ where
       return Ok(0);
     }
     let k_bytes = key.as_ref();
+    if members.len() == 1 {
+      return self.sadd_one_internal(k_bytes, members[0].as_ref());
+    }
+
     let kc = self.kc();
     let meta_k = compose_set_meta_key(&kc, k_bytes);
     let prefix = compose_set_prefix_stack(&kc, k_bytes);
@@ -61,19 +108,6 @@ where
       prepare_set_meta_for_write(self, k_bytes, &prefix, &meta_k, now_ms, &mut batch)?;
 
     let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
-
-    if members.len() == 1 {
-      let m_bytes = members[0].as_ref();
-      let item_k = composer.key_for_member(m_bytes);
-      if is_new || !data_ks.contains_key(item_k)? {
-        batch.insert_data(item_k, b"");
-        meta.base.size += 1;
-        batch.insert_meta(&meta_k, &meta.encode());
-        batch.commit()?;
-        return Ok(1);
-      }
-      return Ok(0);
-    }
 
     let mut added = 0usize;
     let mut seen = HashSet::with_capacity(members.len());
@@ -101,7 +135,31 @@ where
 
   #[inline]
   pub fn srem_one<K: AsRef<[u8]>, M: AsRef<[u8]>>(&self, key: K, member: M) -> Result<usize> {
-    self.srem(key, &[member])
+    self.srem_one_internal(key.as_ref(), member.as_ref())
+  }
+
+  #[inline]
+  pub(crate) fn srem_one_internal(&self, k_bytes: &[u8], m_bytes: &[u8]) -> Result<usize> {
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_meta_checked::<SetMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(0),
+    };
+
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+    let item_k = composer.key_for_member(m_bytes);
+    if self.data().contains_key(item_k)? {
+      let mut batch = self.batch_with_capacity(2);
+      batch.rm_weak_data(item_k);
+      meta.base.size = meta.base.size.saturating_sub(1);
+      commit_set_batch(&meta_k, &meta, batch)?;
+      Ok(1)
+    } else {
+      Ok(0)
+    }
   }
 
   #[inline]
@@ -110,6 +168,10 @@ where
       return Ok(0);
     }
     let k_bytes = key.as_ref();
+    if members.len() == 1 {
+      return self.srem_one_internal(k_bytes, members[0].as_ref());
+    }
+
     let kc = self.kc();
     let meta_k = compose_set_meta_key(&kc, k_bytes);
     let now_ms = current_now_ms();
@@ -121,24 +183,6 @@ where
 
     let data_ks = self.data();
     let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
-
-    if members.len() == 1 {
-      let m_bytes = members[0].as_ref();
-      let item_k = composer.key_for_member(m_bytes);
-      if data_ks.contains_key(item_k)? {
-        let mut batch = self.batch_with_capacity(2);
-        batch.rm_weak_data(item_k);
-        meta.base.size = meta.base.size.saturating_sub(1);
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
-        return Ok(1);
-      }
-      return Ok(0);
-    }
 
     let mut removed = 0usize;
     let mut batch = self.batch_with_capacity(members.len() + 1);
@@ -159,12 +203,7 @@ where
 
     if removed > 0 {
       meta.base.size = meta.base.size.saturating_sub(removed as u64);
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_set_batch(&meta_k, &meta, batch)?;
     }
 
     Ok(removed)

@@ -3,7 +3,7 @@ use rapidhash::{HashMapExt, RapidHashMap as HashMap};
 use crate::{
   api::hash::{
     CachedFieldState,
-    hfe::{get_hfe_meta, load_field_state},
+    hfe::{commit_hash_batch, get_live_hfe_meta, load_field_state, purge_expired_physical_field},
     meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, is_immediate_expire},
     opt::{HGetEx, HashGetEx, TTLAction},
   },
@@ -53,14 +53,10 @@ where
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
 
-    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_live_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(None),
     };
-
-    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
-      return Ok(None);
-    }
 
     let f_bytes = field.as_ref();
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
@@ -70,15 +66,7 @@ where
     match entry.kind {
       HashFieldStateKind::Missing => Ok(None),
       HashFieldStateKind::ExpiredTTLPhysical => {
-        let mut batch = self.batch_with_capacity(2);
-        batch.rm_data(item_k);
-        meta.apply_ttl_to_deleted();
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
+        purge_expired_physical_field(&meta_k, &mut meta, item_k, self.batch_with_capacity(2))?;
         Ok(None)
       }
       HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
@@ -106,12 +94,7 @@ where
           } else {
             meta.apply_ttl_to_deleted();
           }
-          if meta.base.size == 0 {
-            batch.rm_meta(&meta_k);
-          } else {
-            batch.insert_meta(&meta_k, &meta.encode());
-          }
-          batch.commit()?;
+          commit_hash_batch(&meta_k, &mut meta, batch)?;
           return Ok(None);
         }
 
@@ -134,8 +117,7 @@ where
         if let Some(ref p) = payload {
           meta.with_encoded_subkey_value(p, target_expire, |enc| batch.insert_data(item_k, enc));
         }
-        batch.insert_meta(&meta_k, &meta.encode());
-        batch.commit()?;
+        commit_hash_batch(&meta_k, &mut meta, batch)?;
         Ok(payload)
       }
     }
@@ -162,14 +144,10 @@ where
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
 
-    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+    let mut meta = match get_live_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
       Some(m) => m,
       None => return Ok(vec![None; fields.len()]),
     };
-
-    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
-      return Ok(vec![None; fields.len()]);
-    }
 
     let is_immediate =
       options.ttl_action == TTLAction::Set && is_immediate_expire(options.expire_at_ms, now_ms);
@@ -307,12 +285,7 @@ where
     }
 
     if meta_changed {
-      if meta.base.size == 0 {
-        batch.rm_meta(&meta_k);
-      } else {
-        batch.insert_meta(&meta_k, &meta.encode());
-      }
-      batch.commit()?;
+      commit_hash_batch(&meta_k, &mut meta, batch)?;
     }
 
     Ok(results)

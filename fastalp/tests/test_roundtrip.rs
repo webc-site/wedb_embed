@@ -449,3 +449,35 @@ fn test_stateful_encoder_roundtrip_and_invalidation() -> aok::Result<()> {
 
   Ok(())
 }
+
+#[test]
+fn test_stateful_encoder_capacity_and_delta() -> aok::Result<()> {
+  use fastalp::Encoder;
+
+  let mut encoder = Encoder::<f64>::with_capacity(2048);
+  assert!(encoder.cached_params.is_none());
+
+  // 1. 测试差分单调递增时序数据
+  let data: Vec<f64> = (0..1024).map(|i| 1000.0 + (i as f64) * 0.1).collect();
+  let mut compressed = Vec::new();
+  encoder.compress_delta_into(&data, &mut compressed);
+  assert!(encoder.cached_params.is_some());
+
+  let restored: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored.len(), data.len());
+  for (a, b) in data.iter().zip(&restored) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+
+  // 2. 第二个块继续复用
+  let data2: Vec<f64> = (1024..2048).map(|i| 1000.0 + (i as f64) * 0.1).collect();
+  compressed.clear();
+  encoder.compress_delta_into(&data2, &mut compressed);
+  let restored2: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(restored2.len(), data2.len());
+  for (a, b) in data2.iter().zip(&restored2) {
+    assert_eq!(a.to_bits(), b.to_bits());
+  }
+
+  Ok(())
+}
