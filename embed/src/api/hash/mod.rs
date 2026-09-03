@@ -3,7 +3,9 @@ pub mod hfe;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
+pub mod num;
 pub mod opt;
+pub mod query;
 pub mod scan;
 
 pub use r#const::{
