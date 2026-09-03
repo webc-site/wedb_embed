@@ -524,3 +524,50 @@ fn test_json_slice_negative_step_and_formatting() -> Void {
 
   Ok(())
 }
+
+#[test]
+fn test_json_resp_kvrocks_conformance() -> Void {
+  let dir = tempdir()?;
+  let db = WeDb::new(Fjall::open(dir.path())?).ns(0)?.db(0)?;
+
+  // 对标 Kvrocks JSON.RESP basics
+  db.json_set_one(
+    "item:2",
+    "$",
+    r#"{"name":"Wireless earbuds","stock":17,"active":true,"tag":null,"arr":[1,2]}"#,
+  )?;
+
+  // 1. 查询整数
+  let res_stock = db.json_resp("item:2", Some("$.stock"))?;
+  assert_eq!(res_stock, vec![":17\r\n".to_string()]);
+
+  // 2. 查询布尔
+  let res_active = db.json_resp("item:2", Some("$.active"))?;
+  assert_eq!(res_active, vec!["+true\r\n".to_string()]);
+
+  // 3. 查询字符串
+  let res_name = db.json_resp("item:2", Some("$.name"))?;
+  assert_eq!(res_name, vec!["$16\r\nWireless earbuds\r\n".to_string()]);
+
+  // 4. 查询 null
+  let res_tag = db.json_resp("item:2", Some("$.tag"))?;
+  assert_eq!(res_tag, vec!["$-1\r\n".to_string()]);
+
+  // 5. 查询数组
+  let res_arr = db.json_resp("item:2", Some("$.arr"))?;
+  assert_eq!(res_arr, vec!["*3\r\n+[\r\n:1\r\n:2\r\n".to_string()]);
+
+  // 6. 不存在的 key 返回空列表
+  let res_no_key = db.json_resp("no_such_key", Some("$"))?;
+  assert!(res_no_key.is_empty());
+
+  // 7. 存在 key 但 path 不匹配返回空列表
+  let res_no_match = db.json_resp("item:2", Some("$.non_existent"))?;
+  assert!(res_no_match.is_empty());
+
+  // 8. json_resp_one 单项便捷接口
+  let single = db.json_resp_one("item:2", Some("$.stock"))?;
+  assert_eq!(single, Some(":17\r\n".to_string()));
+
+  Ok(())
+}

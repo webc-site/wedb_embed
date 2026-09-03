@@ -56,15 +56,32 @@ where
     let now_ms = current_now_ms();
     let data_ks = self.data();
 
-    let mut batch = self.batch();
+    let mut batch = self.batch_with_capacity(ids.len() + 1);
     let (mut meta, is_fresh) =
       prepare_si_meta_for_write(self, k_bytes, &prefix, &meta_k, now_ms, &mut batch)?;
 
-    let mut added = 0usize;
     let mut item_buf = compose_si_prefix_stack(&kc, k_bytes);
     let prefix_len = item_buf.len();
     item_buf.extend_from_slice(&[0u8; BE_LEN]);
 
+    if ids.len() == 1 {
+      let be_bytes = encode_be_u64(ids[0]);
+      item_buf[prefix_len..].copy_from_slice(&be_bytes);
+      let added = if is_fresh || !data_ks.contains_key(&item_buf)? {
+        meta.base.size = meta.base.size.saturating_add(1);
+        batch.insert_data(&item_buf, b"");
+        1
+      } else {
+        0
+      };
+      if added > 0 || is_fresh {
+        batch.insert_meta(&meta_k, &meta.encode());
+        batch.commit()?;
+      }
+      return Ok(added);
+    }
+
+    let mut added = 0usize;
     let mut seen = HashSet::with_capacity(ids.len());
     for &id in ids {
       if !seen.insert(id) {
@@ -112,8 +129,26 @@ where
     let prefix_len = item_buf.len();
     item_buf.extend_from_slice(&[0u8; BE_LEN]);
 
+    if ids.len() == 1 {
+      let be_bytes = encode_be_u64(ids[0]);
+      item_buf[prefix_len..].copy_from_slice(&be_bytes);
+      if data_ks.contains_key(&item_buf)? {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_weak_data(&item_buf);
+        meta.base.size = meta.base.size.saturating_sub(1);
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        return Ok(1);
+      }
+      return Ok(0);
+    }
+
     let mut deleted = 0usize;
-    let mut batch = self.batch();
+    let mut batch = self.batch_with_capacity(ids.len() + 1);
 
     let mut seen = HashSet::with_capacity(ids.len());
     for &id in ids {

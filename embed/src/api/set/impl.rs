@@ -60,9 +60,22 @@ where
     let (mut meta, is_new) =
       prepare_set_meta_for_write(self, k_bytes, &prefix, &meta_k, now_ms, &mut batch)?;
 
-    let mut added = 0usize;
-
     let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+
+    if members.len() == 1 {
+      let m_bytes = members[0].as_ref();
+      let item_k = composer.key_for_member(m_bytes);
+      if is_new || !data_ks.contains_key(item_k)? {
+        batch.insert_data(item_k, b"");
+        meta.base.size += 1;
+        batch.insert_meta(&meta_k, &meta.encode());
+        batch.commit()?;
+        return Ok(1);
+      }
+      return Ok(0);
+    }
+
+    let mut added = 0usize;
     let mut seen = HashSet::with_capacity(members.len());
     for m in members {
       let m_bytes = m.as_ref();
@@ -106,11 +119,30 @@ where
       _ => return Ok(0),
     };
 
+    let data_ks = self.data();
+    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
+
+    if members.len() == 1 {
+      let m_bytes = members[0].as_ref();
+      let item_k = composer.key_for_member(m_bytes);
+      if data_ks.contains_key(item_k)? {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_weak_data(item_k);
+        meta.base.size = meta.base.size.saturating_sub(1);
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        return Ok(1);
+      }
+      return Ok(0);
+    }
+
     let mut removed = 0usize;
     let mut batch = self.batch_with_capacity(members.len() + 1);
-    let data_ks = self.data();
 
-    let mut composer = SetItemKeyComposer::new(&kc, k_bytes);
     let mut seen = HashSet::with_capacity(members.len());
     for m in members {
       let m_bytes = m.as_ref();

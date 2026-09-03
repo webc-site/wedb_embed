@@ -2,7 +2,7 @@ use std::ops::Bound;
 
 use crate::{
   api::zset::{
-    ZSetKeyMemberScore, ZSetMemberScore, ZSetPopResult,
+    ZSetKeyMemberScore, ZSetMemberScore, ZSetPopResult, compose_zset_key,
     r#impl::{
       SCORE_LEN, compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix,
       get_zset_meta, lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
@@ -26,8 +26,41 @@ where
   /// ZPOPMIN key [count]（单批次读取并删除极小值，原子高效）
   #[inline]
   pub fn zpopmin_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
-    let mut res = self.zpopmin(key, 1)?;
-    Ok(res.pop())
+    let kc = self.kc();
+    let k_bytes = key.as_ref();
+    let meta_k = compose_zset_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.size() > 0 => m,
+      _ => return Ok(None),
+    };
+
+    let prefix = compose_zset_score_prefix(&kc, k_bytes);
+    let data_ks = self.data();
+
+    for g in data_ks.prefix(&prefix) {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(&prefix) {
+        break;
+      }
+      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
+        let m_key = compose_zset_key(&kc, k_bytes, member);
+        let mut batch = self.batch_with_capacity(3);
+        batch.rm_weak_data(k);
+        batch.rm_weak_data(m_key.as_slice());
+        meta.base.size = meta.base.size.saturating_sub(1);
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        return Ok(Some((member.to_vec(), score)));
+      }
+    }
+    Ok(None)
   }
 
   #[inline]
@@ -88,8 +121,41 @@ where
   /// ZPOPMAX key [count]（基于逆序单遍流式精准截取，零冗余内存分配，原子高效）
   #[inline]
   pub fn zpopmax_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
-    let mut res = self.zpopmax(key, 1)?;
-    Ok(res.pop())
+    let kc = self.kc();
+    let k_bytes = key.as_ref();
+    let meta_k = compose_zset_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.size() > 0 => m,
+      _ => return Ok(None),
+    };
+
+    let prefix = compose_zset_score_prefix(&kc, k_bytes);
+    let data_ks = self.data();
+
+    for g in data_ks.prefix(&prefix).rev() {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(&prefix) {
+        break;
+      }
+      if let Some((score, member)) = parse_score_sub(&k[prefix.len()..]) {
+        let m_key = compose_zset_key(&kc, k_bytes, member);
+        let mut batch = self.batch_with_capacity(3);
+        batch.rm_weak_data(k);
+        batch.rm_weak_data(m_key.as_slice());
+        meta.base.size = meta.base.size.saturating_sub(1);
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        return Ok(Some((member.to_vec(), score)));
+      }
+    }
+    Ok(None)
   }
 
   #[inline]

@@ -9,7 +9,7 @@ use crate::{
     key,
     meta::{JsonMeta, JsonStorageFormat},
     opt::{JsonGet, JsonSet},
-    path::{delete_path_values, format_json, get_path_values, json_set_path},
+    path::{delete_path_values, format_json, get_path_values, json_set_path, json_transform_resp},
   },
   engine::{Engine, Partition},
   error::{Error, Result},
@@ -381,5 +381,35 @@ where
     } else {
       Ok(None)
     }
+  }
+
+  #[inline]
+  pub fn json_resp_one<K: AsRef<[u8]>>(
+    &self,
+    key: K,
+    path: Option<&str>,
+  ) -> Result<Option<String>> {
+    let res = self.json_resp(key, path)?;
+    Ok(res.into_iter().next())
+  }
+
+  #[inline]
+  pub fn json_resp<K: AsRef<[u8]>>(&self, key: K, path: Option<&str>) -> Result<Vec<String>> {
+    let kc = self.kc();
+    let (_, root_val) = match read_json_meta_and_val(self, &kc, key.as_ref())? {
+      Some(pair) => pair,
+      None => return Ok(Vec::new()),
+    };
+
+    let p = path.unwrap_or(JSON_ROOT_PATH);
+    let matched_nodes = get_path_values(&root_val, p)?;
+    let mut results = Vec::with_capacity(matched_nodes.len());
+    for node in matched_nodes {
+      let mut resp_str = String::with_capacity(64);
+      json_transform_resp(node, &mut resp_str);
+      results.push(resp_str);
+    }
+
+    Ok(results)
   }
 }

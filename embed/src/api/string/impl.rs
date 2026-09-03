@@ -135,7 +135,9 @@ where
         }
       }
       StringSetType::IfNe => args.cmp_value.is_none_or(|expected| {
-        old_raw.as_ref().is_none_or(|(r, _, offset)| &r[*offset..] != expected)
+        old_raw
+          .as_ref()
+          .is_none_or(|(r, _, offset)| &r[*offset..] != expected)
       }),
       StringSetType::IfDeq => {
         if let Some(expected) = args.cmp_value

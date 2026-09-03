@@ -50,7 +50,7 @@ pub use hll::{
 };
 pub use json::{
   JsonArrIndex, JsonGet, JsonMeta, JsonNumberOp, JsonSet, JsonStorageFormat, delete_path_values,
-  extract_simple_field, get_path_values, mutate_path_values, parse_json_path,
+  extract_simple_field, get_path_values, json_transform_resp, mutate_path_values, parse_json_path,
 };
 pub use key::{DBScanInfo, ExpireCondition, KeyNumStats, SortArgs};
 pub use key_composer::{

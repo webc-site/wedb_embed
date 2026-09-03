@@ -23,5 +23,5 @@ pub use opt::{JsonArrIndex, JsonGet, JsonNumberOp, JsonSet};
 pub use path::{
   FilterExpr, FilterOp, PathSegment, SliceIndex, delete_path_values, eval_slice,
   extract_simple_field, format_json, get_path_values, json_get_path, json_merge_patch,
-  json_path_query, json_set_path, mutate_path_values, parse_json_path,
+  json_path_query, json_set_path, json_transform_resp, mutate_path_values, parse_json_path,
 };

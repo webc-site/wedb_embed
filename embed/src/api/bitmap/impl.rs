@@ -11,9 +11,7 @@ use crate::{
       meta::BitmapMeta,
     },
     key::{check_composite_meta_not_other_type, clear_prefix_in_batch},
-    string::{
-      decode_string_value, is_string_expired, key::raw, meta::with_encoded_string_value,
-    },
+    string::{decode_string_value, is_string_expired, key::raw, meta::with_encoded_string_value},
   },
   engine::{Engine, Partition},
   error::{Error, Result},

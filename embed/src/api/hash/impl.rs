@@ -294,11 +294,38 @@ where
       _ => return Ok(0),
     };
 
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let data_ks = self.data();
+
+    if fields.len() == 1 {
+      let f_bytes = fields[0].as_ref();
+      let item_k = composer.key_for_field(f_bytes);
+      if let Some(raw) = data_ks.get(item_k)?
+        && let Some((exp, _)) = meta.decode_subkey_value(&raw)
+      {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_weak_data(item_k);
+        let deleted = usize::from(!is_field_expired(exp, now_ms));
+        if exp == 0 {
+          meta.apply_persistent_to_deleted();
+        } else {
+          meta.apply_ttl_to_deleted();
+        }
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          meta.clear_bounds_if_no_ttl_candidates();
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        return Ok(deleted);
+      }
+      return Ok(0);
+    }
+
     let mut deleted = 0usize;
     let mut physical_removed = 0usize;
     let mut batch = self.batch_with_capacity(fields.len() + 1);
-    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
-    let data_ks = self.data();
 
     let mut seen = HashSet::with_capacity(fields.len());
     for f in fields {
