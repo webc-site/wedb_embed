@@ -54,6 +54,12 @@ where
 
   #[inline]
   pub fn tdigest_add<K: AsRef<[u8]>>(&self, key: K, values: &[f64]) -> Result<()> {
+    if values.is_empty() {
+      return Ok(());
+    }
+    if values.len() == 1 {
+      return self.tdigest_add_one(key, values[0]);
+    }
     let key_bytes = key.as_ref();
     let mut td = get_tdigest(self, key_bytes)?;
     td.add_batch(values);

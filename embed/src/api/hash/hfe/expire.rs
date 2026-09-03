@@ -157,12 +157,73 @@ where
     };
 
     let is_immediate = is_immediate_expire(expire_at_ms, now_ms);
+    let data_ks = self.data();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+
+    if fields.len() == 1 {
+      let f_bytes = fields[0].as_ref();
+      let item_k = composer.key_for_field(f_bytes);
+      let entry = load_field_state(data_ks, &meta, item_k, now_ms)?;
+      match entry.kind {
+        HashFieldStateKind::Missing => return Ok(vec![HASH_FIELD_NOT_FOUND]),
+        HashFieldStateKind::ExpiredTTLPhysical => {
+          let mut batch = self.batch_with_capacity(2);
+          batch.rm_data(item_k);
+          meta.apply_ttl_to_deleted();
+          if meta.base.size == 0 {
+            batch.rm_meta(&meta_k);
+          } else {
+            batch.insert_meta(&meta_k, &meta.encode());
+          }
+          batch.commit()?;
+          return Ok(vec![HASH_FIELD_NOT_FOUND]);
+        }
+        HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
+          if !hexpire_condition_passes(condition, entry.kind, entry.expire, expire_at_ms) {
+            return Ok(vec![HASH_EXPIRE_COND_FAILED]);
+          }
+          let mut batch = self.batch_with_capacity(2);
+          if is_immediate {
+            batch.rm_data(item_k);
+            if entry.kind == HashFieldStateKind::Persistent {
+              meta.apply_persistent_to_deleted();
+            } else {
+              meta.apply_ttl_to_deleted();
+            }
+            if meta.base.size == 0 {
+              batch.rm_meta(&meta_k);
+            } else {
+              batch.insert_meta(&meta_k, &meta.encode());
+            }
+            batch.commit()?;
+            return Ok(vec![HASH_EXPIRE_DELETED]);
+          } else {
+            if entry.kind == HashFieldStateKind::Persistent {
+              meta.apply_persistent_to_ttl(expire_at_ms);
+            } else {
+              meta.apply_ttl_to_ttl(expire_at_ms);
+            }
+            let payload = entry
+              .raw
+              .as_ref()
+              .and_then(|s| meta.decode_subkey_value(s))
+              .map(|(_, p)| p)
+              .unwrap_or(b"");
+            meta.with_encoded_subkey_value(payload, expire_at_ms, |enc| {
+              batch.insert_data(item_k, enc)
+            });
+            batch.insert_meta(&meta_k, &meta.encode());
+            batch.commit()?;
+            return Ok(vec![HASH_EXPIRE_SET_OK]);
+          }
+        }
+      }
+    }
+
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
     let mut meta_changed = false;
     let mut state_cache: HashMap<&[u8], CachedFieldState> = HashMap::with_capacity(fields.len());
-    let data_ks = self.data();
-    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
 
     for f in fields {
       let f_bytes = f.as_ref();

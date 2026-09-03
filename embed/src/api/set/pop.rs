@@ -5,7 +5,7 @@ use crate::{
     SetItemKeyComposer, compose_set_key, compose_set_meta_key, compose_set_prefix_stack,
     r#impl::prepare_set_meta_for_write, meta::SetMeta,
   },
-  engine::{Engine, Partition},
+  engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
   key::{check_key_not_other_type, clear_prefix_in_batch, get_meta_checked},
   key_composer::KeyTag,
@@ -21,14 +21,60 @@ where
 {
   #[inline]
   pub fn spop_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-    let mut res = self.spop(key, 1)?;
-    Ok(res.pop())
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_meta_checked::<SetMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(None),
+    };
+
+    let card = meta.base.size as usize;
+    let target = fastrand::usize(0..card);
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
+    let mut popped_item = None;
+
+    for (current_idx, g) in self.data().prefix(&prefix).enumerate() {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(&prefix) {
+        break;
+      }
+      if current_idx == target {
+        popped_item = Some(k[prefix.len()..].to_vec());
+        break;
+      }
+    }
+
+    if let Some(item) = popped_item {
+      let mut batch = self.batch_with_capacity(2);
+      let item_k = compose_set_key(&kc, k_bytes, &item);
+      batch.rm_weak_data(item_k.as_slice());
+      meta.base.size = meta.base.size.saturating_sub(1);
+      if meta.base.size == 0 {
+        batch.rm_meta(&meta_k);
+      } else {
+        batch.insert_meta(&meta_k, &meta.encode());
+      }
+      batch.commit()?;
+      Ok(Some(item))
+    } else {
+      Ok(None)
+    }
   }
 
   #[inline]
   pub fn spop<K: AsRef<[u8]>>(&self, key: K, count: usize) -> Result<Vec<Vec<u8>>> {
     if count == 0 {
       return Ok(Vec::new());
+    }
+    if count == 1 {
+      return Ok(match self.spop_one(key)? {
+        Some(item) => vec![item],
+        None => Vec::new(),
+      });
     }
     let k_bytes = key.as_ref();
     let kc = self.kc();
@@ -39,38 +85,6 @@ where
       Some(m) if m.base.size > 0 => m,
       _ => return Ok(Vec::new()),
     };
-
-    if count == 1 {
-      let card = meta.base.size as usize;
-      let target = fastrand::usize(0..card);
-      let mut current_idx = 0usize;
-      let mut popped_item = None;
-
-      self.siter(k_bytes, |m| {
-        if current_idx == target {
-          popped_item = Some(m.to_vec());
-          return false;
-        }
-        current_idx += 1;
-        true
-      })?;
-
-      if let Some(item) = popped_item {
-        let mut batch = self.batch_with_capacity(2);
-        let item_k = compose_set_key(&kc, k_bytes, &item);
-        batch.rm_weak_data(item_k.as_slice());
-        meta.base.size = meta.base.size.saturating_sub(1);
-        if meta.base.size == 0 {
-          batch.rm_meta(&meta_k);
-        } else {
-          batch.insert_meta(&meta_k, &meta.encode());
-        }
-        batch.commit()?;
-        return Ok(vec![item]);
-      } else {
-        return Ok(Vec::new());
-      }
-    }
 
     let mut members = Vec::with_capacity((meta.base.size as usize).min(4096));
     self.siter(k_bytes, |m| {
@@ -120,24 +134,32 @@ where
 
   #[inline]
   pub fn srandmember_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-    let card = self.scard(&key)? as usize;
-    if card == 0 {
-      return Ok(None);
-    }
+    let k_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_set_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_meta_checked::<SetMeta, _>(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.base.size > 0 => m,
+      _ => return Ok(None),
+    };
+
+    let card = meta.base.size as usize;
     let target = fastrand::usize(0..card);
-    let mut current_idx = 0usize;
-    let mut result = None;
+    let prefix = compose_set_prefix_stack(&kc, k_bytes);
 
-    self.siter(key, |m| {
-      if current_idx == target {
-        result = Some(m.to_vec());
-        return false;
+    for (current_idx, g) in self.data().prefix(&prefix).enumerate() {
+      let entry = g?;
+      let k = entry.key();
+      if !k.starts_with(&prefix) {
+        break;
       }
-      current_idx += 1;
-      true
-    })?;
+      if current_idx == target {
+        return Ok(Some(k[prefix.len()..].to_vec()));
+      }
+    }
 
-    Ok(result)
+    Ok(None)
   }
 
   #[inline]

@@ -409,6 +409,12 @@ where
     key: K,
     items: &[I],
   ) -> Result<Vec<bool>> {
+    if items.is_empty() {
+      return Ok(Vec::new());
+    }
+    if items.len() == 1 {
+      return Ok(vec![self.bf_exists(key, &items[0])?]);
+    }
     let kc = self.kc();
     let key_bytes = key.as_ref();
     let meta_k = key::bloom_meta(&kc, key_bytes);

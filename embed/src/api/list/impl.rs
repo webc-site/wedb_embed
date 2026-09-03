@@ -378,6 +378,12 @@ where
   if count == 0 {
     return Ok(Vec::new());
   }
+  if count == 1 {
+    return Ok(match list_pop_one_internal(db, key_bytes, pop_left)? {
+      Some(v) => vec![v],
+      None => Vec::new(),
+    });
+  }
   let kc = db.kc();
   let meta_k = compose_list_meta_key(&kc, key_bytes);
   let now_ms = current_now_ms();

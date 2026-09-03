@@ -29,7 +29,11 @@ where
     lat: f64,
     member: M,
   ) -> Result<usize> {
-    self.geoadd(key, &[(lon, lat, member)], [])
+    validate_long_lat(lon, lat)?;
+    let bits = geohash_encode_wgs84(lon, lat, GEO_STEP_MAX)
+      .ok_or_else(|| Error::invalid_data("ERR invalid longitude/latitude coordinates"))?;
+    let score = align_52bits(bits) as f64;
+    self.zadd_one(key, score, member, [])
   }
 
   #[inline]
