@@ -1,8 +1,11 @@
+pub mod algebra;
 pub mod r#const;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod pop;
+pub mod scan;
 
 pub use r#const::ERR_WRONG_TYPE;
 pub use r#impl::prepare_set_meta_for_write;

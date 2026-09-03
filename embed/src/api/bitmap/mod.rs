@@ -1,9 +1,12 @@
 pub mod bitops;
 pub mod r#const;
+pub mod field;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
+pub mod op;
 pub mod opt;
+pub mod pos;
 pub use bitops::{
   ArrayBitfieldBitmap, BITMAP_SEGMENT_BITS, BITMAP_SEGMENT_BYTES, bit_op_exec, bit_op_exec_into,
   bitfield_op_calc, expand_bitmap_segment, find_bit_in_byte_lsb, find_bit_in_byte_msb,
