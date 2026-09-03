@@ -8,6 +8,7 @@ use crate::{
       compose_zset_meta_key, compose_zset_prefix, compose_zset_score_prefix, get_zset_meta,
       lex_range_bounds, normalize_range, parse_score_sub, score_range_bounds,
     },
+    meta::decode_sortable_f64_slice,
     opt::{IntoRangeLex, IntoRangeRank, IntoRangeScore},
   },
   engine::{Engine, KvEntry, Partition},
@@ -68,6 +69,12 @@ where
   pub fn zpopmin<K: AsRef<[u8]>>(&self, key: K, count: usize) -> Result<Vec<ZSetMemberScore>> {
     if count == 0 {
       return Ok(Vec::new());
+    }
+    if count == 1 {
+      return Ok(match self.zpopmin_one(key)? {
+        Some(item) => vec![item],
+        None => Vec::new(),
+      });
     }
     let kc = self.kc();
     let k_bytes = key.as_ref();
@@ -160,6 +167,12 @@ where
     if count == 0 {
       return Ok(Vec::new());
     }
+    if count == 1 {
+      return Ok(match self.zpopmax_one(key)? {
+        Some(item) => vec![item],
+        None => Vec::new(),
+      });
+    }
     let kc = self.kc();
     let k_bytes = key.as_ref();
     let meta_k = compose_zset_meta_key(&kc, k_bytes);
@@ -222,24 +235,13 @@ where
       return Ok(None);
     }
     for k in keys {
-      if count == 1 {
-        let one = if min {
-          self.zpopmin_one(k)?
-        } else {
-          self.zpopmax_one(k)?
-        };
-        if let Some(item) = one {
-          return Ok(Some((k.as_ref().to_vec(), vec![item])));
-        }
+      let popped = if min {
+        self.zpopmin(k, count)?
       } else {
-        let popped = if min {
-          self.zpopmin(k, count)?
-        } else {
-          self.zpopmax(k, count)?
-        };
-        if !popped.is_empty() {
-          return Ok(Some((k.as_ref().to_vec(), popped)));
-        }
+        self.zpopmax(k, count)?
+      };
+      if !popped.is_empty() {
+        return Ok(Some((k.as_ref().to_vec(), popped)));
       }
     }
     Ok(None)
@@ -270,27 +272,36 @@ where
   }
 
   /// ZRANDMEMBER key (single random element extraction with zero full-scan memory).
-  /// 随机获取单个元素（零全量扫描内存开销，针对单元素随机访问优化）
+  /// 随机获取单个元素（零全量扫描内存开销，单次元数据点查与惰性分数解码优化）
   #[inline]
   pub fn zrandmember_one<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<ZSetMemberScore>> {
-    let card = self.zcard(&key)? as usize;
-    if card == 0 {
-      return Ok(None);
-    }
+    let kc = self.kc();
+    let k_bytes = key.as_ref();
+    let meta_k = compose_zset_meta_key(&kc, k_bytes);
+    let now_ms = current_now_ms();
+
+    let meta = match get_zset_meta(self, k_bytes, &meta_k, now_ms)? {
+      Some(m) if m.size() > 0 => m,
+      _ => return Ok(None),
+    };
+
+    let card = meta.size() as usize;
     let target = fastrand::usize(0..card);
-    let mut current_idx = 0usize;
-    let mut chosen = None;
-
-    self.ziter_members(key, |m, score| {
-      if current_idx == target {
-        chosen = Some((m.to_vec(), score));
-        return false;
+    let prefix = compose_zset_prefix(&kc, k_bytes);
+    for (current_idx, g) in self.data().prefix(&prefix).enumerate() {
+      let entry = g?;
+      let (k, v) = (entry.key(), entry.value());
+      if !k.starts_with(&prefix) {
+        break;
       }
-      current_idx += 1;
-      true
-    })?;
+      if current_idx == target {
+        let member = &k[prefix.len()..];
+        let score = decode_sortable_f64_slice(v).unwrap_or(0.0);
+        return Ok(Some((member.to_vec(), score)));
+      }
+    }
 
-    Ok(chosen)
+    Ok(None)
   }
 
   /// ZRANDMEMBER key [count] (random member extraction aligned with Kvrocks).
