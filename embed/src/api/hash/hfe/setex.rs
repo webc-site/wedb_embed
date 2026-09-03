@@ -27,7 +27,9 @@ where
     val: V,
     opt_li: impl IntoIterator<Item = HSet>,
   ) -> Result<bool> {
-    self.hsetex(key, &[(field, val)], opt_li)
+    let now_ms = current_now_ms();
+    let opts = HashSetEx::from_options(opt_li, now_ms);
+    self.set_field_with_expire_one(key, field, val, opts, now_ms)
   }
 
   #[inline]
@@ -43,6 +45,126 @@ where
   }
 
   #[inline]
+  pub(crate) fn set_field_with_expire_one<K: AsRef<[u8]>, F: AsRef<[u8]>, V: AsRef<[u8]>>(
+    &self,
+    key: K,
+    field: F,
+    val: V,
+    options: HashSetEx,
+    now_ms: u64,
+  ) -> Result<bool> {
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+
+    let mut batch = self.batch_with_capacity(2);
+    let (mut meta, metadata_existed) =
+      prepare_hash_meta_for_write(self, key_bytes, &meta_k, now_ms, &mut batch)?;
+
+    if metadata_existed && meta.is_legacy_subkey_encoding() {
+      return Err(Error::invalid_data(
+        ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING,
+      ));
+    }
+
+    let f_bytes = field.as_ref();
+    let v_bytes = val.as_ref();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+
+    let entry = if metadata_existed {
+      load_field_state(self.data(), &meta, item_k, now_ms)?
+    } else {
+      CachedFieldState {
+        kind: HashFieldStateKind::Missing,
+        expire: 0,
+        raw: None,
+      }
+    };
+
+    match options.condition {
+      HashFieldSetCondition::None => {}
+      HashFieldSetCondition::Fnx => {
+        if entry.kind != HashFieldStateKind::Missing
+          && entry.kind != HashFieldStateKind::ExpiredTTLPhysical
+        {
+          return Ok(false);
+        }
+      }
+      HashFieldSetCondition::Fxx => {
+        if entry.kind != HashFieldStateKind::Persistent && entry.kind != HashFieldStateKind::LiveTTL
+        {
+          return Ok(false);
+        }
+      }
+    }
+
+    let is_immediate =
+      options.ttl_action == TTLAction::Set && is_immediate_expire(options.expire_at_ms, now_ms);
+
+    if is_immediate {
+      match entry.kind {
+        HashFieldStateKind::Missing => return Ok(true),
+        HashFieldStateKind::Persistent => {
+          meta.apply_persistent_to_deleted();
+        }
+        HashFieldStateKind::LiveTTL | HashFieldStateKind::ExpiredTTLPhysical => {
+          meta.apply_ttl_to_deleted();
+        }
+      }
+      batch.rm_data(item_k);
+      if meta.base.size == 0 {
+        batch.rm_meta(&meta_k);
+      } else {
+        batch.insert_meta(&meta_k, &meta.encode());
+      }
+      batch.commit()?;
+      return Ok(true);
+    }
+
+    let target_expire = match options.ttl_action {
+      TTLAction::Discard | TTLAction::Persist => 0,
+      TTLAction::Keep => {
+        if entry.kind == HashFieldStateKind::LiveTTL
+          || entry.kind == HashFieldStateKind::ExpiredTTLPhysical
+        {
+          entry.expire
+        } else {
+          0
+        }
+      }
+      TTLAction::Set => options.expire_at_ms,
+    };
+
+    match entry.kind {
+      HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
+        if target_expire == 0 {
+          meta.apply_missing_to_persistent();
+        } else {
+          meta.apply_missing_to_ttl(target_expire);
+        }
+      }
+      HashFieldStateKind::Persistent => {
+        if target_expire != 0 {
+          meta.apply_persistent_to_ttl(target_expire);
+        }
+      }
+      HashFieldStateKind::LiveTTL => {
+        if target_expire == 0 {
+          meta.apply_ttl_to_persistent();
+        } else {
+          meta.apply_ttl_to_ttl(target_expire);
+        }
+      }
+    }
+
+    meta.with_encoded_subkey_value(v_bytes, target_expire, |enc| batch.insert_data(item_k, enc));
+    batch.insert_meta(&meta_k, &meta.encode());
+    batch.commit()?;
+    Ok(true)
+  }
+
+  #[inline]
   pub(crate) fn set_fields_with_expire<K: AsRef<[u8]>, F: AsRef<[u8]>, V: AsRef<[u8]>>(
     &self,
     key: K,
@@ -51,6 +173,16 @@ where
   ) -> Result<bool> {
     if field_values.is_empty() {
       return Ok(false);
+    }
+    let now_ms = current_now_ms();
+    if field_values.len() == 1 {
+      return self.set_field_with_expire_one(
+        key,
+        &field_values[0].0,
+        &field_values[0].1,
+        options,
+        now_ms,
+      );
     }
 
     let key_bytes = key.as_ref();

@@ -111,6 +111,10 @@ where
       None => return Ok(HASH_FIELD_NOT_FOUND),
     };
 
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(HASH_FIELD_NOT_FOUND);
+    }
+
     let f_bytes = field.as_ref();
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let item_k = composer.key_for_field(f_bytes);
@@ -166,6 +170,10 @@ where
       Some(m) => m,
       None => return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]),
     };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]);
+    }
 
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
@@ -263,6 +271,10 @@ where
       None => return Ok(HASH_FIELD_NOT_FOUND),
     };
 
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(HASH_FIELD_NOT_FOUND);
+    }
+
     let f_bytes = field.as_ref();
     let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
     let item_k = composer.key_for_field(f_bytes);
@@ -299,6 +311,10 @@ where
       Some(m) => m,
       None => return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]),
     };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(vec![HASH_FIELD_NOT_FOUND; fields.len()]);
+    }
 
     let mut result_cache: HashMap<&[u8], i64> = HashMap::with_capacity(fields.len());
     let mut results = Vec::with_capacity(fields.len());

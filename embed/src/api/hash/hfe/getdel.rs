@@ -22,8 +22,63 @@ where
     key: K,
     field: F,
   ) -> Result<Option<Vec<u8>>> {
-    let res = self.hgetdel(key, &[field])?;
-    Ok(res.into_iter().next().flatten())
+    let key_bytes = key.as_ref();
+    let kc = self.kc();
+    let meta_k = compose_hash_meta_key(&kc, key_bytes);
+    let now_ms = current_now_ms();
+
+    let mut meta = match get_hfe_meta(self, key_bytes, &meta_k, now_ms)? {
+      Some(m) => m,
+      None => return Ok(None),
+    };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(None);
+    }
+
+    let f_bytes = field.as_ref();
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+    let entry = load_field_state(self.data(), &meta, item_k, now_ms)?;
+
+    match entry.kind {
+      HashFieldStateKind::Missing => Ok(None),
+      HashFieldStateKind::ExpiredTTLPhysical => {
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_data(item_k);
+        meta.apply_ttl_to_deleted();
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        Ok(None)
+      }
+      HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
+        let payload = entry
+          .raw
+          .as_ref()
+          .and_then(|s| meta.decode_subkey_value(s))
+          .map(|(_, p)| p.to_vec())
+          .unwrap_or_default();
+
+        let mut batch = self.batch_with_capacity(2);
+        batch.rm_data(item_k);
+        if entry.kind == HashFieldStateKind::Persistent {
+          meta.apply_persistent_to_deleted();
+        } else {
+          meta.apply_ttl_to_deleted();
+        }
+        if meta.base.size == 0 {
+          batch.rm_meta(&meta_k);
+        } else {
+          batch.insert_meta(&meta_k, &meta.encode());
+        }
+        batch.commit()?;
+        Ok(Some(payload))
+      }
+    }
   }
 
   #[inline]
@@ -35,6 +90,9 @@ where
     if fields.is_empty() {
       return Ok(Vec::new());
     }
+    if fields.len() == 1 {
+      return Ok(vec![self.hgetdel_one(key, &fields[0])?]);
+    }
 
     let key_bytes = key.as_ref();
     let kc = self.kc();
@@ -45,6 +103,10 @@ where
       Some(m) => m,
       None => return Ok(vec![None; fields.len()]),
     };
+
+    if meta.upper != 0 && now_ms > meta.upper && meta.persist == 0 {
+      return Ok(vec![None; fields.len()]);
+    }
 
     let mut results = Vec::with_capacity(fields.len());
     let mut batch = self.batch();
