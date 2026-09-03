@@ -195,6 +195,6 @@ records:
     repo: spiraldb/alp
     issue: 115
     url: https://github.com/spiraldb/alp/issues/115
-    title: "Consider exact decimal division mode to eliminate 1-ULP multiplication roundoff exceptions"
+    title: "Sharing benchmark observations on decimal reconstruction and exception rates from fastalp"
     status: submitted
     date: 2026-09-03
