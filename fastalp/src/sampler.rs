@@ -47,7 +47,7 @@ pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int>
 }
 
 /// Fast single-pass search for identical/constant values.
-/// 全等/常数浮点数序列的极速指数与基准值探测（零堆分配、O(1) 搜索）
+/// 全等与常数浮点数序列的快速指数与基准值探测（零堆分配、O(1) 复杂度）
 #[inline]
 pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
   const FAC_INT: i64 = 1;
@@ -101,7 +101,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     use_div: false,
   };
 
-  // 第一轮：极速优先探测纯十进制乘法组合 (fac == 0)，按高频精度优先探索 (2, 1, 3, 0, 4..)
+  // 第一轮：优先探测纯十进制乘法组合 (fac == 0)，按高频精度优先探索 (2, 1, 3, 0, 4..)
   // 现实工业传感器、金融量化、监控时序绝大多数为 1~3 位小数或整数，优先探测命中率超 95%，即刻触发早停
   const EXP_PRIORITY: [u8; 19] = [
     2, 1, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,

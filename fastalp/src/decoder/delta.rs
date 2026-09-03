@@ -46,7 +46,7 @@ pub fn decode_delta<F: AlpFloat>(
     dst.push(val);
   } else if delta_bit_width == 0 {
     dst.reserve(count);
-    // SAFETY: dst 已预留 count 个空间，使用底层指针切片单遍写入并更新有效长度，彻底消除 resize 的双重写零开销
+    // SAFETY: dst 已预留 count 个空间，使用底层指针切片单遍写入并更新有效长度，消除 resize 的双重写零开销
     unsafe {
       let ptr = dst.as_mut_ptr().add(start_idx);
       let mut curr = first;

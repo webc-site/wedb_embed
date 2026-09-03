@@ -544,7 +544,7 @@ unsafe fn pack_rem(rem: impl IntoIterator<Item = u64>, bit_width: u8, mut dst_pt
 }
 
 /// Unrolls 8 integers into packed bytes for any bit width from 1 to 16.
-/// 针对比特位宽 1~16 的 8 整数极致向量化就地循环展开打包
+/// 针对比特位宽 1~16 的 8 整数向量化就地循环展开打包
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 unsafe fn pack_8_unrolled(

@@ -28,7 +28,7 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
     return Ok(());
   }
 
-  // 极速 RAW 原始数据解包路径：直接内存零拷贝恢复
+  // RAW 原始数据解包路径：直接内存零拷贝恢复
   if type_byte == F::TYPE_RAW_BYTE {
     let raw_bytes_needed = count
       .checked_mul(size_of::<F>())

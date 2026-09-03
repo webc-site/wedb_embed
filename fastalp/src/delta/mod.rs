@@ -82,7 +82,7 @@ pub fn eval_delta_benefit<F: AlpFloat>(
 }
 
 /// Computes adjacent first-order deltas in place backwards: data[i] = data[i] - data[i-1].
-/// 逆向就地计算相邻一阶差分，彻底消除多余堆分配
+/// 逆向就地计算相邻一阶差分，消除多余堆分配
 #[inline(always)]
 pub fn in_place_deltas<F: AlpFloat>(data: &mut [F::Int]) {
   for i in (1..data.len()).rev() {
@@ -91,7 +91,7 @@ pub fn in_place_deltas<F: AlpFloat>(data: &mut [F::Int]) {
 }
 
 /// Rapidly reconstructs float values from a linear arithmetic progression (bit_width == 0).
-/// 当差分位宽为 0（等差数列/恒定斜率）时极速无分支还原浮点数组
+/// 当差分位宽为 0（等差数列或恒定斜率）时无分支快速还原浮点数组
 #[inline(always)]
 pub fn reconstruct_ramp_into_floats<F: AlpFloat>(
   first: F::Int,

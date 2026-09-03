@@ -18,39 +18,59 @@ Traditional general-purpose compression algorithms and integer bitpackers operat
 
 `fastalp` implements the ALP compression algorithm:
 
-- **Exact Lossless Reconstruction**:<br>
-  Guarantees bit-exact IEEE 754 preservation for all inputs, including special values such as `NaN`, `+Inf`, `-Inf`, and `-0.0`.
+- **Adaptive Parameter Estimation**:<br>
+  Samples input sequences and evaluates cost models to determine optimal decimal scaling parameters `(exp, fac)` balancing bit-width against exception penalties.
 
-- **Compact Self-Describing Header & Large Array Support**:<br>
-  Features a 2-bit length tag header layout where standard 1024-element blocks require only a 3-byte compressed header (and just 1 byte in raw fallback mode).<br>
-  Natively scales beyond 65,535 elements by auto-upgrading to 32-bit count and exception index fields, removing single-block size limits.
+- **Exact Lossless Integer Conversion**:<br>
+  Maps floating-point values into compact integers using decimal scaling factors, validating bit-level equivalence via inverse decoding.
+
+- **Base Subtraction & Bitpacking**:<br>
+  Extracts the minimum integer as a Frame-of-Reference (FOR) baseline, encoding non-negative offsets via dynamic bit-packing from 1 to 64 bits.
+
+- **Dedicated Exception Stream**:<br>
+  Special IEEE 754 representations (`NaN`, `+Inf`, `-Inf`, `-0.0`) and out-of-range floats are isolated in an exception table without degrading main payload density.
+
+- **Bit-Exact Precision Guarantee**:<br>
+  Guarantees 100% bit-exact restoration (`a.to_bits() == b.to_bits()`) for all floating-point inputs.
+
+- **Unified Generic Support**:<br>
+  Provides zero-cost generic abstractions supporting both 64-bit (`f64`) and 32-bit (`f32`) data streams.
+
+- **Zero Extra Heap Allocations**:<br>
+  Exposes `_into` APIs to allow callers to reuse pre-allocated memory buffers across streaming pipelines.
+
+Compression Ratio Optimizations Over Reference ALP:
+
+Compared to the official C++ reference (`cwida/ALP`), which is constrained to fixed 1024-element vectors, pure-multiplication scaling, and static FOR subtraction, real-world time-series workloads often suffer from bit-width inflation, pseudo-exceptions, and negative compression.<br>
+`fastalp` introduces targeted algorithmic and architectural enhancements to significantly boost compression ratios:
 
 - **Adaptive Delta Differential Encoding (Delta-ALP)**:<br>
-  Automatically evaluates smooth and continuous physical time series (weather, hydrology, telemetry), adaptively applying first-order differences and branchless prefix sum accumulation to reduce bit widths by 15% to 38%.
+  The reference implementation (`analyze_ffor`) only performs global baseline subtraction, leaving wide bit-widths on smooth physical waveforms.<br>
+  `fastalp` introduces first-order adjacent differencing and prefix sum recurrence paired with 16-sample mathematical pruning, narrowing bit-widths by an additional 15% to 38%.
 
-- **Decimal Division Exact Mode**:<br>
-  Completely eliminates IEEE 754 multiplication roundoff errors (such as `* 0.1`) by reconstructing via exact decimal division, driving outlier exception counts to zero on real-world telemetry.
+- **Decimal Division Exact Reconstruction**:<br>
+  The reference implementation relies exclusively on floating-point multiplication, where IEEE 754 rounding errors (e.g., `* 0.1`) produce numerous false exceptions.<br>
+  `fastalp` introduces an exact decimal division mode, driving rounding-induced exceptions to zero on industrial sensor streams and reducing per-value storage by 20% to 38%.
 
-- **Stack-Allocated LUT & SIMD Hybrid Decompression**:<br>
-  Utilizes 256-entry stack lookup tables for division modes to eliminate hardware division latencies, coupled with pure-register SIMD auto-vectorization for linear arithmetic exceeding 55+ GB/s throughput.
+- **Intelligent Outlier Pruning & Sparse Constant Compression**:<br>
+  The reference implementation lacks outlier isolation, forcing 1024-element blocks with 99% constant zeros and rare pulses into wide bit-widths across all elements.<br>
+  `fastalp` prunes isolated outliers into the exception stream and compresses the primary stream with 0-bit bit-widths (base-only, zero bitstream bytes), lifting compression ratios on sparse series beyond 150x to 744x.
 
-- **Adaptive Parameter Estimation**:<br>
-  Samples input sequences to derive optimal scaling parameters `(exp, fac, use_div)` that minimize bit-width requirements.
+- **Pre-Value Infilling for Exceptions**:<br>
+  The reference implementation fills exception slots with a constant value, causing large artificial step jumps that degrade adjacent difference calculations.<br>
+  `fastalp` infills exception slots with their preceding valid integer value before differencing, eliminating synthetic delta spikes and keeping difference bit-widths minimal.
 
-- **Frame-of-Reference & Bitpacking**:<br>
-  Encodes converted integers using base subtraction (FOR / Delta) and dense bit-packing from 1 to 64 bits per value.
+- **Compact Self-Describing Headers & Large Array Scalability**:<br>
+  The reference implementation hardcodes 1024 elements and lacks a self-contained serialized binary format.<br>
+  `fastalp` deploys a 2-bit length tag layout where 1024 full blocks consume only 3 header bytes (1 byte for RAW fallback), and natively scales beyond 65,535 elements with 32-bit offsets.
 
-- **Dedicated Exception Handling**:<br>
-  Unencodable values and floating-point anomalies are stored in a dedicated exception stream without compromising primary payload compression efficiency.
+- **Exception Threshold & Single-Byte RAW Protection**:<br>
+  The reference implementation exhibits 1.5x to 2x space expansion on high-entropy non-decimal floats.<br>
+  `fastalp` enforces a 12.5% exception ceiling and runtime size evaluation, instantly falling back to a 1-byte header RAW stream to prevent negative compression.
 
-- **Raw Fallback Protection**:<br>
-  Automatically falls back to uncompressed raw mode when noise or extreme precision values would cause negative compression.
-
-- **Zero Extra Allocations**:<br>
-  Exposes `_into` APIs to allow caller-managed buffer reuse across high-throughput streaming pipelines.
-
-- **Unified Generic Interface**:<br>
-  `compress`, `compress_into`, `decompress`, and `decompress_into` work across both `f64` and `f32`.
+- **Single-Cycle Exact Identity Fast-Skip**:<br>
+  When encountering idle sensors and constant heartbeat streams, the reference implementation still executes full sampling and bitpacking.<br>
+  `fastalp` detects bit-exact identity within 1 CPU cycle at the entry point, packing 1024 elements into 11 bytes (744x compression ratio).
 
 ---
 
@@ -297,7 +317,7 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 - **C++ ALP** (Official paper reference implementation, Clang 22.1.8 -O3)
 - **Pcodec / pco 1.0.3** (Columnar numeric compression, ANS entropy coding)
 - **Zstandard / zstd 0.13** (General dictionary compression, Level 3)
-- **LZ4 / lz4_flex 0.14** (Ultra-fast general byte compressor)
+- **LZ4 / lz4_flex 0.14** (High-speed general byte compressor)
 - **Snappy / snap 1.1** (Google high-speed byte compressor)
 - **Chimp128** (VLDB 2022 floating-point time series)
 - **Gorilla** (VLDB 2015 XOR floating-point time series)
@@ -374,57 +394,104 @@ This benchmark adopts all 31 real-world public time-series and columnar datasets
 
 fastalp is not a literal translation, but an engineering overhaul engineered to fully exploit modern superscalar pipelines while solving the core pain points of columnar time-series storage.
 
-### 1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)
+### Architecture Patterns Adopted & Refined from Reference ALP
 
-1. **Stateful Encoder & Parameter Caching**:
-   - **Purpose**: Eliminates the high cost of re-sampling and evaluating dozens of parameter combinations for every single chunk during continuous writes.
-   - **Mechanism**: In continuous time-series streams, adjacent 1024-element blocks of the same column share identical unit magnitudes and decimal precision. fastalp caches the best `exp` and `fac` from previous blocks. When verified against the current block, it skips exhaustive sampling entirely, raising continuous compression throughput from ~4-5 GB/s to **15-20+ GB/s**.
-2. **12.5% Exception Threshold RAW Fallback**:
-   - **Purpose**: Prevents space expansion ("negative compression") on high-entropy floats.
-   - **Mechanism**: When exception counts exceed 128 (12.5% of a 1024 block), the block is proven unsuitable for decimal transformation. fastalp instantly aborts further encoding and falls back to a compact single-byte header RAW stream, preventing the 2x space expansion seen in naive schemes.
-3. **Decimal Division Exact Mode**:
-   - **Purpose**: Eliminates "pseudo-exceptions" caused by IEEE 754 multiplication rounding errors.
-   - **Mechanism**: Multiplying by floating-point powers (e.g., `* 0.1`) introduces inexact binary truncation. fastalp uses precise decimal division during reconstruction, eliminating pseudo-exceptions and reducing compressed size by 20% to 38% on real physical sensor data.
+In our architecture evolution, fastalp preserved and absorbed the mathematically sound industrial designs from C++ ALP:
+
+- **Two-Level Sampling & Adaptive Decimal Derivation**:<br>
+  Derives the optimal decimal scaling parameters `(exp, fac)` that minimize total bit-width and exception overhead.<br>
+  Faithfully inherits and implements the reference ALP two-level sampling model: a first-level coarse sample filters candidate combinations, followed by a second-level vector sample that precisely determines the optimal exponent and factor.
+
+- **Magic Number Fast Floating-Point Rounding**:<br>
+  Performs lossless integer conversion entirely inside floating-point registers without branch penalties.<br>
+  Uses the IEEE 754 bias constant `0x0018000000000000` (`12582912.0` for single precision), executing scaled rounding directly via floating-point addition and subtraction to bypass expensive CPU conversion instructions.
+
+- **Frame-of-Reference (FOR) Base Subtraction**:<br>
+  Eliminates integer offset bias to minimize packed bit-widths.<br>
+  Adopts the reference minimum value subtraction mechanism, shifting signed integer sequences into non-negative offsets starting from zero to minimize required bitpacking widths.
+
+- **Stateful Encoder with Cross-Block Parameter Caching**:<br>
+  Solves the bottleneck of repetitive parameter sampling in columnar time-series storage.<br>
+  In industrial time-series streams, adjacent blocks of the same metric (e.g., temperature) exhibit identical scale and precision. fastalp adopts the C++ design to reuse the previously discovered `(exp, fac)` across 1024-element blocks, skipping sample scanning entirely and accelerating sustained compression throughput from 4~5 GB/s to **15~20+ GB/s**.
 
 ---
 
-### 2. Novel High-Performance Optimizations Invented in fastalp (And Their Purposes)
+### Algorithmic and Performance Optimizations in fastalp
 
 To break through the throughput limits and compression ceiling of the original C++ reference, fastalp engineered the following architectural innovations:
 
-1. **3-Tier Microarchitectural Sampling Pruning Pipeline**:
-   - **Purpose**: Solves the severe bottleneck in C++ ALP where exhaustive factor exploration consumed over 80% of CPU time, throttling end-to-end ingestion throughput to 0.83 GB/s.
-   - **Mechanism**: Introduces a 3-tier cascade: Tier 1 (Pure Decimal Early Exit) validates the basic decimal exponent against 32 samples; if 100% losslessly representable with zero exceptions, it immediately returns optimal parameters without testing any of the 170 candidate factors. Tier 2 (4-Sample and 16-Sample Prescreening) tests candidate factors with 4 samples first, discarding subpar candidates before evaluating all 32 samples. Tier 3 (Non-Decimal Scientific Early Exit) instantly halts factor search if the basic decimal exponent produces 100% exceptions. This drives end-to-end ingestion throughput from 0.83 GB/s to **3.91 GB/s (4.7x speedup, up to 7.0x in specific blocks)**.
-2. **Pure-Register SIMD Auto-Vectorized Decoding**:
-   - **Purpose**: Eliminates memory gather latencies and cache miss stalls common in traditional bit-unpacking loops.
-   - **Mechanism**: For common bit-widths (8, 16, 32, 64 bits), the decoder is implemented as branchless, unrolled parallel SIMD sequences targeting ARM NEON and x86 AVX2 vector registers, reaching **23.59 GB/s geometric mean**.
-3. **256-Entry Stack-Allocated L1D Lookup Table**:
-   - **Purpose**: Eliminates multi-cycle hardware floating-point division latencies and dynamic memory allocations in inner loops.
-   - **Mechanism**: For small bit-widths (1, 2, 4 bits) and decimal division reconstruction, constructs a 256-entry table directly on the stack frame. Operating 100% within CPU L1D cache, it replaces 30+ cycle hardware division instructions with single L1D cache lookups.
-4. **Fused Delta Bitpacking Pipeline**:
-   - **Purpose**: Eliminates the memory bandwidth and cache pollution of allocating and writing an intermediate 8KB difference buffer.
-   - **Mechanism**: Conventional compressors run two passes: compute diffs into an 8KB memory slice, then read it back for bitpacking. fastalp's 8-way register pipeline computes adjacent deltas, subtracts the baseline, and shifts bits into a 128-bit packing accumulator in a single fused pass with **zero memory writes and zero heap allocations**, boosting delta compression throughput by >30%.
-5. **Mathematical Delta Early Pruning**:
-   - **Purpose**: Prevents expensive full-chunk differencing on disordered or oscillating series.
-   - **Mechanism**: By the mathematical axiom that subset extrema difference is always $\le$ global extrema difference, fastalp samples the first 16 points. If their delta bit-width already matches or exceeds FOR bit-width, delta encoding is mathematically proven to be non-beneficial, exiting instantly.
-6. **4-Way Loop Unrolling & Zero-Closure Pipeline**:
-   - **Purpose**: Maximizes instruction-level parallelism (ILP) across modern CPU superscalar ALUs.
-   - **Mechanism**: Completely avoids dynamic closures and indirect branches in the inner loop. Inlines a dedicated 4-way unrolled pipeline that processes 4 values per iteration through registers without exception checks when within range, achieving **4.4~6.8 GB/s** compression throughput.
-7. **Single-Cycle Identical Floats Fast-Skip**:
-   - **Purpose**: Instantaneous compression of idle sensor heartbeats and disconnected lines.
-   - **Mechanism**: Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**).
-8. **Outlier Pruning with 0-bit Compression**:
-   - **Purpose**: Unlocks >150x compression on series with 99% identical base values and rare spikes (e.g., `gov30`).
-   - **Mechanism**: Isolates rare pulse values into the exception dictionary, allowing the main bitstream to use a 0-bit bit-width (storing only length and baseline). Combined with 16-sample outlier pre-screening, high-entropy blocks exit within 2 samples with zero penalty.
-9. **Compact 2-bit Tagged Header & Large Array Scalability**:
-   - **Purpose**: Minimizes framing overhead and removes single-block 65,535 element truncation limits.
-   - **Mechanism**: Uses a self-describing 2-bit length tag layout where standard 1024-element blocks require only 3 header bytes (and 1 byte in RAW fallback mode). Seamlessly auto-promotes to 32-bit count and exception offsets for large arrays, removing artificial chunking boundaries.
-10. **Batched Stack Buffer for Exceptions**:
-    - **Purpose**: Eliminates memory fragmentation and vector reallocation during exception handling.
-    - **Mechanism**: Gathers exception indices and IEEE 754 bit representations in fixed-size stack arrays and writes them to the output buffer in a single batch, halving vector management overhead.
-11. **Zero-Heap Allocation Streaming APIs**:
-    - **Purpose**: Completely avoids garbage collection and heap allocation overhead in high-throughput streaming systems.
-    - **Mechanism**: Exposes `compress_into` and `decompress_into` APIs that allow callers to reuse pre-allocated memory buffers across batches without extra heap allocations.
-12. **Unified Zero-Cost Generic Abstraction with Precomputed Tables**:
-    - **Purpose**: Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.
-    - **Mechanism**: Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.
+- **Adaptive Time-Series Delta-ALP**:<br>
+  Eliminates redundant bit-widths caused by wide global baseline spreads in smooth physical waveforms.<br>
+  The reference implementation only supports static FOR base subtraction. For physical waveforms (meteorology, hydrology, IoT sensors) with large global spans, fastalp introduces adjacent first-order differencing paired with a 16-sample mathematical early exit (aborting instantly if deltas do not improve bit-width), reducing dynamic bit-widths by 15% ~ 38%.
+
+- **Exact Decimal Division Reconstruction (use_div)**:<br>
+  Eliminates spurious exceptions caused by IEEE 754 reciprocal multiplication round-off errors.<br>
+  Reference ALP relies exclusively on reciprocal multiplication (`* 0.1`), where binary truncation causes losslessly encodable physical measurements to be misclassified as exceptions (costing 80~128 bits each). fastalp introduces an exact decimal division mode, driving false exceptions to zero and reducing per-point footprint by 20% ~ 38%.
+
+- **Outlier Pruning with 0-bit Compression**:<br>
+  Unlocks >150x compression on series with 99% identical base values and rare spikes (e.g., `gov30`).<br>
+  Isolates rare pulse values into the exception dictionary, allowing the main bitstream to use a 0-bit bit-width (storing only length and baseline). Combined with 16-sample outlier pre-screening, high-entropy blocks exit within 2 samples with zero penalty.
+
+- **Exception Forward-Filling Smoothing**:<br>
+  Eliminates artificial step spikes and delta bit-width divergence caused by naive exception filling.<br>
+  Reference ALP replaces exceptions with the first non-exception value in the chunk, creating artificial step transitions during delta encoding. fastalp forward-fills exception positions with the previous valid integer before computing differences, maintaining narrow delta bit-widths.
+
+- **Compact 2-bit Tagged Header & Large Array Scalability**:<br>
+  Minimizes framing overhead and removes single-block 65,535 element truncation limits.<br>
+  Uses a self-describing 2-bit length tag layout where standard 1024-element blocks require only 3 header bytes (and 1 byte in RAW fallback mode). Seamlessly auto-promotes to 32-bit count and exception offsets for large arrays, removing artificial chunking boundaries.
+
+- **12.5% Exception Threshold RAW Fallback**:<br>
+  Prevents space expansion (negative compression) on high-entropy floats.<br>
+  When exception counts exceed 128 (12.5% of a 1024 block) or compressed size exceeds raw data size, fastalp instantly aborts further encoding and falls back to a compact single-byte header RAW stream, preventing the 1.5x ~ 2.0x space expansion observed in reference ALP.
+
+- **Single-Cycle Identical Floats Fast-Skip**:<br>
+  Instantaneous compression of idle sensor heartbeats and disconnected lines.<br>
+  Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**).
+
+- **3-Tier Microarchitectural Sampling Pruning Pipeline**:<br>
+  Solves the bottleneck in C++ ALP where exhaustive factor exploration consumed over 80% of CPU time, throttling end-to-end ingestion throughput to 0.83 GB/s.<br>
+  Introduces a 3-tier cascade: Tier 1 (Pure Decimal Early Exit) validates the basic decimal exponent against 32 samples; if 100% losslessly representable with zero exceptions, it immediately returns optimal parameters without testing candidate factors. Tier 2 (4-Sample and 16-Sample Prescreening) tests candidate factors with 4 samples first, discarding subpar candidates before evaluating all 32 samples. Tier 3 (Non-Decimal Scientific Early Exit) instantly halts factor search if the basic decimal exponent produces 100% exceptions. This drives end-to-end ingestion throughput from 0.83 GB/s to **3.91 GB/s (4.7x speedup, up to 7.0x in specific blocks)**.
+
+- **Pure-Register SIMD Auto-Vectorized Decoding**:<br>
+  Eliminates memory gather latencies and cache miss stalls common in traditional bit-unpacking loops.<br>
+  For common bit-widths (8, 16, 32, 64 bits), the decoder is implemented as branchless, unrolled parallel SIMD sequences targeting ARM NEON and x86 AVX2 vector registers, reaching **23.59 GB/s geometric mean**.
+
+- **256-Entry Stack-Allocated L1D Lookup Table**:<br>
+  Eliminates multi-cycle hardware floating-point division latencies and dynamic memory allocations in inner loops.<br>
+  For small bit-widths (1, 2, 4 bits) and decimal division reconstruction, constructs a 256-entry table directly on the stack frame. Operating 100% within CPU L1D cache, it replaces 30+ cycle hardware division instructions with single L1D cache lookups.
+
+- **Fused Delta Bitpacking Pipeline**:<br>
+  Eliminates the memory bandwidth and cache pollution of allocating and writing an intermediate 8KB difference buffer.<br>
+  Conventional compressors run two passes: compute diffs into an 8KB memory slice, then read it back for bitpacking. fastalp's 8-way register pipeline computes adjacent deltas, subtracts the baseline, and shifts bits into a 128-bit packing accumulator in a single fused pass with **zero memory writes and zero heap allocations**, boosting delta compression throughput by >30%.
+
+- **Mathematical Delta Early Pruning**:<br>
+  Prevents expensive full-chunk differencing on disordered or oscillating series.<br>
+  By the mathematical axiom that subset extrema difference is always $\le$ global extrema difference, fastalp samples the first 16 points. If their delta bit-width already matches or exceeds FOR bit-width, delta encoding is mathematically proven to be non-beneficial, exiting instantly.
+
+- **4-Way Loop Unrolling & Zero-Closure Pipeline**:<br>
+  Maximizes instruction-level parallelism (ILP) across modern CPU superscalar ALUs.<br>
+  Completely avoids dynamic closures and indirect branches in the inner loop. Inlines a dedicated 4-way unrolled pipeline that processes 4 values per iteration through registers without exception checks when within range, achieving **4.4~6.8 GB/s** compression throughput.
+
+- **Single-Cycle Identical Floats Fast-Skip**:<br>
+  Instantaneous compression of idle sensor heartbeats and disconnected lines.<br>
+  Uses a single `slice[1] == slice[0]` equality check at the encoder entrance. Non-identical blocks cost only 1 CPU cycle to bypass; identical blocks encode into an 11-byte packet in 350 ns (**744x compression ratio**).
+
+- **Outlier Pruning with 0-bit Compression**:<br>
+  Unlocks >150x compression on series with 99% identical base values and rare spikes (e.g., `gov30`).<br>
+  Isolates rare pulse values into the exception dictionary, allowing the main bitstream to use a 0-bit bit-width (storing only length and baseline). Combined with 16-sample outlier pre-screening, high-entropy blocks exit within 2 samples with zero penalty.
+
+- **Compact 2-bit Tagged Header & Large Array Scalability**:<br>
+  Minimizes framing overhead and removes single-block 65,535 element truncation limits.<br>
+  Uses a self-describing 2-bit length tag layout where standard 1024-element blocks require only 3 header bytes (and 1 byte in RAW fallback mode). Seamlessly auto-promotes to 32-bit count and exception offsets for large arrays, removing artificial chunking boundaries.
+
+- **Batched Stack Buffer for Exceptions**:<br>
+  Eliminates memory fragmentation and vector reallocation during exception handling.<br>
+  Gathers exception indices and IEEE 754 bit representations in fixed-size stack arrays and writes them to the output buffer in a single batch, halving vector management overhead.
+
+- **Zero-Heap Allocation Streaming APIs**:<br>
+  Completely avoids garbage collection and heap allocation overhead in high-throughput streaming systems.<br>
+  Exposes `compress_into` and `decompress_into` APIs that allow callers to reuse pre-allocated memory buffers across batches without extra heap allocations.
+
+- **Unified Zero-Cost Generic Abstraction with Precomputed Tables**:<br>
+  Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.<br>
+  Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.

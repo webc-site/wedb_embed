@@ -102,7 +102,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     return None;
   }
 
-  // 极速全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
+  // 全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
   let first = slice[0];
   let is_all_identical = match count {
     0 => false,

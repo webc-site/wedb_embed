@@ -1,7 +1,7 @@
 use crate::{constants::MAX_EXCEPTIONS, encoder::exception::Exception, float::AlpFloat};
 
 /// Unified branchless unrolled encoding loop for 4 elements per step.
-/// 针对浮点数编码的极致无分支 4-way 展开内核：
+/// 针对浮点数编码的无分支 4-way 展开内核：
 /// 批处理 4 个元素，若 100% 精确命中（无异常），直接 SIMD/向量化写入并利用无分支指令更新 min/max，消除 95% 异常分支开销。
 #[inline(always)]
 unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
