@@ -7,7 +7,7 @@ mod standard;
 mod state;
 
 pub use delta::encode_delta;
-pub use exception::{DEFAULT_EXCEPTIONS_CAP, Exception, exceptions_byte_size, write_exceptions};
+pub use exception::Exception;
 pub use standard::encode_standard;
 pub use state::Encoder;
 
