@@ -182,3 +182,11 @@ records:
     title: "Support f64 Compression"
     status: posted
     date: 2026-09-03
+
+  - type: issue
+    repo: cnosdb/cnosdb
+    issue: 2437
+    url: https://github.com/cnosdb/cnosdb/issues/2437
+    title: "[Feature] Support fastalp (Adaptive Lossless Floating-Point) column codec for decimal metrics and market data"
+    status: submitted
+    date: 2026-09-03
