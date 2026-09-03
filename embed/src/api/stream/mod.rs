@@ -1,12 +1,14 @@
 pub mod r#const;
+pub mod group;
 pub mod r#impl;
+pub mod info;
 pub mod key;
 pub mod meta;
 pub mod opt;
 use std::str;
 
 pub use r#const::*;
-pub use r#impl::check_lag_valid;
+pub use group::check_lag_valid;
 pub use key::{
   consumer_meta as compose_stream_consumer_meta, consumer_prefix as compose_stream_consumer_prefix,
   consumer_prefix_all as compose_stream_consumer_prefix_all,

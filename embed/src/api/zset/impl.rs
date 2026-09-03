@@ -7,9 +7,7 @@ use crate::{
     ZScanResult, ZSetKeyMemberScore, ZSetMemberScore, ZSetPopResult, ZSetScanByMemberResult,
     key::{compose_zset_key, compose_zset_score_key},
     meta::ZSetMeta,
-    opt::{
-      IntoRangeLex, IntoRangeRank, IntoRangeScore, RangeLex, RangeScore, ZAdd, ZRange,
-    },
+    opt::{IntoRangeLex, IntoRangeRank, IntoRangeScore, RangeLex, RangeScore, ZAdd, ZRange},
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
