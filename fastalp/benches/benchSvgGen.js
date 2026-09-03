@@ -61,8 +61,7 @@ export const benchSvgGen = async () => {
     const file = Bun.file(readmePath);
     if (await file.exists()) {
       let content = await file.text();
-      const linkTitle = lang === "zh" ? "🔗 SVG 高清矢量原图直链" : "🔗 Vector SVG Direct Link";
-      const heroBlock = `<p align="center">\n  <a href="${cdnUrl}" target="_blank">\n    <img src="${cdnUrl}" alt="${i18n.hero_alt}" width="100%">\n  </a>\n  <br>\n  <b>${linkTitle}</b>: <a href="${cdnUrl}"><code>${cdnUrl}</code></a>\n  <br><br>\n  <sub><b>${i18n.env_title}</b>: ${i18n.env_cpu} ｜ ${i18n.env_os} ｜ ${i18n.env_toolchain}</sub>\n</p>`;
+      const heroBlock = `<p align="center">\n  <img src="${cdnUrl}" alt="${i18n.hero_alt}" width="100%">\n  <br>\n  <sub><b>${i18n.env_title}</b>: ${i18n.env_cpu} ｜ ${i18n.env_toolchain}</sub>\n</p>`;
 
       const heroRegex = /<p align="center">[\s\S]*?alt="fastalp[^"]*"[\s\S]*?<\/p>/;
       if (heroRegex.test(content)) {

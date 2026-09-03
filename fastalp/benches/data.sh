@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIR=$(realpath $0) && DIR=${DIR%/*}
+cd $DIR
+
 DATA_DIR="$DIR/data"
 mkdir -p "$DATA_DIR"
 

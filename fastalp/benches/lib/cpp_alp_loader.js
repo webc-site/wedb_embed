@@ -47,7 +47,7 @@ export const loadCppAlpResult = async () => {
   const n = datasets.length;
   return {
     algorithm: "cpp_alp",
-    display_name: "C++ ALP (Reference)",
+    display_name: "C++ ALP",
     category: "specialized_float",
     paper_31: {
       total_raw_bytes: totalRaw,

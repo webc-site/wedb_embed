@@ -3,13 +3,9 @@
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@TP/i4bAXFoDJuICZ_n5BK9g.svg" target="_blank">
-    <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@TP/i4bAXFoDJuICZ_n5BK9g.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
-  </a>
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Xa/GhSFz3DKf1tdUa10XhzQ.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
-  <b>🔗 SVG 高清矢量原图直链</b>: <a href="https://fastly.jsdelivr.net/gh/webc-fs/-@TP/i4bAXFoDJuICZ_n5BK9g.svg"><code>https://fastly.jsdelivr.net/gh/webc-fs/-@TP/i4bAXFoDJuICZ_n5BK9g.svg</code></a>
-  <br><br>
-  <sub><b>评测环境</b>: CPU: Apple M2 Max (12 核心: 8 性能核 @ 3.68 GHz + 4 能效核 @ 2.42 GHz) ｜ 系统: macOS Sequoia 26.5.1 (Darwin 25.5.0 arm64) ｜ 工具链: Rust 1.98.0 / LLVM Clang 22.1.8 (-O3 -march=native)</sub>
+  <sub><b>评测环境</b>: 芯片: Apple M2 Max (12核: 8性能核 @ 3.68GHz + 4能效核 @ 2.42GHz) ｜ 环境: macOS Sequoia ｜ 工具链: Rust 1.98 / LLVM Clang (-O3)</sub>
 </p>
 
 ---
