@@ -6,7 +6,12 @@ pub mod key;
 pub mod meta;
 pub mod opt;
 pub mod pel;
+pub mod range;
+pub mod trim;
 use std::str;
+
+pub use range::{stream_range, stream_range_with_options, stream_revrange};
+pub use trim::{stream_del, stream_setid, stream_trim};
 
 pub use r#const::*;
 pub use group::check_lag_valid;

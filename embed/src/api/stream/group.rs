@@ -7,7 +7,8 @@ use crate::{
       StreamEntry,
       r#const::*,
       decode_stream_entry_fields,
-      r#impl::{clean_stream_residue, get_stream_meta, stream_range_with_options},
+      r#impl::{clean_stream_residue, get_stream_meta},
+      range::stream_range_with_options,
       key,
       meta::{
         StreamConsumerGroupMeta, StreamConsumerMeta, StreamId, StreamMeta, StreamPelEntry,
