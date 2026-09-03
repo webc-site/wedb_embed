@@ -77,3 +77,9 @@
   repo: madiele/vod2pod-rss
   url: https://github.com/madiele/vod2pod-rss/issues/196#issuecomment-5508047254
   title: "Allow for local storage instead of redis"
+
+- type: issue_submission
+  repo: OpenGithubs/weekly
+  url: https://github.com/OpenGithubs/weekly/issues/146
+  title: "【开源自荐】wedb_embed：纯 Rust 嵌入式 Redis 引擎，速度达 Redis 的 20~40 倍"
+

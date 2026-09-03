@@ -198,3 +198,39 @@ records:
     title: "Sharing benchmark observations on decimal reconstruction and exception rates from fastalp"
     status: submitted
     date: 2026-09-03
+
+  - type: issue_submission
+    repo: 521xueweihan/HelloGitHub
+    issue: 3633
+    url: https://github.com/521xueweihan/HelloGitHub/issues/3633
+    title: "[开源推荐] fastalp：最快的通用时序浮点压缩、解压"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_submission
+    repo: ruanyf/weekly
+    issue: 11487
+    url: https://github.com/ruanyf/weekly/issues/11487
+    title: "【开源自荐】fastalp：最快的通用时序浮点压缩、解压"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_submission
+    repo: rustcn-org/rust-weekly
+    issue: 13
+    url: https://github.com/rustcn-org/rust-weekly/issues/13
+    title: "推荐项目：fastalp —— 最快的通用时序浮点压缩、解压"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_submission
+    repo: OpenGithubs/weekly
+    issue: 147
+    url: https://github.com/OpenGithubs/weekly/issues/147
+    title: "【开源自荐】fastalp：最快的通用时序浮点压缩、解压"
+    status: submitted
+    date: 2026-09-03
+
+
+
+
