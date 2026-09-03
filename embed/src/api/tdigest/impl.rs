@@ -14,6 +14,17 @@ use crate::{
   wedb::Db,
 };
 
+#[inline]
+pub(crate) fn validate_compression(comp: u32) -> Result<()> {
+  if !(MIN_COMPRESSION..=MAX_COMPRESSION).contains(&comp) {
+    Err(Error::invalid_data(format!(
+      "ERR compression out of range [{MIN_COMPRESSION}, {MAX_COMPRESSION}]"
+    )))
+  } else {
+    Ok(())
+  }
+}
+
 impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
@@ -26,11 +37,7 @@ where
     } else {
       compression as u32
     };
-    if !(MIN_COMPRESSION..=MAX_COMPRESSION).contains(&comp) {
-      return Err(Error::invalid_data(format!(
-        "ERR compression out of range [{MIN_COMPRESSION}, {MAX_COMPRESSION}]"
-      )));
-    }
+    validate_compression(comp)?;
 
     let key_bytes = key.as_ref();
     let meta_k = key::meta(&kc, key_bytes);
@@ -109,12 +116,8 @@ where
       ));
     }
 
-    if let Some(comp) = compression
-      && !(MIN_COMPRESSION..=MAX_COMPRESSION).contains(&comp)
-    {
-      return Err(Error::invalid_data(format!(
-        "ERR compression out of range [{MIN_COMPRESSION}, {MAX_COMPRESSION}]"
-      )));
+    if let Some(comp) = compression {
+      validate_compression(comp)?;
     }
 
     let dst_bytes = dest_key.as_ref();
