@@ -4,6 +4,7 @@ pub mod r#impl;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod query;
 
 pub use algo::*;
 pub use r#const::*;
