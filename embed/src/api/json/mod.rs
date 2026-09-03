@@ -1,7 +1,9 @@
+pub mod arr;
 pub mod r#const;
 pub mod r#impl;
 pub mod key;
 pub mod meta;
+pub mod mutate;
 pub mod opt;
 pub mod path;
 
