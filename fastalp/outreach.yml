@@ -190,3 +190,11 @@ records:
     title: "[Feature] Support fastalp (Adaptive Lossless Floating-Point) column codec for decimal metrics and market data"
     status: submitted
     date: 2026-09-03
+
+  - type: issue
+    repo: spiraldb/alp
+    issue: 115
+    url: https://github.com/spiraldb/alp/issues/115
+    title: "Consider exact decimal division mode to eliminate 1-ULP multiplication roundoff exceptions"
+    status: submitted
+    date: 2026-09-03
