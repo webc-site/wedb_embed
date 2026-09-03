@@ -4,7 +4,7 @@ records:
     pr_number: 2763
     url: https://github.com/rust-unofficial/awesome-rust/pull/2763
     title: Add fastalp under Compression section
-    status: submitted
+    status: closed
     date: 2026-09-03
 
   - type: pull_request
@@ -140,7 +140,7 @@ records:
     pr_number: 108
     url: https://github.com/awesome-rust-com/awesome-rust/pull/108
     title: Add fastalp under Compression section
-    status: submitted
+    status: merged
     date: 2026-09-03
 
   - type: pull_request
