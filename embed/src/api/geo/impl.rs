@@ -82,8 +82,7 @@ where
     key: K,
     member: M,
   ) -> Result<Option<(f64, f64)>> {
-    let res = self.geopos(key, &[member])?;
-    Ok(res.into_iter().next().flatten())
+    Ok(self.zscore(key, member)?.map(score_to_coord))
   }
 
   #[inline]
@@ -149,8 +148,10 @@ where
     key: K,
     member: M,
   ) -> Result<Option<String>> {
-    let res = self.geohash(key, &[member])?;
-    Ok(res.into_iter().next().flatten())
+    Ok(self.zscore(key, member)?.map(|s| {
+      let (lon, lat) = score_to_coord(s);
+      encode_geohash_string(lon, lat)
+    }))
   }
 
   #[inline]

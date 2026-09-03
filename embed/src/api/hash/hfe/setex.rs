@@ -175,7 +175,7 @@ where
       };
 
       match entry.kind {
-        HashFieldStateKind::Missing => {
+        HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
           if target_expire == 0 {
             meta.apply_missing_to_persistent();
           } else {
@@ -192,13 +192,6 @@ where
             meta.apply_ttl_to_persistent();
           } else {
             meta.apply_ttl_to_ttl(target_expire);
-          }
-        }
-        HashFieldStateKind::ExpiredTTLPhysical => {
-          if target_expire == 0 {
-            meta.apply_missing_to_persistent();
-          } else {
-            meta.apply_missing_to_ttl(target_expire);
           }
         }
       }

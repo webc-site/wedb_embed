@@ -97,7 +97,6 @@ where
     let key_bytes = key.as_ref();
     let kc = self.kc();
     let meta_k = compose_hash_meta_key(&kc, key_bytes);
-    let _meta_ks = self.meta();
     let now_ms = current_now_ms();
 
     let mut meta = match get_meta_checked::<HashMeta, _>(self, key_bytes, &meta_k, now_ms)? {

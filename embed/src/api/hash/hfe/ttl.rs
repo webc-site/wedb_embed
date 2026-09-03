@@ -5,14 +5,37 @@ use crate::{
     CachedFieldState, ceil_div_1000,
     r#const::{HASH_EXPIRE_SET_OK, HASH_FIELD_NOT_FOUND, HASH_FIELD_PERSISTENT},
     hfe::{get_hfe_meta, load_field_state},
-    key,
-    meta::{HashFieldStateKind, HashItemKeyComposer, compose_hash_meta_key, decode_field_state},
+    meta::{
+      HashFieldStateKind, HashItemKeyComposer, HashMeta, compose_hash_meta_key, decode_field_state,
+    },
   },
   engine::{Engine, Partition},
   error::{Error, Result},
   meta::current_now_ms,
   wedb::Db,
 };
+
+#[inline]
+fn evaluate_field_ttl(
+  meta: &HashMeta,
+  raw_opt: Option<&[u8]>,
+  now_ms: u64,
+  map_live_ttl: impl Fn(u64, u64) -> i64,
+) -> i64 {
+  match raw_opt {
+    None => HASH_FIELD_NOT_FOUND,
+    Some(raw) => match decode_field_state(meta, raw, now_ms) {
+      None => HASH_FIELD_NOT_FOUND,
+      Some(s) => match s.kind {
+        HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
+          HASH_FIELD_NOT_FOUND
+        }
+        HashFieldStateKind::Persistent => HASH_FIELD_PERSISTENT,
+        HashFieldStateKind::LiveTTL => map_live_ttl(s.expire, now_ms),
+      },
+    },
+  }
+}
 
 impl<E: Engine> Db<E>
 where
@@ -195,21 +218,15 @@ where
     };
 
     let f_bytes = field.as_ref();
-    let item_k = key::field(&kc, key_bytes, f_bytes);
-    let data_ks = self.data();
-    match data_ks.get(item_k.as_slice())? {
-      None => Ok(HASH_FIELD_NOT_FOUND),
-      Some(raw) => match decode_field_state(&meta, &raw, now_ms) {
-        None => Ok(HASH_FIELD_NOT_FOUND),
-        Some(s) => match s.kind {
-          HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
-            Ok(HASH_FIELD_NOT_FOUND)
-          }
-          HashFieldStateKind::Persistent => Ok(HASH_FIELD_PERSISTENT),
-          HashFieldStateKind::LiveTTL => Ok(map_live_ttl(s.expire, now_ms)),
-        },
-      },
-    }
+    let mut composer = HashItemKeyComposer::new(&kc, key_bytes);
+    let item_k = composer.key_for_field(f_bytes);
+    let raw = self.data().get(item_k)?;
+    Ok(evaluate_field_ttl(
+      &meta,
+      raw.as_deref(),
+      now_ms,
+      map_live_ttl,
+    ))
   }
 
   #[inline]
@@ -250,19 +267,8 @@ where
       }
 
       let item_k = composer.key_for_field(f_bytes);
-      let res = match data_ks.get(item_k)? {
-        None => HASH_FIELD_NOT_FOUND,
-        Some(raw) => match decode_field_state(&meta, &raw, now_ms) {
-          None => HASH_FIELD_NOT_FOUND,
-          Some(s) => match s.kind {
-            HashFieldStateKind::Missing | HashFieldStateKind::ExpiredTTLPhysical => {
-              HASH_FIELD_NOT_FOUND
-            }
-            HashFieldStateKind::Persistent => HASH_FIELD_PERSISTENT,
-            HashFieldStateKind::LiveTTL => map_live_ttl(s.expire, now_ms),
-          },
-        },
-      };
+      let raw = data_ks.get(item_k)?;
+      let res = evaluate_field_ttl(&meta, raw.as_deref(), now_ms, &map_live_ttl);
       result_cache.insert(f_bytes, res);
       results.push(res);
     }

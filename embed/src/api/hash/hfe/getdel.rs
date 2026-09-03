@@ -69,7 +69,7 @@ where
         HashFieldStateKind::Missing => {
           results.push(None);
         }
-        HashFieldStateKind::Persistent => {
+        HashFieldStateKind::Persistent | HashFieldStateKind::LiveTTL => {
           let payload = entry
             .raw
             .as_ref()
@@ -78,27 +78,11 @@ where
             .unwrap_or_default();
           results.push(Some(payload));
           batch.rm_data(item_k);
-          meta.apply_persistent_to_deleted();
-          meta_changed = true;
-          state_cache.insert(
-            f_bytes,
-            CachedFieldState {
-              kind: HashFieldStateKind::Missing,
-              expire: 0,
-              raw: None,
-            },
-          );
-        }
-        HashFieldStateKind::LiveTTL => {
-          let payload = entry
-            .raw
-            .as_ref()
-            .and_then(|s| meta.decode_subkey_value(s))
-            .map(|(_, p)| p.to_vec())
-            .unwrap_or_default();
-          results.push(Some(payload));
-          batch.rm_data(item_k);
-          meta.apply_ttl_to_deleted();
+          if entry.kind == HashFieldStateKind::Persistent {
+            meta.apply_persistent_to_deleted();
+          } else {
+            meta.apply_ttl_to_deleted();
+          }
           meta_changed = true;
           state_cache.insert(
             f_bytes,

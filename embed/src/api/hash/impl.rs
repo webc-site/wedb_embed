@@ -38,6 +38,25 @@ where
 
 // ── 纯 DbLike 泛型实现 ──
 
+#[inline]
+fn apply_field_state_to_meta(meta: &mut HashMeta, state: HashFieldStateKind) -> bool {
+  match state {
+    HashFieldStateKind::Missing => {
+      meta.apply_missing_to_persistent();
+      true
+    }
+    HashFieldStateKind::ExpiredTTLPhysical => {
+      meta.apply_ttl_to_persistent();
+      true
+    }
+    HashFieldStateKind::LiveTTL => {
+      meta.apply_ttl_to_persistent();
+      false
+    }
+    HashFieldStateKind::Persistent => false,
+  }
+}
+
 impl<E: Engine> Db<E>
 where
   Error: From<E::Error>,
@@ -109,31 +128,17 @@ where
       let v_bytes = v.as_ref();
       let item_k = composer.key_for_field(f_bytes);
 
-      let mut inserted_count = 0usize;
-      if metadata_existed {
+      let inserted_count = if metadata_existed {
         let state_kind = if let Some(raw) = data_ks.get(item_k)? {
           decode_field_state(&meta, &raw, now_ms).map_or(HashFieldStateKind::Missing, |s| s.kind)
         } else {
           HashFieldStateKind::Missing
         };
-        match state_kind {
-          HashFieldStateKind::Missing => {
-            meta.apply_missing_to_persistent();
-            inserted_count = 1;
-          }
-          HashFieldStateKind::ExpiredTTLPhysical => {
-            meta.apply_ttl_to_persistent();
-            inserted_count = 1;
-          }
-          HashFieldStateKind::LiveTTL => {
-            meta.apply_ttl_to_persistent();
-          }
-          HashFieldStateKind::Persistent => {}
-        }
+        usize::from(apply_field_state_to_meta(&mut meta, state_kind))
       } else {
         meta.apply_missing_to_persistent();
-        inserted_count = 1;
-      }
+        1
+      };
 
       meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
       batch.insert_meta(&meta_k, &meta.encode());
@@ -181,19 +186,8 @@ where
         HashFieldStateKind::Missing
       };
 
-      match state_kind {
-        HashFieldStateKind::Missing => {
-          meta.apply_missing_to_persistent();
-          inserted_count += 1;
-        }
-        HashFieldStateKind::ExpiredTTLPhysical => {
-          meta.apply_ttl_to_persistent();
-          inserted_count += 1;
-        }
-        HashFieldStateKind::LiveTTL => {
-          meta.apply_ttl_to_persistent();
-        }
-        HashFieldStateKind::Persistent => {}
+      if apply_field_state_to_meta(&mut meta, state_kind) {
+        inserted_count += 1;
       }
 
       meta.with_encoded_subkey_value(v_bytes, 0, |enc| batch.insert_data(item_k, enc));
