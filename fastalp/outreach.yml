@@ -174,3 +174,11 @@ records:
     title: "feat(compression): add fastalp floating-point codec for decimal metrics and market prices"
     status: submitted
     date: 2026-09-03
+
+  - type: issue_comment
+    repo: quickwit-oss/tantivy
+    issue: 2114
+    url: https://github.com/quickwit-oss/tantivy/issues/2114#issuecomment-5518268213
+    title: "Support f64 Compression"
+    status: posted
+    date: 2026-09-03
