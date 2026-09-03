@@ -4,6 +4,7 @@ pub mod r#impl;
 pub mod key;
 pub mod meta;
 pub mod opt;
+pub mod scan;
 
 pub use r#const::{
   ERR_HASH_FIELD_EXPIRATION_LEGACY_ENCODING, ERR_HASH_VALUE_NOT_FLOAT, ERR_HASH_VALUE_NOT_INTEGER,
