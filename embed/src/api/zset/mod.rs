@@ -5,6 +5,9 @@ pub mod meta;
 pub mod opt;
 pub mod pop;
 pub mod range;
+pub mod rank;
+pub mod scan;
+pub mod score;
 pub mod set_ops;
 
 pub use r#const::ERR_WRONG_TYPE;
