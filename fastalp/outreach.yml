@@ -166,3 +166,11 @@ records:
     title: "Feature Request: Cascade `DELTA` - `FFOR`"
     status: posted
     date: 2026-09-03
+
+  - type: pull_request
+    repo: vignesh2027/-FLUXDB
+    pr_number: 1
+    url: https://github.com/vignesh2027/-FLUXDB/pull/1
+    title: "feat(compression): add fastalp floating-point codec for decimal metrics and market prices"
+    status: submitted
+    date: 2026-09-03
