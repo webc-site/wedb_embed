@@ -3,13 +3,12 @@ use crate::{
     MAX_STRING_SIZE,
     r#const::{ERR_DIGEST_INVALID_LEN, ERR_STRING_EXCEEDS_MAX_SIZE},
     get_string_raw, key,
-    meta::{encode_string_value, with_encoded_string_value, write_string_val},
+    meta::{with_encoded_string_value, write_string_val},
     opt::{DelEx, GetEx, Set, StringSet, StringSetType},
     string_digest_bytes,
   },
   engine::{Engine, Partition},
   error::{Error, Result},
-  key::cleanup_all_composite_data,
   meta::current_now_ms,
   wedb::Db,
 };
@@ -87,7 +86,6 @@ where
     }
 
     let raw_k = key::raw(&kc, key_bytes);
-    let data_ks = self.data();
     // 极速直写快速通道 (Fast Path)
     if args.is_fast_path() {
       let mut dyn_buf = Vec::new();
@@ -136,17 +134,9 @@ where
           false
         }
       }
-      StringSetType::IfNe => {
-        if let Some(expected) = args.cmp_value {
-          if let Some((ref r, _, offset)) = old_raw {
-            &r[offset..] != expected
-          } else {
-            true
-          }
-        } else {
-          true
-        }
-      }
+      StringSetType::IfNe => args.cmp_value.is_none_or(|expected| {
+        old_raw.as_ref().is_none_or(|(r, _, offset)| &r[*offset..] != expected)
+      }),
       StringSetType::IfDeq => {
         if let Some(expected) = args.cmp_value
           && let Some((ref r, _, offset)) = old_raw
@@ -156,17 +146,11 @@ where
           false
         }
       }
-      StringSetType::IfDne => {
-        if let Some(expected) = args.cmp_value {
-          if let Some((ref r, _, offset)) = old_raw {
-            !string_digest_bytes(&r[offset..]).eq_ignore_ascii_case(expected)
-          } else {
-            true
-          }
-        } else {
-          true
-        }
-      }
+      StringSetType::IfDne => args.cmp_value.is_none_or(|expected| {
+        old_raw.as_ref().is_none_or(|(r, _, offset)| {
+          !string_digest_bytes(&r[*offset..]).eq_ignore_ascii_case(expected)
+        })
+      }),
     };
 
     let old_val = if args.get {
@@ -186,16 +170,8 @@ where
     };
 
     let mut dyn_buf = Vec::new();
-    with_encoded_string_value(val_bytes, expire, &mut dyn_buf, |enc_val| -> Result<()> {
-      if old_is_wrong_type {
-        let mut batch = self.batch();
-        batch.insert_data(&raw_k, enc_val);
-        cleanup_all_composite_data(self, key_bytes, &mut batch)?;
-        batch.commit()?;
-      } else {
-        data_ks.insert(&raw_k, enc_val)?;
-      }
-      Ok(())
+    with_encoded_string_value(val_bytes, expire, &mut dyn_buf, |enc_val| {
+      write_string_val(self, &raw_k, key_bytes, enc_val, old_is_wrong_type)
     })?;
 
     if args.get {
@@ -267,8 +243,10 @@ where
     if let Some(opt_val) = opt_iter.next() {
       let now_ms = current_now_ms();
       let new_expire = opt_val.compute_expire(now_ms);
-      let enc_val = encode_string_value(payload, new_expire);
-      data_ks.insert(&raw_k, &enc_val)?;
+      let mut dyn_buf = Vec::new();
+      with_encoded_string_value(payload, new_expire, &mut dyn_buf, |enc_val| {
+        data_ks.insert(&raw_k, enc_val)
+      })?;
     }
 
     Ok(Some(res_vec))

@@ -11,13 +11,14 @@ use crate::{
       meta::BitmapMeta,
     },
     key::{check_composite_meta_not_other_type, clear_prefix_in_batch},
-    string::key::raw,
+    string::{
+      decode_string_value, is_string_expired, key::raw, meta::with_encoded_string_value,
+    },
   },
   engine::{Engine, Partition},
   error::{Error, Result},
   key_composer::KeyTag,
   meta::current_now_ms,
-  string::{decode_string_value, encode_string_value, is_string_expired},
   wedb::Db,
 };
 /// Helper struct containing segment-level bit coordinate calculation.
@@ -127,8 +128,10 @@ where
           str_bytes.resize(byte_idx + 1, 0);
         }
         set_bit_in_bytes(&mut str_bytes, offset as usize, bit);
-        let enc_val = encode_string_value(&str_bytes, expire_at);
-        data_ks.insert(&raw_k, &enc_val)?;
+        let mut dyn_buf = Vec::new();
+        with_encoded_string_value(&str_bytes, expire_at, &mut dyn_buf, |enc| {
+          data_ks.insert(&raw_k, enc)
+        })?;
         return Ok(old_bit);
       }
     }

@@ -509,6 +509,17 @@ where
   get_meta_checked::<CuckooChainMeta, _>(db, k_bytes, meta_k, now_ms)
 }
 
+#[inline]
+fn bucket_contains_fp(slice_opt: Option<&[u8]>, offset: usize, bucket_size: usize, fp: u8) -> bool {
+  if let Some(slice) = slice_opt
+    && let Some(sub) = slice.get(offset..offset + bucket_size)
+  {
+    memchr(fp, sub).is_some()
+  } else {
+    false
+  }
+}
+
 /// Cuckoo filter operations interface.
 /// 布谷鸟过滤器结构操作接口 (Cuckoo Filter)
 impl<E: Engine> Db<E>
@@ -832,11 +843,10 @@ where
       Some(m) => m,
       None => return Ok(false),
     };
-
     let h = CuckooFilterHelper::hash(item.as_ref());
     let fp = CuckooFilterHelper::generate_fingerprint(h);
-    let bs = meta.bucket_size as u32;
-    let buckets_per_page = (meta.page_size / bs).max(1);
+    let bs = meta.bucket_size as usize;
+    let buckets_per_page = (meta.page_size / (meta.bucket_size as u32)).max(1);
 
     for filter_idx in (0..meta.n_filters).rev() {
       let num_buckets = meta.sub_filter_num_buckets(filter_idx)?;
@@ -844,33 +854,25 @@ where
       let b2 = CuckooFilterHelper::get_alt_bucket_index(b1, fp, num_buckets);
 
       let page_idx1 = b1 / buckets_per_page;
-      let off1 = ((b1 % buckets_per_page) as usize) * (meta.bucket_size as usize);
+      let off1 = ((b1 % buckets_per_page) as usize) * bs;
       let page_key1 = key::cuckoo_page(&kc, key_bytes, filter_idx, page_idx1);
       let slice1 = data_ks.get(&page_key1)?;
 
-      if let Some(ref slice) = slice1
-        && let Some(sub) = slice.get(off1..off1 + meta.bucket_size as usize)
-        && memchr(fp, sub).is_some()
-      {
+      if bucket_contains_fp(slice1.as_deref(), off1, bs, fp) {
         return Ok(true);
       }
 
       if b1 != b2 {
         let page_idx2 = b2 / buckets_per_page;
-        let off2 = ((b2 % buckets_per_page) as usize) * (meta.bucket_size as usize);
+        let off2 = ((b2 % buckets_per_page) as usize) * bs;
         if page_idx2 == page_idx1 {
-          if let Some(ref slice) = slice1
-            && let Some(sub) = slice.get(off2..off2 + meta.bucket_size as usize)
-            && memchr(fp, sub).is_some()
-          {
+          if bucket_contains_fp(slice1.as_deref(), off2, bs, fp) {
             return Ok(true);
           }
         } else {
           let page_key2 = key::cuckoo_page(&kc, key_bytes, filter_idx, page_idx2);
-          if let Some(slice2) = data_ks.get(&page_key2)?
-            && let Some(sub) = slice2.get(off2..off2 + meta.bucket_size as usize)
-            && memchr(fp, sub).is_some()
-          {
+          let slice2 = data_ks.get(&page_key2)?;
+          if bucket_contains_fp(slice2.as_deref(), off2, bs, fp) {
             return Ok(true);
           }
         }

@@ -53,8 +53,18 @@ where
 
   #[inline]
   pub fn tdigest_cdf_one<K: AsRef<[u8]>>(&self, key: K, value: f64) -> Result<Option<f64>> {
-    let res = self.tdigest_cdf(key, &[value])?;
-    Ok(res.into_iter().next().flatten())
+    let key_bytes = key.as_ref();
+    let mut td = get_tdigest(self, key_bytes)?;
+    let had_unmerged = !td.unmerged_buffer.is_empty();
+    let cdf_val = td.cdf(value);
+    if had_unmerged {
+      save_tdigest(self, key_bytes, &td)?;
+    }
+    if cdf_val.is_nan() {
+      Ok(None)
+    } else {
+      Ok(Some(cdf_val))
+    }
   }
 
   #[inline]
