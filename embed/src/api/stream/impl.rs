@@ -13,7 +13,8 @@ use crate::{
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
-  key::get_meta_checked,
+  key::{cleanup_composite_data_raw, get_meta_checked},
+  key_composer::KeyTag,
   meta::{current_now_ms, generate_version},
   wedb::{Db, DbBatch},
 };
@@ -45,41 +46,16 @@ pub(crate) fn clean_stream_residue<E: Engine>(
 where
   Error: From<E::Error>,
 {
-  let kc = db.kc();
-  let data_ks = db.data();
-  let s_prefix = key::prefix_stack(&kc, key);
-  for g in data_ks.prefix(&s_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(s_prefix.as_slice()) {
-      batch.rm_data(k);
-    }
-  }
-  let g_prefix = key::group_prefix_stack(&kc, key);
-  for g in data_ks.prefix(&g_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(g_prefix.as_slice()) {
-      batch.rm_data(k);
-    }
-  }
-  let c_prefix = key::consumer_prefix_all_stack(&kc, key);
-  for g in data_ks.prefix(&c_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(c_prefix.as_slice()) {
-      batch.rm_data(k);
-    }
-  }
-  let p_prefix = key::pel_prefix_all_stack(&kc, key);
-  for g in data_ks.prefix(&p_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(p_prefix.as_slice()) {
-      batch.rm_data(k);
-    }
-  }
-  Ok(())
+  let mut buf = Vec::with_capacity(32 + key.len());
+  cleanup_composite_data_raw(
+    db.data(),
+    db.meta(),
+    &db.kc(),
+    KeyTag::StreamMeta as u8,
+    key,
+    batch,
+    &mut buf,
+  )
 }
 
 /// Retrieves last generated StreamId from metadata.
@@ -129,7 +105,7 @@ where
   let mut iter = data_ks.prefix(&prefix);
   while let Some(g) = iter.next() {
     let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
+    let k = entry.key();
     if !k.starts_with(prefix.as_slice()) {
       break;
     }
@@ -156,8 +132,8 @@ where
       {
         for next_g in iter.by_ref() {
           let next_entry = next_g?;
-          let (nk, _) = (next_entry.key(), next_entry.value());
-          if !nk.starts_with(&prefix) {
+          let nk = next_entry.key();
+          if !nk.starts_with(prefix.as_slice()) {
             break;
           }
           if let Some(nsid) = parse_stream_id_from_subkey(&nk[prefix.len()..]) {
@@ -536,97 +512,19 @@ where
 {
   let key_bytes = key.as_ref();
   let now_ms = current_now_ms();
-  let meta_k = key::meta(&db.kc(), key_bytes);
-  let _meta_ks = db.meta();
 
   let mut meta = match get_stream_meta(db, key_bytes, now_ms)? {
     Some(m) => m,
     None => return Ok(0),
   };
 
-  if meta.base.size == 0 {
-    return Ok(0);
-  }
-  if options.strategy == StreamTrimStrategy::MaxLen && meta.base.size <= options.max_len {
-    return Ok(0);
-  }
-  if options.strategy == StreamTrimStrategy::MinId && meta.first_entry_id >= options.min_id {
-    return Ok(0);
-  }
-
-  let kc = db.kc();
-  let prefix = key::prefix_stack(&kc, key_bytes);
-  let data_ks = db.data();
-  let mut delete_cnt = 0u64;
-  let mut last_deleted_id = StreamId::min();
-  let mut new_first_id = StreamId::min();
-  let mut found_next_first = false;
-
   let mut batch = db.batch();
-  let mut iter = data_ks.prefix(&prefix);
-  while let Some(g) = iter.next() {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if !k.starts_with(prefix.as_slice()) {
-      break;
-    }
-    if let Some(sid) = parse_stream_id_from_subkey(&k[prefix.len()..]) {
-      if options.strategy == StreamTrimStrategy::MaxLen
-        && (meta.base.size.saturating_sub(delete_cnt)) <= options.max_len
-      {
-        new_first_id = sid;
-        found_next_first = true;
-        break;
-      }
-      if options.strategy == StreamTrimStrategy::MinId && sid >= options.min_id {
-        new_first_id = sid;
-        found_next_first = true;
-        break;
-      }
-
-      delete_cnt += 1;
-      last_deleted_id = sid;
-      batch.rm_weak_data(k);
-
-      if let Some(lim) = options.limit
-        && delete_cnt as usize >= lim
-      {
-        for next_g in iter.by_ref() {
-          let next_entry = next_g?;
-          let (nk, _) = (next_entry.key(), next_entry.value());
-          if !nk.starts_with(&prefix) {
-            break;
-          }
-          if let Some(nsid) = parse_stream_id_from_subkey(&nk[prefix.len()..]) {
-            new_first_id = nsid;
-            found_next_first = true;
-            break;
-          }
-        }
-        break;
-      }
-    }
+  let delete_cnt = trim_stream_internal(db, &mut meta, key_bytes, options, &mut batch)?;
+  if delete_cnt > 0 {
+    let meta_k = key::meta(&db.kc(), key_bytes);
+    batch.insert_meta(&meta_k, &meta.encode());
+    batch.commit()?;
   }
-
-  if delete_cnt == 0 {
-    return Ok(0);
-  }
-
-  meta.base.size = meta.base.size.saturating_sub(delete_cnt);
-  if meta.base.size == 0 {
-    meta.first_entry_id.clear();
-    meta.last_entry_id.clear();
-    meta.recorded_first_entry_id.clear();
-  } else if found_next_first {
-    meta.first_entry_id = new_first_id;
-    meta.recorded_first_entry_id = new_first_id;
-  }
-  if !last_deleted_id.is_min() {
-    meta.max_deleted_entry_id = meta.max_deleted_entry_id.max(last_deleted_id);
-  }
-
-  batch.insert_meta(&meta_k, &meta.encode());
-  batch.commit()?;
 
   Ok(delete_cnt)
 }
@@ -688,7 +586,7 @@ where
         if need_new_first {
           for g in data_ks.prefix(&prefix) {
             let entry = g?;
-            let (k, _) = (entry.key(), entry.value());
+            let k = entry.key();
             if !k.starts_with(prefix.as_slice()) {
               break;
             }
@@ -704,7 +602,7 @@ where
         if need_new_last {
           for g in data_ks.prefix(&prefix).rev() {
             let entry = g?;
-            let (k, _) = (entry.key(), entry.value());
+            let k = entry.key();
             if !k.starts_with(prefix.as_slice()) {
               break;
             }

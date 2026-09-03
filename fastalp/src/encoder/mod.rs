@@ -134,9 +134,9 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
   }
 
   let is_large = count > u16::MAX as usize;
-  let for_bit_width = F::bits_needed(max_offset);
-  let for_packed_len = packed_byte_size(slice.len(), for_bit_width);
-  let exc_len = if exceptions.is_empty() {
+  let mut for_bit_width = F::bits_needed(max_offset);
+  let mut for_packed_len = packed_byte_size(slice.len(), for_bit_width);
+  let mut exc_len = if exceptions.is_empty() {
     0
   } else if is_large {
     EXC_COUNT_LEN_U32 + exceptions.len() * F::EXC_ENTRY_SIZE_U32
@@ -146,7 +146,7 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
 
   let hdr_len = header_len(count);
 
-  // 评估 Delta 差分收益
+  // 评估 Delta 差分收益（基于未经污染的平滑序列）
   let delta_decision = if slice.len() > 1 {
     let first = encoded_ints[0];
     let rest = &encoded_ints[1..];
@@ -174,6 +174,90 @@ fn compress_impl<F: AlpFloat>(data: &[F], dst: &mut Vec<u8>, force_delta: bool) 
       let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
       (false, F::ZERO_INT, 0, for_total)
     }
+  };
+
+  // FOR 模式专用：离群值异常剪枝优化 (Outlier Pruning to Exceptions)
+  // 仅在未启用 Delta 模式时尝试剪枝，避免破坏一阶差分的时间平滑性。
+  // 当绝大多数数据集中在极窄区间，仅少数离群点拉大整个数组位宽时，
+  // 将离群点剥离至异常表可换取全量位打包大幅精简。
+  let total_needed = if !use_delta && for_bit_width > 4 && exceptions.len() < 32 {
+    let entry_size = if is_large {
+      F::EXC_ENTRY_SIZE_U32
+    } else {
+      F::EXC_ENTRY_SIZE
+    };
+    let current_cost = for_packed_len + exceptions.len() * entry_size;
+
+    let candidate_widths = [0u8, 1, 2, 4, 8, 16];
+    let mut best_target_bw = for_bit_width;
+    let mut min_cost = current_cost;
+
+    for &target_bw in &candidate_widths {
+      if target_bw >= for_bit_width {
+        break;
+      }
+      let max_allowed = if target_bw == 0 {
+        0u64
+      } else {
+        (1u64 << target_bw) - 1
+      };
+
+      let mut extra_exceptions = 0usize;
+      for &val in &encoded_ints {
+        let diff = F::int_diff_to_u64(val, base);
+        if diff > max_allowed {
+          extra_exceptions += 1;
+          if extra_exceptions > 16 {
+            break;
+          }
+        }
+      }
+
+      if extra_exceptions <= 16 {
+        let new_total_exc = exceptions.len() + extra_exceptions;
+        let new_cost = packed_byte_size(slice.len(), target_bw) + new_total_exc * entry_size;
+        if new_cost < min_cost {
+          min_cost = new_cost;
+          best_target_bw = target_bw;
+        }
+      }
+    }
+
+    if best_target_bw < for_bit_width {
+      let max_allowed = if best_target_bw == 0 {
+        0u64
+      } else {
+        (1u64 << best_target_bw) - 1
+      };
+      for (pos, &val) in encoded_ints.iter().enumerate() {
+        let diff = F::int_diff_to_u64(val, base);
+        if diff > max_allowed {
+          exceptions.push(Exception {
+            pos,
+            bits: slice[pos].to_raw_bits(),
+          });
+        }
+      }
+      exceptions.sort_unstable_by_key(|e| e.pos);
+      exceptions.dedup_by_key(|e| e.pos);
+
+      // 为离群点回填基准值，确保打包时不溢出目标位宽
+      for exc in &exceptions {
+        unsafe {
+          *encoded_ints.get_unchecked_mut(exc.pos) = base;
+        }
+      }
+      for_bit_width = best_target_bw;
+      for_packed_len = packed_byte_size(slice.len(), for_bit_width);
+      exc_len = if is_large {
+        EXC_COUNT_LEN_U32 + exceptions.len() * F::EXC_ENTRY_SIZE_U32
+      } else {
+        EXC_COUNT_LEN + exceptions.len() * F::EXC_ENTRY_SIZE
+      };
+    }
+    hdr_len + F::BASE_SIZE + for_packed_len + exc_len
+  } else {
+    total_needed
   };
 
   let raw_len = size_of_val(slice);

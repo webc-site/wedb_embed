@@ -100,11 +100,105 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     use_div: false,
   };
 
-  for exp in 0..=F::MAX_EXPONENT {
+  // 第一轮：极速优先探测纯十进制乘法组合 (fac == 0)，按高频精度优先探索 (2, 1, 3, 0, 4..)
+  // 现实工业传感器、金融量化、监控时序绝大多数为 1~3 位小数或整数，优先探测命中率超 95%，即刻触发早停
+  const EXP_PRIORITY: [u8; 19] = [
+    2, 1, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+  ];
+  for &exp in &EXP_PRIORITY {
+    if exp > F::MAX_EXPONENT {
+      continue;
+    }
+    let frac_exp = F::frac_exp(exp);
+    let exp_factor = F::exp_factor(exp, 0);
+    let fac_int = 1i64;
+
+    let mut exceptions = 0usize;
+    let mut min_val = F::MAX_INT;
+    let mut max_val = F::MIN_INT;
+
+    for &val in active_samples {
+      if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
+        min_val = min_val.min(enc);
+        max_val = max_val.max(enc);
+      } else {
+        exceptions += 1;
+        if exceptions * F::EXCEPTION_PENALTY >= best_cost {
+          break;
+        }
+      }
+    }
+
+    if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY < best_cost {
+      let max_offset = if min_val <= max_val {
+        F::calc_range(min_val, max_val)
+      } else {
+        0
+      };
+      let bit_width = F::bits_needed(max_offset) as usize;
+      let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
+
+      if total_cost < best_cost {
+        best_cost = total_cost;
+        best_params = BestParams {
+          exp,
+          fac: 0,
+          use_div: false,
+        };
+        if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
+          return best_params;
+        }
+      }
+    }
+
+    // 当 fac == 0 且标准乘法存在异常时，评估十进制除法重构模式 (Decimal Division Mode)
+    if exp > 0 && exceptions > 0 {
+      let mut div_exceptions = 0usize;
+      let mut div_min = F::MAX_INT;
+      let mut div_max = F::MIN_INT;
+
+      for &val in active_samples {
+        if let Some(enc) = F::try_encode_div(val, exp_factor) {
+          div_min = div_min.min(enc);
+          div_max = div_max.max(enc);
+        } else {
+          div_exceptions += 1;
+          if div_exceptions * F::EXCEPTION_PENALTY >= best_cost {
+            break;
+          }
+        }
+      }
+
+      if div_exceptions != sample_len && div_exceptions * F::EXCEPTION_PENALTY < best_cost {
+        let max_offset = if div_min <= div_max {
+          F::calc_range(div_min, div_max)
+        } else {
+          0
+        };
+        let bit_width = F::bits_needed(max_offset) as usize;
+        let total_cost = bit_width * sample_len + div_exceptions * F::EXCEPTION_PENALTY;
+
+        if total_cost < best_cost {
+          best_cost = total_cost;
+          best_params = BestParams {
+            exp,
+            fac: 0,
+            use_div: true,
+          };
+          if total_cost == 0 || (div_exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
+            return best_params;
+          }
+        }
+      }
+    }
+  }
+
+  // 第二轮：当纯十进制无法满足极低开销时，扩展搜索混合因子 (fac > 0)
+  for exp in 1..=F::MAX_EXPONENT {
     let max_fac = exp.min(F::MAX_FAC);
     let frac_exp = F::frac_exp(exp);
 
-    for fac in 0..=max_fac {
+    for fac in 1..=max_fac {
       let exp_factor = F::exp_factor(exp, fac);
       let fac_int = F::fac_int(fac);
 
@@ -124,8 +218,6 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
         }
       }
 
-      let zero_exceptions_fac0 = fac == 0 && exceptions == 0;
-
       if exceptions != sample_len && exceptions * F::EXCEPTION_PENALTY < best_cost {
         let max_offset = if min_val <= max_val {
           F::calc_range(min_val, max_val)
@@ -133,7 +225,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
           0
         };
         let bit_width = F::bits_needed(max_offset) as usize;
-        let fac_penalty = if fac > 0 { sample_len * 2 } else { 0 };
+        let fac_penalty = sample_len * 2;
         let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY + fac_penalty;
 
         if total_cost < best_cost {
@@ -143,62 +235,10 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
             fac,
             use_div: false,
           };
-          if total_cost == 0 {
-            return best_params;
-          }
-          if exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH {
+          if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
             return best_params;
           }
         }
-      }
-
-      // 当 fac == 0 且标准乘法存在异常时，才评估十进制除法重构模式 (Decimal Division Mode)
-      // 若乘法无异常，乘法解码更快，无需且不应尝试除法
-      if fac == 0 && exp > 0 && exceptions > 0 {
-        let mut div_exceptions = 0usize;
-        let mut div_min = F::MAX_INT;
-        let mut div_max = F::MIN_INT;
-
-        for &val in active_samples {
-          if let Some(enc) = F::try_encode_div(val, exp_factor) {
-            div_min = div_min.min(enc);
-            div_max = div_max.max(enc);
-          } else {
-            div_exceptions += 1;
-            if div_exceptions * F::EXCEPTION_PENALTY >= best_cost {
-              break;
-            }
-          }
-        }
-
-        if div_exceptions != sample_len && div_exceptions * F::EXCEPTION_PENALTY < best_cost {
-          let max_offset = if div_min <= div_max {
-            F::calc_range(div_min, div_max)
-          } else {
-            0
-          };
-          let bit_width = F::bits_needed(max_offset) as usize;
-          let total_cost = bit_width * sample_len + div_exceptions * F::EXCEPTION_PENALTY;
-
-          if total_cost < best_cost {
-            best_cost = total_cost;
-            best_params = BestParams {
-              exp,
-              fac: 0,
-              use_div: true,
-            };
-            if total_cost == 0 {
-              return best_params;
-            }
-            if div_exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH {
-              return best_params;
-            }
-          }
-        }
-      }
-
-      if zero_exceptions_fac0 {
-        break;
       }
     }
   }

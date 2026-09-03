@@ -225,7 +225,7 @@ where
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
     for g in self.data().prefix(&prefix) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -255,7 +255,7 @@ where
     let prefix = compose_zset_score_prefix(&kc, k_bytes);
     for g in self.data().prefix(&prefix).rev() {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -365,7 +365,7 @@ where
 
     for g in self.data().range((start_ref, end_ref)) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -410,7 +410,7 @@ where
 
     for g in self.data().range((start_ref, end_ref)).rev() {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -1519,7 +1519,7 @@ where
 
     for g in data_ks.prefix(&prefix) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -1585,7 +1585,7 @@ where
 
     for g in data_ks.prefix(&prefix).rev() {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -1773,7 +1773,7 @@ where
 
     for g in data_ks.prefix(&prefix) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -1845,7 +1845,7 @@ where
 
     for g in data_ks.range((start_ref, end_ref)) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }

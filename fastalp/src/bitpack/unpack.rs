@@ -1,8 +1,6 @@
 use crate::{
   bitpack::packed_byte_size,
-  constants::{
-    BITS_PER_BYTE, BITS_U64, BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT, LUT_SIZE_8BIT,
-  },
+  constants::{BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT, LUT_SIZE_8BIT},
   error::{Error, Result},
   float::AlpFloat,
   params::bit_mask,
@@ -389,48 +387,6 @@ pub fn bitunpack_into<F: AlpFloat>(
       return Ok(());
     }
 
-    if bit_width < BITS_8 {
-      let lut = F::build_lut::<LUT_SIZE_8BIT>(base, fac_int, frac_flt);
-      let mask = bit_mask(bit_width);
-      let mut acc: u128 = 0;
-      let mut bits_in_acc: u32 = 0;
-      let mut src_ptr = src.as_ptr();
-      let src_end = src.as_ptr().add(src.len());
-
-      let mut i = 0;
-      while i < count && src_end.offset_from(src_ptr) >= BYTES_U64 as isize {
-        if bits_in_acc < bit_width as u32 {
-          let chunk = u64::from_le(src_ptr.cast::<u64>().read_unaligned());
-          acc |= (chunk as u128) << bits_in_acc;
-          bits_in_acc += BITS_U64 as u32;
-          src_ptr = src_ptr.add(BYTES_U64);
-        }
-        let off = (acc as usize) & (mask as usize);
-        acc >>= bit_width;
-        bits_in_acc -= bit_width as u32;
-        *dst_ptr = *lut.get_unchecked(off);
-        dst_ptr = dst_ptr.add(1);
-        i += 1;
-      }
-
-      while i < count {
-        while bits_in_acc < bit_width as u32 && src_ptr < src_end {
-          acc |= (*src_ptr as u128) << bits_in_acc;
-          bits_in_acc += BITS_PER_BYTE as u32;
-          src_ptr = src_ptr.add(1);
-        }
-        let off = (acc as usize) & (mask as usize);
-        acc >>= bit_width;
-        bits_in_acc = bits_in_acc.saturating_sub(bit_width as u32);
-        *dst_ptr = *lut.get_unchecked(off);
-        dst_ptr = dst_ptr.add(1);
-        i += 1;
-      }
-
-      dst.set_len(old_len + count);
-      return Ok(());
-    }
-
     let mask = bit_mask(bit_width);
     let bw = bit_width as usize;
     let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
@@ -701,48 +657,6 @@ pub fn bitunpack_into_div<F: AlpFloat>(
         let off = u64::from_le(src_ptr.add(i).read_unaligned());
         *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
       }
-      dst.set_len(old_len + count);
-      return Ok(());
-    }
-
-    if bit_width < BITS_8 {
-      let lut = F::build_lut_div::<LUT_SIZE_8BIT>(base, exp_factor);
-      let mask = bit_mask(bit_width);
-      let mut acc: u128 = 0;
-      let mut bits_in_acc: u32 = 0;
-      let mut src_ptr = src.as_ptr();
-      let src_end = src.as_ptr().add(src.len());
-
-      let mut i = 0;
-      while i < count && src_end.offset_from(src_ptr) >= BYTES_U64 as isize {
-        if bits_in_acc < bit_width as u32 {
-          let chunk = u64::from_le(src_ptr.cast::<u64>().read_unaligned());
-          acc |= (chunk as u128) << bits_in_acc;
-          bits_in_acc += BITS_U64 as u32;
-          src_ptr = src_ptr.add(BYTES_U64);
-        }
-        let off = (acc as usize) & (mask as usize);
-        acc >>= bit_width;
-        bits_in_acc -= bit_width as u32;
-        *dst_ptr = *lut.get_unchecked(off);
-        dst_ptr = dst_ptr.add(1);
-        i += 1;
-      }
-
-      while i < count {
-        while bits_in_acc < bit_width as u32 && src_ptr < src_end {
-          acc |= (*src_ptr as u128) << bits_in_acc;
-          bits_in_acc += BITS_PER_BYTE as u32;
-          src_ptr = src_ptr.add(1);
-        }
-        let off = (acc as usize) & (mask as usize);
-        acc >>= bit_width;
-        bits_in_acc = bits_in_acc.saturating_sub(bit_width as u32);
-        *dst_ptr = *lut.get_unchecked(off);
-        dst_ptr = dst_ptr.add(1);
-        i += 1;
-      }
-
       dst.set_len(old_len + count);
       return Ok(());
     }

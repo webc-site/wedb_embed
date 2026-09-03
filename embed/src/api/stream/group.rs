@@ -3,19 +3,22 @@ use std::str;
 use rapidhash::{HashMapExt, RapidHashMap as HashMap, RapidHashSet as HashSet};
 
 use crate::{
-  api::stream::{
-    StreamEntry,
-    r#const::*,
-    decode_stream_entry_fields,
-    r#impl::{clean_stream_residue, get_stream_meta, stream_range_with_options},
-    key,
-    meta::{
-      StreamAutoClaimResult, StreamClaimResult, StreamConsumerGroupMeta, StreamConsumerMeta,
-      StreamGetPendingEntryResult, StreamId, StreamMeta, StreamNack, StreamPelEntry,
-      StreamReadResult,
+  api::{
+    key::clear_prefix_in_batch,
+    stream::{
+      StreamEntry,
+      r#const::*,
+      decode_stream_entry_fields,
+      r#impl::{clean_stream_residue, get_stream_meta, stream_range_with_options},
+      key,
+      meta::{
+        StreamAutoClaimResult, StreamClaimResult, StreamConsumerGroupMeta, StreamConsumerMeta,
+        StreamGetPendingEntryResult, StreamId, StreamMeta, StreamNack, StreamPelEntry,
+        StreamReadResult,
+      },
+      opt::{StreamAutoClaim, StreamClaim, StreamPending, StreamRange},
+      parse_stream_id_from_subkey,
     },
-    opt::{StreamAutoClaim, StreamClaim, StreamPending, StreamRange},
-    parse_stream_id_from_subkey,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -355,22 +358,10 @@ where
   batch.rm_data(&group_k);
 
   let c_prefix = key::consumer_prefix(&kc, key_bytes, group_name.as_bytes());
-  for g in data_ks.prefix(&c_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&c_prefix) {
-      batch.rm_data(k);
-    }
-  }
+  clear_prefix_in_batch(data_ks, &c_prefix, &mut batch)?;
 
   let p_prefix = key::pel_prefix(&kc, key_bytes, group_name.as_bytes());
-  for g in data_ks.prefix(&p_prefix) {
-    let entry = g?;
-    let (k, _) = (entry.key(), entry.value());
-    if k.starts_with(&p_prefix) {
-      batch.rm_data(k);
-    }
-  }
+  clear_prefix_in_batch(data_ks, &p_prefix, &mut batch)?;
 
   meta.group_number = meta.group_number.saturating_sub(1);
   batch.insert_meta(&meta_k, &meta.encode());
@@ -889,7 +880,7 @@ where
       if count == 0 || attempts == 0 {
         for next_g in iter.by_ref() {
           let next_entry = next_g?;
-          let (nk, _) = (next_entry.key(), next_entry.value());
+          let nk = next_entry.key();
           if !nk.starts_with(&p_prefix) {
             break;
           }

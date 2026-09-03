@@ -61,7 +61,7 @@ where
 
     for g in self.data().prefix(&prefix) {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }
@@ -431,7 +431,7 @@ where
       let mut pos = 0usize;
       for g in self.data().range((start_bound, end_bound)) {
         let entry = g?;
-        let (k, _) = (entry.key(), entry.value());
+        let k = entry.key();
         if let Some(id) = extract_id(k, prefix_len) {
           if pos < spec.offset {
             pos += 1;
@@ -451,7 +451,7 @@ where
       let mut pos = 0usize;
       for g in self.data().range((start_bound, end_bound)).rev() {
         let entry = g?;
-        let (k, _) = (entry.key(), entry.value());
+        let k = entry.key();
         if let Some(id) = extract_id(k, prefix_len) {
           if pos < spec.offset {
             pos += 1;
@@ -575,7 +575,7 @@ where
 
     for (rank, g) in self.data().prefix(&prefix).enumerate() {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(&prefix) {
         break;
       }

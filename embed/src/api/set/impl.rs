@@ -352,7 +352,7 @@ where
 
     for guard in self.data().prefix(prefix_bytes) {
       let entry = guard?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if !k.starts_with(prefix_bytes) {
         break;
       }
@@ -834,7 +834,7 @@ where
       let start_k = compose_set_key(&kc, k_bytes, cursor_bytes);
       for guard in data_ks.range((Bound::Excluded(start_k.as_slice()), Bound::Unbounded)) {
         let entry = guard?;
-        let (k, _) = (entry.key(), entry.value());
+        let k = entry.key();
         if !k.starts_with(prefix_bytes) {
           break;
         }
@@ -850,7 +850,7 @@ where
     } else {
       for guard in data_ks.prefix(prefix_bytes) {
         let entry = guard?;
-        let (k, _) = (entry.key(), entry.value());
+        let k = entry.key();
         if !k.starts_with(prefix_bytes) {
           break;
         }

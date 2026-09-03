@@ -640,7 +640,7 @@ where
       .next_back()
     {
       let entry = g?;
-      let (k, _) = (entry.key(), entry.value());
+      let k = entry.key();
       if k.starts_with(prefix.as_slice()) {
         k.to_vec()
       } else {

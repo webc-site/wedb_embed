@@ -405,7 +405,11 @@ fn main() {
   let ramp_data: Vec<f64> = (0..MICRO_LEN).map(|i| 100.0 + i as f64 * 0.05).collect();
   let constant_data: Vec<f64> = vec![98.6; MICRO_LEN];
 
-  let json_dir = Path::new("benches/json");
+  let json_dir = if Path::new("fastalp/benches/json").exists() {
+    Path::new("fastalp/benches/json")
+  } else {
+    Path::new("benches/json")
+  };
   let _ = create_dir_all(json_dir);
 
   let algo_keys = [

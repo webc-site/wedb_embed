@@ -21,11 +21,9 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   // Header geometry: Title block and Environment Box are exactly the same height (78px)
   const topPad = 36;
   const headerBoxH = 78;
-  const cardY = topPad + headerBoxH + 28;
-  const cardH = 92;
 
-  // Section 1: Main Table (8 Codecs Overview)
-  const sec1Y = cardY + cardH + 46;
+  // Section 1: Main Table (8 Codecs Overview) starts directly below Header Box with 34px margin
+  const sec1Y = topPad + headerBoxH + 34;
   const sec1HeaderY = sec1Y + 36;
   const sec1HeaderH = 34;
   const sec1FirstRowY = sec1HeaderY + sec1HeaderH + 16; // 16px generous margin below header
@@ -45,26 +43,29 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   // Section 3: 4 Industrial Scenario Microbenchmarks (2x2 Grid)
   const sec3Y = sec2Y + sec2H + 54; // 54px margin above Section 3
   const scW = (width - 64 - 24) / 2;
-  const scH = 216;
-  const sec3H = 44 + (scH * 2) + 24;
+  const scH = 228;
+  const sec3H = 44 + (scH * 2) + 20;
 
   const totalH = sec3Y + sec3H + 52;
 
-  // Palette: Deep Dark Slate, Royal Blue, Forest Emerald, Cool Slate (Zero Green Text)
+  // Palette: Cool Sapphire Blue for Decompression, Warm Amber Gold for Compression
   const barColors = {
-    fastalp: { dec: "#2563eb", enc: "#3b82f6", text: "#1d4ed8" },
-    cpp_alp: { dec: "#059669", enc: "#10b981", text: "#0f172a" },
-    pco:     { dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
-    zstd:    { dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
-    lz4:     { dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
-    snappy:  { dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
-    chimp128:{ dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
-    gorilla: { dec: "#64748b", enc: "#94a3b8", text: "#1e293b" },
+    fastalp: { dec: "#2563eb", enc: "#d97706", text: "#1d4ed8", encText: "#92400e" },
+    cpp_alp: { dec: "#3b82f6", enc: "#f59e0b", text: "#1e3a8a", encText: "#78350f" },
+    pco:     { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    zstd:    { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    lz4:     { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    snappy:  { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    chimp128:{ dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
+    gorilla: { dec: "#64748b", enc: "#b45309", text: "#1e293b", encText: "#475569" },
   };
 
   const maxDecSpeed = 32.0;
   const maxEncSpeed = 8.0;
   const barW = 140;
+
+  const fastalpAlgo = algorithms.find(a => a.algorithm === "fastalp") || algorithms[0];
+  const cppAlgo = algorithms.find(a => a.algorithm === "cpp_alp") || algorithms[1];
 
   // 1. Render Section 1 rows (8 Codecs)
   const sec1RowsSvg = algorithms.map((algo, idx) => {
@@ -95,8 +96,10 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     // Clean name (remove any reference wording)
     const displayName = algo.display_name.replace(" (Reference)", "");
 
+    const cppDecSpeed = cppAlgo?.paper_31?.avg_dec_gb_s || 20.0;
+    const speedupPct = ((decSpeed / cppDecSpeed - 1) * 100).toFixed(1);
     const vsBase = isFastalp
-      ? `<text x="1110" y="${y + 20}" font-size="12.5" font-weight="bold" fill="#1e3a8a">${isZh ? "比 C++ 快 10.1%" : "+10.1% vs C++"}</text>`
+      ? `<text x="1110" y="${y + 20}" font-size="12.5" font-weight="bold" fill="#1e3a8a">${isZh ? `比 C++ 快 ${speedupPct}%` : `+${speedupPct}% vs C++`}</text>`
       : isCpp
       ? `<text x="1110" y="${y + 20}" font-size="12" font-weight="600" fill="#475569">${i18n.baseline_text}</text>`
       : `<text x="1110" y="${y + 20}" font-size="12" font-weight="500" fill="#64748b">${(algo.paper_31.avg_dec_gb_s / algorithms[0].paper_31.avg_dec_gb_s).toFixed(2)}${isZh ? "x 吞吐" : "x speed"}</text>`;
@@ -110,18 +113,18 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       <text x="48" y="${y + 31}" font-size="11" fill="#475569">${algo.category === "specialized_float" ? i18n.type_specialized : i18n.type_general}</text>
       ${highlightBadge}
 
-      <!-- Decode Throughput Column (Dedicated Bar) -->
+      <!-- Decode Throughput Column (Sapphire Blue Bar) -->
       <g transform="translate(250, ${y + 5})">
-        <rect width="${barW}" height="14" rx="3" fill="#e2e8f0"/>
+        <rect width="${barW}" height="14" rx="3" fill="#dbeafe"/>
         <rect width="${decBarLen}" height="14" rx="3" fill="${c.dec}"/>
         <text x="${barW + 10}" y="12" font-size="12.5" font-weight="${isFastalp ? "bold" : "600"}" fill="${c.text}">${decSpeed.toFixed(2)} GB/s</text>
       </g>
 
-      <!-- Encode Throughput Column (Dedicated Bar) -->
+      <!-- Encode Throughput Column (Warm Amber Gold Bar) -->
       <g transform="translate(500, ${y + 5})">
-        <rect width="${barW}" height="14" rx="3" fill="#e2e8f0"/>
+        <rect width="${barW}" height="14" rx="3" fill="#fef3c7"/>
         <rect width="${encBarLen}" height="14" rx="3" fill="${c.enc}"/>
-        <text x="${barW + 10}" y="12" font-size="12.5" font-weight="${isFastalp ? "bold" : "600"}" fill="#1e293b">${encSpeed.toFixed(2)} GB/s</text>
+        <text x="${barW + 10}" y="12" font-size="12.5" font-weight="${isFastalp ? "bold" : "600"}" fill="${c.encText || "#92400e"}">${encSpeed.toFixed(2)} GB/s</text>
       </g>
 
       <!-- Compression Ratio (Direct x, Dark Text) -->
@@ -136,8 +139,6 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   }).join("\n");
 
   // 2. Prepare Section 2 datasets (All 31 Datasets in Shared Unified Card)
-  const fastalpAlgo = algorithms.find(a => a.algorithm === "fastalp") || algorithms[0];
-  const cppAlgo = algorithms.find(a => a.algorithm === "cpp_alp") || algorithms[1];
   const fDatasets = fastalpAlgo.paper_31?.datasets || [];
   const cDatasetsMap = new Map((cppAlgo.paper_31?.datasets || []).map(d => [d.name, d]));
 
@@ -262,17 +263,25 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     const sx = 32 + col * (scW + 24);
     const sy = sec3Y + 44 + row * (scH + 18);
 
+    const subHeaderY = sy + 48 + 10;
+    const subHeaderH = 26;
+    const rowsStartY = subHeaderY + subHeaderH + 10;
+
     const rows = sc.items.map((it, itIdx) => {
-      const iy = sy + 76 + itIdx * 33;
+      const iy = rowsStartY + 14 + itIdx * 30;
       const isHeader = itIdx === 0;
-      const itemBg = isHeader ? `<rect x="${sx + 10}" y="${iy - 15}" width="${scW - 20}" height="${28}" rx="5" fill="#f0f7ff"/>` : "";
+      const itemBg = isHeader
+        ? `<rect x="${sx + 10}" y="${iy - 14}" width="${scW - 20}" height="28" rx="5" fill="#f0f7ff"/>`
+        : itIdx % 2 === 1
+        ? `<rect x="${sx + 10}" y="${iy - 14}" width="${scW - 20}" height="28" rx="5" fill="#f8fafc"/>`
+        : "";
       return `
       ${itemBg}
-      <text x="${sx + 18}" y="${iy + 3}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.bold ? "#1d4ed8" : "#0f172a"}">${xmlEscape(it.name)}</text>
-      <text x="${sx + 160}" y="${iy + 3}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.dec)}</text>
-      <text x="${sx + 260}" y="${iy + 3}" font-size="12" font-weight="500" fill="#334155">${xmlEscape(it.enc)}</text>
-      <text x="${sx + 350}" y="${iy + 3}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.ratio)}</text>
-      <text x="${sx + scW - 18}" y="${iy + 3}" font-size="11.5" font-weight="bold" fill="${it.bold ? "#1e3a8a" : "#475569"}" text-anchor="end">${xmlEscape(it.vs)}</text>
+      <text x="${sx + 20}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.bold ? "#1d4ed8" : "#0f172a"}">${xmlEscape(it.name)}</text>
+      <text x="${sx + 165}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.dec)}</text>
+      <text x="${sx + 265}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "500"}" fill="${it.bold ? "#92400e" : "#475569"}">${xmlEscape(it.enc)}</text>
+      <text x="${sx + 360}" y="${iy + 4}" font-size="12" font-weight="${it.bold ? "bold" : "600"}" fill="${it.color}">${xmlEscape(it.ratio)}</text>
+      <text x="${sx + scW - 20}" y="${iy + 4}" font-size="11.5" font-weight="bold" fill="${it.bold ? "#1e3a8a" : "#475569"}" text-anchor="end">${xmlEscape(it.vs)}</text>
       `;
     }).join("");
 
@@ -280,21 +289,22 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     <g class="scenario-card">
       <rect x="${sx}" y="${sy}" width="${scW}" height="${scH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
       
-      <!-- Card Header Strip with top margin -->
-      <path d="M ${sx} ${sy + 10} Q ${sx} ${sy} ${sx + 10} ${sy} L ${sx + scW - 10} ${sy} Q ${sx + scW} ${sy} ${sx + scW} ${sy + 10} L ${sx + scW} ${sy + 46} L ${sx} ${sy + 46} Z" fill="#f8fafc"/>
+      <!-- Card Header Strip with bottom divider -->
+      <path d="M ${sx} ${sy + 10} Q ${sx} ${sy} ${sx + 10} ${sy} L ${sx + scW - 10} ${sy} Q ${sx + scW} ${sy} ${sx + scW} ${sy + 10} L ${sx + scW} ${sy + 48} L ${sx} ${sy + 48} Z" fill="#f8fafc"/>
       <text x="${sx + 18}" y="${sy + 22}" font-size="13" font-weight="bold" fill="#0f172a">${sc.title}</text>
       <text x="${sx + 18}" y="${sy + 37}" font-size="11" fill="#475569">${sc.sub}</text>
 
       <rect x="${sx + scW - sc.badgeW - 16}" y="${sy + 12}" width="${sc.badgeW}" height="22" rx="4" fill="#f1f5f9"/>
       <text x="${sx + scW - sc.badgeW / 2 - 16}" y="${sy + 27}" font-size="10.5" font-weight="bold" fill="#1e293b" text-anchor="middle">${xmlEscape(sc.badge)}</text>
+      <line x1="${sx}" y1="${sy + 48}" x2="${sx + scW}" y2="${sy + 48}" stroke="#cbd5e1" stroke-width="1"/>
 
-      <!-- Subtable Header with distinct margin -->
-      <line x1="${sx}" y1="${sy + 46}" x2="${sx + scW}" y2="${sy + 46}" stroke="#cbd5e1" stroke-width="1"/>
-      <text x="${sx + 18}" y="${sy + 60}" font-size="10" font-weight="bold" fill="#334155">${i18n.sc_col_algo}</text>
-      <text x="${sx + 160}" y="${sy + 60}" font-size="10" font-weight="bold" fill="#334155">${i18n.sc_col_dec}</text>
-      <text x="${sx + 260}" y="${sy + 60}" font-size="10" font-weight="bold" fill="#334155">${i18n.sc_col_enc}</text>
-      <text x="${sx + 350}" y="${sy + 60}" font-size="10" font-weight="bold" fill="#334155">${i18n.sc_col_ratio}</text>
-      <text x="${sx + scW - 18}" y="${sy + 60}" font-size="10" font-weight="bold" fill="#334155" text-anchor="end">${i18n.sc_col_speedup}</text>
+      <!-- Subtable Header with generous top & bottom margins (算法名称行) -->
+      <rect x="${sx + 10}" y="${subHeaderY}" width="${scW - 20}" height="${subHeaderH}" rx="5" fill="#f1f5f9"/>
+      <text x="${sx + 20}" y="${subHeaderY + 17}" font-size="10.5" font-weight="bold" fill="#334155">${i18n.sc_col_algo}</text>
+      <text x="${sx + 165}" y="${subHeaderY + 17}" font-size="10.5" font-weight="bold" fill="#334155">${i18n.sc_col_dec}</text>
+      <text x="${sx + 265}" y="${subHeaderY + 17}" font-size="10.5" font-weight="bold" fill="#334155">${i18n.sc_col_enc}</text>
+      <text x="${sx + 360}" y="${subHeaderY + 17}" font-size="10.5" font-weight="bold" fill="#334155">${i18n.sc_col_ratio}</text>
+      <text x="${sx + scW - 20}" y="${subHeaderY + 17}" font-size="10.5" font-weight="bold" fill="#334155" text-anchor="end">${i18n.sc_col_speedup}</text>
 
       ${rows}
     </g>
@@ -327,49 +337,16 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     <text x="16" y="64" font-size="11" fill="#475569">${i18n.env_toolchain}</text>
   </g>
 
-  <!-- Top 4 Metric Highlight Cards (Unified, Minimalist, White with Subtle Border) -->
-  <!-- Card 1 -->
-  <g transform="translate(32, ${cardY})">
-    <rect width="280" height="${cardH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
-    <text x="16" y="26" font-size="12" font-weight="bold" fill="#1e293b">${i18n.card1_title}</text>
-    <text x="16" y="60" font-size="28" font-weight="800" fill="#0f172a">${i18n.card1_val}</text>
-    <text x="16" y="82" font-size="11" font-weight="600" fill="#1e3a8a">${i18n.card1_sub}</text>
-  </g>
-
-  <!-- Card 2 -->
-  <g transform="translate(332, ${cardY})">
-    <rect width="280" height="${cardH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
-    <text x="16" y="26" font-size="12" font-weight="bold" fill="#1e293b">${i18n.card2_title}</text>
-    <text x="16" y="60" font-size="28" font-weight="800" fill="#0f172a">${i18n.card2_val}</text>
-    <text x="16" y="82" font-size="11" font-weight="600" fill="#1e3a8a">${i18n.card2_sub}</text>
-  </g>
-
-  <!-- Card 3 -->
-  <g transform="translate(632, ${cardY})">
-    <rect width="280" height="${cardH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
-    <text x="16" y="26" font-size="12" font-weight="bold" fill="#1e293b">${i18n.card3_title}</text>
-    <text x="16" y="60" font-size="28" font-weight="800" fill="#0f172a">${i18n.card3_val}</text>
-    <text x="16" y="82" font-size="11" font-weight="600" fill="#1e3a8a">${i18n.card3_sub}</text>
-  </g>
-
-  <!-- Card 4 -->
-  <g transform="translate(932, ${cardY})">
-    <rect width="276" height="${cardH}" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
-    <text x="16" y="26" font-size="12" font-weight="bold" fill="#1e293b">${i18n.card4_title}</text>
-    <text x="16" y="60" font-size="28" font-weight="800" fill="#1d4ed8">${i18n.card4_val}</text>
-    <text x="16" y="82" font-size="11" font-weight="600" fill="#1e3a8a">${i18n.card4_sub}</text>
-  </g>
-
   <!-- Section 1: Main Table Container (8 Codecs Overview) -->
   <g transform="translate(0, 0)">
     <text x="36" y="${sec1Y - 14}" font-size="16" font-weight="bold" fill="#0f172a">${i18n.sec1_title}</text>
     <text x="36" y="${sec1Y + 6}" font-size="12" fill="#475569">${i18n.sec1_sub}</text>
 
-    <!-- Legend -->
+    <!-- Legend: Sapphire Blue for Decode, Warm Amber Gold for Encode -->
     <g transform="translate(${width - 320}, ${sec1Y - 12})">
       <rect width="12" height="12" rx="3" fill="#2563eb"/>
       <text x="18" y="10" font-size="11" font-weight="600" fill="#1e293b">${i18n.legend_dec_speed}</text>
-      <rect x="135" y="0" width="12" height="12" rx="3" fill="#3b82f6"/>
+      <rect x="135" y="0" width="12" height="12" rx="3" fill="#d97706"/>
       <text x="153" y="10" font-size="11" font-weight="600" fill="#1e293b">${i18n.legend_enc_speed}</text>
     </g>
 
