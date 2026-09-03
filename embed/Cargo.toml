@@ -1,0 +1,180 @@
+[package]
+name = "wedb_embed"
+version = "0.1.11"
+readme = "README.md"
+
+[package.edition]
+workspace = true
+
+[package.license]
+workspace = true
+
+[package.repository]
+workspace = true
+
+[package.homepage]
+workspace = true
+
+[package.documentation]
+workspace = true
+
+[package.description]
+workspace = true
+
+[package.keywords]
+workspace = true
+
+[package.categories]
+workspace = true
+
+[dependencies]
+bitcode = "0.6.9"
+bytes = "1.12.1"
+coarsetime = "0.1.37"
+fastrand = "2.5.0"
+itoa = "1.0.18"
+memchr = "2.8.3"
+papaya = "0.2.5"
+parking_lot = "0.12.5"
+paste = "1.0.15"
+rapidhash = "4.5.1"
+simsimd = "6.5.16"
+sonic-rs = "0.5.8"
+thiserror = "2.0.20"
+zmij = "1.0.23"
+
+[dependencies.fjall]
+version = "3.1.10"
+optional = true
+
+[dependencies.wedb_embed_engine]
+version = "0.1.8"
+path = "../engine"
+
+[dependencies.fastalp]
+version = "0.1.25"
+path = "../fastalp"
+
+[dependencies.hipstr]
+version = "0.8.0"
+features = [ "serde" ]
+
+[dependencies.mimalloc]
+version = "0.1.52"
+default-features = false
+optional = true
+
+[dependencies.serde]
+version = "1.0.229"
+features = [ "derive" ]
+
+[dependencies.strum]
+version = "0.28.0"
+features = [ "derive" ]
+
+[dependencies.ts_]
+version = "0.1.4"
+features = [ "sec" ]
+
+[dependencies.wedb_resp]
+version = "0.1.0"
+path = "../../wedb/resp"
+
+[features]
+default = [ "fjall" ]
+fjall = [ "dep:fjall" ]
+bench = [ "dep:mimalloc", "fjall" ]
+
+[dev-dependencies]
+anyhow = "1.0.104"
+aok = "0.1.18"
+ctor = "1.0.13"
+divan = "0.1.21"
+libc = "0.2"
+log = "0.4.34"
+log_init = "0.1.39"
+tempfile = "3.27.0"
+
+[dev-dependencies.mimalloc]
+version = "0.1.52"
+default-features = false
+
+[[bench]]
+name = "bench"
+harness = false
+
+[[bench]]
+name = "redis_vs_wedb"
+harness = false
+
+[[bench]]
+name = "footprint"
+harness = false
+
+[[example]]
+name = "string"
+path = "../examples/string.rs"
+
+[[example]]
+name = "hash"
+path = "../examples/hash.rs"
+
+[[example]]
+name = "list"
+path = "../examples/list.rs"
+
+[[example]]
+name = "set"
+path = "../examples/set.rs"
+
+[[example]]
+name = "zset"
+path = "../examples/zset.rs"
+
+[[example]]
+name = "bitmap"
+path = "../examples/bitmap.rs"
+
+[[example]]
+name = "bloom"
+path = "../examples/bloom.rs"
+
+[[example]]
+name = "json"
+path = "../examples/json.rs"
+
+[[example]]
+name = "timeseries"
+path = "../examples/timeseries.rs"
+
+[[example]]
+name = "geo"
+path = "../examples/geo.rs"
+
+[[example]]
+name = "hll"
+path = "../examples/hll.rs"
+
+[[example]]
+name = "tdigest"
+path = "../examples/tdigest.rs"
+
+[[example]]
+name = "sortedint"
+path = "../examples/sortedint.rs"
+
+[[example]]
+name = "stream"
+path = "../examples/stream.rs"
+
+[[example]]
+name = "key"
+path = "../examples/key.rs"
+
+[[example]]
+name = "search"
+path = "../examples/search.rs"
+
+[[example]]
+name = "namespace"
+path = "../examples/namespace.rs"

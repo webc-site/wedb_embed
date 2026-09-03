@@ -1,0 +1,40 @@
+[package]
+name = "fastalp"
+version = "0.1.25"
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/webc-site/wedb_embed.git"
+homepage = "https://github.com/webc-site/wedb_embed/tree/main/fastalp"
+documentation = "https://docs.rs/fastalp"
+readme = "README.md"
+description = "High-performance lossless floating-point compression in pure Rust / 基于 ALP 算法的高性能无损浮点数压缩库"
+keywords = ["compression", "floating-point", "lossless", "alp", "codec"]
+categories = [
+  "compression",
+  "algorithms",
+  "data-structures",
+  "encoding",
+  "database-implementations",
+]
+
+[dependencies]
+thiserror = "2.0.20"
+
+[dev-dependencies]
+anyhow = "1.0.104"
+aok = "0.1.18"
+ctor = "1.0.13"
+divan = "0.1.21"
+fastrand = "2.5.0"
+graupel = "0.1.0"
+log = "0.4.34"
+log_init = "0.1.39"
+lz4_flex = "0.14.0"
+mimalloc = "0.1.52"
+pco = "1.0.3"
+snap = "1.1.2"
+zstd = "0.13.3"
+
+[[bench]]
+name = "bench"
+harness = false

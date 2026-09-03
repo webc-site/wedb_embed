@@ -1,0 +1,32 @@
+[package]
+name = "wedb_embed_engine"
+version = "0.1.8"
+edition = "2024"
+license = "MulanPSL-2.0"
+repository = "https://github.com/webc-site/wedb_embed.git"
+homepage = "https://github.com/webc-site/wedb_embed/tree/main/wedb_embed_engine"
+description = "Storage engine trait abstractions for embedded key-value stores / 嵌入式键值存储引擎通用 Trait 抽象定义"
+keywords = [ "database", "storage-engine", "traits", "embedded", "kv" ]
+categories = [
+"database-implementations",
+"embedded",
+"data-structures",
+"caching",
+"algorithms"
+]
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[features]
+default = [ ]
+
+[dev-dependencies]
+aok = "0.1.18"
+ctor = "1.0.13"
+log = "0.4.34"
+log_init = "0.1.39"
+parking_lot = "0.12.5"
+rapidhash = "4.5.1"

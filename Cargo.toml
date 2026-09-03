@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["embed", "fastalp", "engine"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/webc-site/wedb_embed"
+homepage = "https://webc.site"
+documentation = "https://docs.rs/wedb_embed"
+readme = "README.md"
+description = "Embedded database engine providing Redis-like APIs, built on fjall / 嵌入式数据库引擎，提供类似 Redis 的接口，底层基于 fjall 开发"
+keywords = ["redis", "database", "embedded", "storage-engine", "lsm-tree"]
+categories = ["database-implementations", "data-structures", "embedded", "caching", "algorithms"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+overflow-checks = false
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

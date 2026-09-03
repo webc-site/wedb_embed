@@ -1,0 +1,200 @@
+records:
+  - type: pull_request
+    repo: rust-unofficial/awesome-rust
+    pr_number: 2763
+    url: https://github.com/rust-unofficial/awesome-rust/pull/2763
+    title: Add fastalp under Compression section
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: build-workbench/awesome-compression
+    pr_number: 2
+    url: https://github.com/build-workbench/awesome-compression/pull/2
+    title: "添加 fastalp（自适应无损浮点压缩算法）到 Rust 算法库"
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: rustcc/awesome-rust
+    pr_number: 10
+    url: https://github.com/rustcc/awesome-rust/pull/10
+    title: "添加 fastalp（自适应无损浮点压缩算法库）到压缩章节"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: lance-format/lance
+    issue: 4062
+    url: https://github.com/lance-format/lance/issues/4062#issuecomment-5516657570
+    title: Add ALP compression
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: vortex-data/vortex
+    issue: 919
+    url: https://github.com/vortex-data/vortex/issues/919#issuecomment-5516659005
+    title: ALP exponent sampling improvements
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: apache/arrow-rs
+    issue: 10646
+    url: https://github.com/apache/arrow-rs/issues/10646#issuecomment-5516664838
+    title: "[Parquet] Validate the ALP sampling heuristic"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: pola-rs/polars
+    issue: 28870
+    url: https://github.com/pola-rs/polars/issues/28870#issuecomment-5516666054
+    title: Add support for parquet ALP encoding
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: ekiwi/wellen
+    issue: 11
+    url: https://github.com/ekiwi/wellen/issues/11#issuecomment-5516701773
+    title: "wavemem: look into compression for reals"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: codyaverett/tiny-rust
+    issue: 163
+    url: https://github.com/codyaverett/tiny-rust/issues/163#issuecomment-5516703943
+    title: "tiny-tsdb: Time-Series DB with Gorilla Compression"
+    status: posted
+    date: 2026-09-03
+
+  - type: discussion_comment
+    repo: xerj-org/xerj
+    discussion: 148
+    url: https://github.com/xerj-org/xerj/discussions/148#discussioncomment-18257764
+    title: "RFC: per-field / per-type storage compression"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: strawgate/o11ykit
+    issue: 80
+    url: https://github.com/strawgate/o11ykit/issues/80#issuecomment-5516854481
+    title: "perf(o11ytsdb): counter delta-before-ALP differential encoding"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: cmcuza/TerseTS
+    issue: 29
+    url: https://github.com/cmcuza/TerseTS/issues/29#issuecomment-5516865251
+    title: "Implement ALP"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: apache/parquet-format
+    issue: 401
+    url: https://github.com/apache/parquet-format/issues/401#issuecomment-5516875195
+    title: "Support gorilla encoding for float numbers"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: timescale/timescaledb
+    issue: 2529
+    url: https://github.com/timescale/timescaledb/issues/2529#issuecomment-5516889507
+    title: "Compression improvements using lossy techniques"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue
+    repo: Muvon/pulsora
+    issue: 7
+    url: https://github.com/Muvon/pulsora/issues/7
+    title: "Feature request: Support fastalp encoding for market price floating-point columns"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue
+    repo: jocarrd/graupel
+    issue: 7
+    url: https://github.com/jocarrd/graupel/issues/7
+    title: "Support fastalp (Adaptive Lossless Floating-Point) codec"
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: jocarrd/graupel
+    pr_number: 8
+    url: https://github.com/jocarrd/graupel/pull/8
+    title: "feat(codec): add fastalp (Adaptive Lossless Floating-Point) compression codec"
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: awesome-rust-com/awesome-rust
+    pr_number: 108
+    url: https://github.com/awesome-rust-com/awesome-rust/pull/108
+    title: Add fastalp under Compression section
+    status: submitted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: getsentry/bucket-compression
+    pr_number: 2
+    url: https://github.com/getsentry/bucket-compression/pull/2
+    title: "feat(algo): add fastalp floating-point compression benchmark"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: Entropack/alp-rs
+    issue: 1
+    url: https://github.com/Entropack/alp-rs/issues/1#issuecomment-5518175483
+    title: "Feature Request: `compress_into` and `decompress_into`"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: Entropack/alp-rs
+    issue: 2
+    url: https://github.com/Entropack/alp-rs/issues/2#issuecomment-5518176249
+    title: "Feature Request: Cascade `DELTA` - `FFOR`"
+    status: posted
+    date: 2026-09-03
+
+  - type: pull_request
+    repo: vignesh2027/-FLUXDB
+    pr_number: 1
+    url: https://github.com/vignesh2027/-FLUXDB/pull/1
+    title: "feat(compression): add fastalp floating-point codec for decimal metrics and market prices"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue_comment
+    repo: quickwit-oss/tantivy
+    issue: 2114
+    url: https://github.com/quickwit-oss/tantivy/issues/2114#issuecomment-5518268213
+    title: "Support f64 Compression"
+    status: posted
+    date: 2026-09-03
+
+  - type: issue
+    repo: cnosdb/cnosdb
+    issue: 2437
+    url: https://github.com/cnosdb/cnosdb/issues/2437
+    title: "[Feature] Support fastalp (Adaptive Lossless Floating-Point) column codec for decimal metrics and market data"
+    status: submitted
+    date: 2026-09-03
+
+  - type: issue
+    repo: spiraldb/alp
+    issue: 115
+    url: https://github.com/spiraldb/alp/issues/115
+    title: "Sharing benchmark observations on decimal reconstruction and exception rates from fastalp"
+    status: submitted
+    date: 2026-09-03

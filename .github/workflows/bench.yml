@@ -1,0 +1,149 @@
+name: Performance Regression Benchmark
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "**/baseline/**"
+      - "**/benchData.json"
+      - ".gitignore"
+  workflow_dispatch:
+    inputs:
+      force_push:
+        description: "是否自动提交并推送更新的 README 与 Baseline 到仓库"
+        type: boolean
+        required: true
+        default: true
+      bench_args:
+        description: "可选传递给 cargo bench 的附加参数 (例如: -- bench_string)"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmark & Update README
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Clone Dependency wedb
+        run: |
+          git clone --depth=1 https://github.com/webc-site/wedb.git ../wedb
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Bun Environment
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install JS Dependencies
+        run: bun install
+
+      - name: Install CJK Fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk fonts-wqy-microhei
+
+      - name: Get Latest Redis Version
+        id: redis-version
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          REDIS_TAG=$(gh release view -R redis/redis --json tagName -q .tagName 2>/dev/null || true)
+          if [ -z "$REDIS_TAG" ]; then
+            REDIS_TAG=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/redis/redis/releases/latest 2>/dev/null | grep '"tag_name":' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+          fi
+          if [ -z "$REDIS_TAG" ]; then
+            REDIS_TAG="8.0.0"
+          fi
+          REDIS_VER="v${REDIS_TAG#v}"
+          echo "version=${REDIS_VER}" >> "$GITHUB_OUTPUT"
+          echo "Detected latest Redis version: ${REDIS_VER}"
+
+      - name: Cache Redis Server Binary
+        id: cache-redis
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/redis-bin
+          key: redis-bin-${{ runner.os }}-${{ runner.arch }}-${{ steps.redis-version.outputs.version }}
+
+      - name: Setup Official Redis Server Binary
+        run: |
+          if [ "${{ steps.cache-redis.outputs.cache-hit }}" != "true" ]; then
+            echo "==> Cache miss: Installing Redis Server..."
+            curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg --yes
+            echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+            sudo apt-get update -qq
+            sudo apt-get install -y redis-server redis-tools
+            sudo systemctl stop redis-server 2>/dev/null || sudo service redis-server stop 2>/dev/null || true
+            mkdir -p ${{ runner.temp }}/redis-bin
+            cp $(which redis-server) ${{ runner.temp }}/redis-bin/
+            cp $(which redis-cli) ${{ runner.temp }}/redis-bin/
+            which redis-benchmark >/dev/null 2>&1 && cp $(which redis-benchmark) ${{ runner.temp }}/redis-bin/ || true
+          else
+            echo "==> Cache hit: Restoring Redis binaries from cache..."
+            sudo cp -f ${{ runner.temp }}/redis-bin/* /usr/local/bin/
+            sudo chmod +x /usr/local/bin/redis-* || true
+          fi
+          sudo systemctl stop redis-server 2>/dev/null || sudo service redis-server stop 2>/dev/null || true
+          redis-server --version
+
+      - name: Run Benchmark & Generate Markdown Table
+        env:
+          BENCH_ARGS: ${{ inputs.bench_args }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BENCH_DATA_MB: 5000
+        run: |
+          chmod +x ./embed/benches/benchTableGen.js
+          ./embed/benches/benchTableGen.js $BENCH_ARGS
+
+      - name: Upload Benchmark Images Artifact
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmark-images
+          path: |
+            embed/benches/img/**/*.jpg
+          if-no-files-found: warn
+
+      - name: Post Summary to GitHub Actions
+        run: |
+          echo "## 接口性能基准测试结果 (Benchmark Summary)" >> $GITHUB_STEP_SUMMARY
+          if [ -f embed/readme/bench/zh.md ]; then
+            cat embed/readme/bench/zh.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Commit and Push Updated README & Baseline
+        if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.force_push)
+        env:
+          HUSKY: "0"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A embed/benches/baseline embed/benches/benchData.json embed/readme README.md embed/README.md
+          if ! git diff --cached --quiet; then
+            git commit --no-verify -m "docs(bench): update benchmark results [skip ci]"
+            git pull --rebase -X ours origin main || true
+            git push origin main
+          fi
+

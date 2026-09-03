@@ -1,0 +1,14 @@
+[English](#en) | [中文](#zh)
+
+[![crates.io](https://img.shields.io/crates/v/wedb_embed.svg)](https://crates.io/crates/wedb_embed)
+[![docs.rs](https://docs.rs/wedb_embed/badge.svg)](https://docs.rs/wedb_embed)
+
+---
+
+<a id="en"></a>
+<+ ./readme/en.md >
+
+---
+
+<a id="zh"></a>
+<+ ./readme/zh.md >
