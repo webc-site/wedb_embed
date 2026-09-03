@@ -162,19 +162,13 @@ where
       _ => return Ok(None),
     };
 
-    let len = meta.base.size as i64;
-    let actual_offset = if index < 0 {
-      len.checked_add(index).unwrap_or(i64::MIN)
-    } else {
-      index
+    let offset = match resolve_list_offset(meta.base.size, index) {
+      Some(off) => off,
+      None => return Ok(None),
     };
 
-    if actual_offset < 0 || actual_offset >= len {
-      return Ok(None);
-    }
-
     let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
-    let actual_idx = meta.head.wrapping_add(actual_offset as u64);
+    let actual_idx = meta.head.wrapping_add(offset);
     let item_k = composer.key_for_idx(actual_idx);
     let val = self.data().get(item_k)?;
     Ok(val.as_deref().map(f))
@@ -193,27 +187,17 @@ where
     let now_ms = current_now_ms();
 
     let meta = match get_meta_checked::<ListMeta, _>(self, key_bytes, &meta_k, now_ms)? {
-      Some(m) => m,
+      Some(m) if m.base.size > 0 => m,
+      _ => return Err(Error::invalid_data(ERR_INDEX_OUT_OF_RANGE)),
+    };
+
+    let offset = match resolve_list_offset(meta.base.size, index) {
+      Some(off) => off,
       None => return Err(Error::invalid_data(ERR_INDEX_OUT_OF_RANGE)),
     };
 
-    if meta.base.size == 0 {
-      return Err(Error::invalid_data(ERR_INDEX_OUT_OF_RANGE));
-    }
-
-    let len = meta.base.size as i64;
-    let actual_offset = if index < 0 {
-      len.checked_add(index).unwrap_or(i64::MIN)
-    } else {
-      index
-    };
-
-    if actual_offset < 0 || actual_offset >= len {
-      return Err(Error::invalid_data(ERR_INDEX_OUT_OF_RANGE));
-    }
-
     let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
-    let actual_idx = meta.head.wrapping_add(actual_offset as u64);
+    let actual_idx = meta.head.wrapping_add(offset);
     let item_k = composer.key_for_idx(actual_idx);
 
     let mut batch = self.batch_with_capacity(1);
@@ -328,19 +312,7 @@ where
     return Ok(0);
   }
 
-  if values.len() == 1 {
-    let target_idx = meta.push_index(push_left);
-    let item_k = compose_list_item(&kc, key_bytes, target_idx);
-    batch.insert_data(item_k.as_slice(), values[0].as_ref());
-    meta.base.size += 1;
-    batch.insert_meta(&meta_k, &meta.encode());
-    batch.commit()?;
-    return Ok(meta.base.size);
-  }
-
   let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
-  let _data_ks = db.data();
-  let _meta_ks = db.meta();
 
   for v in values {
     let v_bytes = v.as_ref();
@@ -355,6 +327,7 @@ where
   Ok(meta.base.size)
 }
 
+#[inline]
 fn list_pop_one_internal<E: Engine>(
   db: &Db<E>,
   key_bytes: &[u8],
@@ -363,36 +336,8 @@ fn list_pop_one_internal<E: Engine>(
 where
   Error: From<E::Error>,
 {
-  let kc = db.kc();
-  let meta_k = compose_list_meta_key(&kc, key_bytes);
-  let now_ms = current_now_ms();
-
-  let mut meta = match get_meta_checked::<ListMeta, _>(db, key_bytes, &meta_k, now_ms)? {
-    Some(m) if m.base.size > 0 => m,
-    _ => return Ok(None),
-  };
-
-  let target_idx = meta.pop_index(pop_left);
-
-  let item_k = compose_list_item(&kc, key_bytes, target_idx);
-  let data_ks = db.data();
-  let val = match data_ks.get(item_k.as_slice())? {
-    Some(v) => v.to_vec(),
-    None => return Ok(None),
-  };
-
-  let mut batch = db.batch_with_capacity(2);
-  batch.rm_weak_data(item_k.as_slice());
-
-  meta.base.size -= 1;
-  if meta.base.size == 0 {
-    batch.rm_meta(&meta_k);
-  } else {
-    batch.insert_meta(&meta_k, &meta.encode());
-  }
-  batch.commit()?;
-
-  Ok(Some(val))
+  let mut res = list_pop_internal(db, key_bytes, 1, pop_left)?;
+  Ok(res.pop())
 }
 
 fn list_pop_internal<E: Engine>(
@@ -422,7 +367,6 @@ where
   let mut batch = db.batch_with_capacity(actual_count as usize + 1);
   let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
   let data_ks = db.data();
-  let _meta_ks = db.meta();
 
   for _ in 0..actual_count {
     let target_idx = meta.pop_index(pop_left);
@@ -442,4 +386,22 @@ where
   batch.commit()?;
 
   Ok(results)
+}
+
+#[inline]
+fn resolve_list_offset(size: u64, index: i64) -> Option<u64> {
+  if size == 0 {
+    return None;
+  }
+  let len = size as i64;
+  let actual_offset = if index < 0 {
+    len.checked_add(index)?
+  } else {
+    index
+  };
+  if actual_offset >= 0 && actual_offset < len {
+    Some(actual_offset as u64)
+  } else {
+    None
+  }
 }

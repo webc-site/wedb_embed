@@ -46,7 +46,6 @@ where
     let len = meta.base.size as usize;
     let pivot_bytes = pivot.as_ref();
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let actual_start = meta.head;
     let actual_end = meta.tail.wrapping_sub(1);
@@ -156,7 +155,6 @@ where
     let elem_bytes = elem.as_ref();
     let mut to_delete_offsets = Vec::new();
     let data_ks = self.data();
-    let _meta_ks = self.meta();
 
     let actual_start = meta.head;
     let actual_end = meta.tail.wrapping_sub(1);
