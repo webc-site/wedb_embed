@@ -259,10 +259,27 @@ where
     meta.head = new_head;
     meta.tail = new_tail;
 
-    batch.insert_meta(&meta_k, &meta.encode());
-    batch.commit()?;
+    commit_list_batch(&meta_k, &meta, batch)?;
     Ok(())
   }
+}
+
+#[inline]
+pub(crate) fn commit_list_batch<E: Engine>(
+  meta_k: &[u8],
+  meta: &ListMeta,
+  mut batch: DbBatch<E>,
+) -> Result<()>
+where
+  Error: From<E::Error>,
+{
+  if meta.base.size == 0 {
+    batch.rm_meta(meta_k);
+  } else {
+    batch.insert_meta(meta_k, &meta.encode());
+  }
+  batch.commit()?;
+  Ok(())
 }
 
 #[inline]
@@ -287,6 +304,40 @@ where
   }
 }
 
+#[inline]
+pub(crate) fn list_push_one_internal<E: Engine>(
+  db: &Db<E>,
+  key_bytes: &[u8],
+  v_bytes: &[u8],
+  create_if_missing: bool,
+  push_left: bool,
+) -> Result<u64>
+where
+  Error: From<E::Error>,
+{
+  let kc = db.kc();
+  let meta_k = compose_list_meta_key(&kc, key_bytes);
+  let now_ms = current_now_ms();
+
+  let mut batch = db.batch_with_capacity(2);
+  let (mut meta, metadata_existed) =
+    prepare_list_meta_for_write(db, key_bytes, &meta_k, now_ms, &mut batch)?;
+
+  if !create_if_missing && (!metadata_existed || meta.base.size == 0) {
+    return Ok(0);
+  }
+
+  let mut composer = ListItemKeyComposer::new(&kc, key_bytes);
+  let target_idx = meta.push_index(push_left);
+  let item_k = composer.key_for_idx(target_idx);
+  batch.insert_data(item_k, v_bytes);
+  meta.base.size += 1;
+
+  batch.insert_meta(&meta_k, &meta.encode());
+  batch.commit()?;
+  Ok(meta.base.size)
+}
+
 fn list_push_internal<E: Engine, V: AsRef<[u8]>>(
   db: &Db<E>,
   key_bytes: &[u8],
@@ -299,6 +350,15 @@ where
 {
   if values.is_empty() {
     return Ok(0);
+  }
+  if values.len() == 1 {
+    return list_push_one_internal(
+      db,
+      key_bytes,
+      values[0].as_ref(),
+      create_if_missing,
+      push_left,
+    );
   }
   let kc = db.kc();
   let meta_k = compose_list_meta_key(&kc, key_bytes);
@@ -356,12 +416,7 @@ where
   meta.base.size -= 1;
   let mut batch = db.batch_with_capacity(2);
   batch.rm_weak_data(item_k);
-  if meta.base.size == 0 {
-    batch.rm_meta(&meta_k);
-  } else {
-    batch.insert_meta(&meta_k, &meta.encode());
-  }
-  batch.commit()?;
+  commit_list_batch(&meta_k, &meta, batch)?;
 
   Ok(Some(val))
 }
@@ -410,12 +465,7 @@ where
   }
 
   meta.base.size -= actual_count;
-  if meta.base.size == 0 {
-    batch.rm_meta(&meta_k);
-  } else {
-    batch.insert_meta(&meta_k, &meta.encode());
-  }
-  batch.commit()?;
+  commit_list_batch(&meta_k, &meta, batch)?;
 
   Ok(results)
 }

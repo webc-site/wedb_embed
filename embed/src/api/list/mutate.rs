@@ -7,6 +7,7 @@ use crate::{
       ItemKeyComposer as ListItemKeyComposer, item as compose_list_item,
       meta as compose_list_meta_key, prefix_stack as compose_list_prefix_stack,
     },
+    r#impl::commit_list_batch,
   },
   engine::{Engine, KvEntry, Partition},
   error::{Error, Result},
@@ -277,8 +278,7 @@ where
     meta.base.size -= deleted_count;
     meta.tail = meta.head.wrapping_add(meta.base.size);
 
-    batch.insert_meta(&meta_k, &meta.encode());
-    batch.commit()?;
+    commit_list_batch(&meta_k, &meta, batch)?;
 
     Ok(deleted_count)
   }
