@@ -1,4 +1,6 @@
 mod bitpack;
+#[cfg(feature = "capi")]
+pub mod capi;
 mod constants;
 mod decoder;
 mod delta;
@@ -13,6 +15,8 @@ pub use bitpack::{
   bitpack_encoded, bitpack_u64, bitunpack_into, bitunpack_into_div, bitunpack_u64,
   bitunpack_u64_slice, packed_byte_size,
 };
+#[cfg(feature = "capi")]
+pub use capi::*;
 pub use constants::{
   BITS_PER_BYTE, BITS_U64, BYTES_U16, BYTES_U32, BYTES_U64, CHUNK_SIZE_1024, EARLY_EXIT_BIT_WIDTH,
   ENCODING_UPPER_LIMIT_F32, ENCODING_UPPER_LIMIT_F64, EXC_COUNT_LEN, EXC_COUNT_LEN_U32,

@@ -495,3 +495,50 @@ To break through the throughput limits and compression ceiling of the original C
 - **Unified Zero-Cost Generic Abstraction with Precomputed Tables**:<br>
   Provides a single unified implementation for `f64` and `f32` with zero abstraction overhead.<br>
   Implemented via the `AlpFloat` trait, backed by compile-time static tables for powers of 10 and reciprocal multipliers, ensuring full compiler inlining and zero runtime branching overhead.
+
+---
+
+## C API & Foreign Function Interface (FFI)
+
+`fastalp` provides optional, default-off C-compatible FFI bindings for integration with C, C++, Python, Go, and other language runtimes.<br>
+When the `capi` feature is disabled, pure Rust builds incur zero compilation or runtime overhead.
+
+To enable the C API in `Cargo.toml`:
+
+```toml
+[dependencies]
+fastalp = { version = "0.1.31", features = ["capi"] }
+```
+
+To build a standalone static library (`libfastalp.a`) or shared library (`libfastalp.so` / `libfastalp.dylib`):
+
+```bash
+cargo build --release --features capi
+```
+
+### Buffer Capacity Estimation
+
+Callers can calculate the worst-case required buffer size in bytes to prevent buffer overflow errors:
+
+- `fastalp_max_compressed_size_f64(len)`: Computes maximum destination buffer size for `len` `f64` floats.<br>
+- `fastalp_max_compressed_size_f32(len)`: Computes maximum destination buffer size for `len` `f32` floats.
+
+### Thread-Local Streaming API
+
+High-performance stateless functions utilizing thread-local buffers to eliminate per-call heap allocations:
+
+- `fastalp_compress_f64(src, len, dst, dst_cap)`: Compresses `f64` floats with dynamic parameter sampling.<br>
+- `fastalp_compress_cached_f64(src, len, dst, dst_cap)`: Compresses `f64` floats reusing cached model parameters without sampling.<br>
+- `fastalp_decompress_f64(src, src_len, dst, dst_cap)`: Decompresses bytes into `f64` floats.<br>
+- `fastalp_reset_encoder_f64()`: Resets cached model parameters for the thread-local `f64` encoder.<br>
+- Equivalent functions exist for single-precision floats: `fastalp_compress_f32`, `fastalp_compress_cached_f32`, `fastalp_decompress_f32`, and `fastalp_reset_encoder_f32`.
+
+### Stateful Handle-Based API
+
+For multi-threaded environments or distinct column instances requiring independent encoder lifecycles:
+
+- `fastalp_encoder_f64_new()`: Creates a new heap-allocated `f64` encoder instance.<br>
+- `fastalp_encoder_f64_free(enc)`: Releases a previously allocated `f64` encoder instance.<br>
+- `fastalp_encoder_f64_reset(enc)`: Clears cached model parameters in the encoder handle.<br>
+- `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`: Compresses `f64` floats using the specified encoder instance.<br>
+- Symmetrical handle APIs are provided for single-precision: `FastAlpEncoderF32`, `fastalp_encoder_f32_new`, `fastalp_encoder_f32_free`, `fastalp_encoder_f32_reset`, and `fastalp_encoder_f32_compress`.

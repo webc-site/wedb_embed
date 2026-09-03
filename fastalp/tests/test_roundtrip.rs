@@ -481,3 +481,103 @@ fn test_stateful_encoder_capacity_and_delta() -> aok::Result<()> {
 
   Ok(())
 }
+
+#[cfg(feature = "capi")]
+#[test]
+fn test_capi_roundtrip() {
+  use fastalp::{
+    fastalp_compress_f32, fastalp_compress_f64, fastalp_decompress_f32, fastalp_decompress_f64,
+  };
+
+  let data_f64: Vec<f64> = (0..1024).map(|i| (i as f64) * 0.125).collect();
+  let mut comp_buf = vec![0u8; 65536];
+  let written_f64 = unsafe {
+    fastalp_compress_f64(
+      data_f64.as_ptr(),
+      data_f64.len(),
+      comp_buf.as_mut_ptr(),
+      comp_buf.len(),
+    )
+  };
+  assert!(written_f64 > 0);
+
+  let mut dec_f64 = vec![0.0f64; 1024];
+  let dec_count_f64 = unsafe {
+    fastalp_decompress_f64(
+      comp_buf.as_ptr(),
+      written_f64,
+      dec_f64.as_mut_ptr(),
+      dec_f64.len(),
+    )
+  };
+  assert_eq!(dec_count_f64, 1024);
+  for i in 0..1024 {
+    assert_eq!(data_f64[i].to_bits(), dec_f64[i].to_bits());
+  }
+
+  let data_f32: Vec<f32> = (0..1024).map(|i| (i as f32) * 0.25).collect();
+  let written_f32 = unsafe {
+    fastalp_compress_f32(
+      data_f32.as_ptr(),
+      data_f32.len(),
+      comp_buf.as_mut_ptr(),
+      comp_buf.len(),
+    )
+  };
+  assert!(written_f32 > 0);
+
+  let mut dec_f32 = vec![0.0f32; 1024];
+  let dec_count_f32 = unsafe {
+    fastalp_decompress_f32(
+      comp_buf.as_ptr(),
+      written_f32,
+      dec_f32.as_mut_ptr(),
+      dec_f32.len(),
+    )
+  };
+  assert_eq!(dec_count_f32, 1024);
+  for i in 0..1024 {
+    assert_eq!(data_f32[i].to_bits(), dec_f32[i].to_bits());
+  }
+
+  // Test max compressed size helpers
+  let max_f64 = fastalp::fastalp_max_compressed_size_f64(1024);
+  assert!(max_f64 >= 1024 * 8);
+  let max_f32 = fastalp::fastalp_max_compressed_size_f32(1024);
+  assert!(max_f32 >= 1024 * 4);
+
+  // Test handle-based stateful encoders
+  let enc_f64 = fastalp::fastalp_encoder_f64_new();
+  assert!(!enc_f64.is_null());
+  let h_written_f64 = unsafe {
+    fastalp::fastalp_encoder_f64_compress(
+      enc_f64,
+      data_f64.as_ptr(),
+      data_f64.len(),
+      comp_buf.as_mut_ptr(),
+      comp_buf.len(),
+    )
+  };
+  assert!(h_written_f64 > 0);
+  unsafe {
+    fastalp::fastalp_encoder_f64_reset(enc_f64);
+    fastalp::fastalp_encoder_f64_free(enc_f64);
+  }
+
+  let enc_f32 = fastalp::fastalp_encoder_f32_new();
+  assert!(!enc_f32.is_null());
+  let h_written_f32 = unsafe {
+    fastalp::fastalp_encoder_f32_compress(
+      enc_f32,
+      data_f32.as_ptr(),
+      data_f32.len(),
+      comp_buf.as_mut_ptr(),
+      comp_buf.len(),
+    )
+  };
+  assert!(h_written_f32 > 0);
+  unsafe {
+    fastalp::fastalp_encoder_f32_reset(enc_f32);
+    fastalp::fastalp_encoder_f32_free(enc_f32);
+  }
+}

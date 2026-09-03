@@ -324,7 +324,7 @@ records:
     pr_number: 47
     url: https://github.com/cwida/ALP/pull/47
     title: "feat(bench): integrate fastalp Rust benchmark runner and comparison target"
-    status: submitted
+    status: closed
     date: 2026-09-04
 
   - type: discussion

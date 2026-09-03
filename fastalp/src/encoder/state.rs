@@ -26,7 +26,7 @@ impl<F: AlpFloat> Default for Encoder<F> {
 impl<F: AlpFloat> Encoder<F> {
   /// 创建新的编码器（空缓冲区，按需动态分配并长久复用）
   #[inline]
-  pub fn new() -> Self {
+  pub const fn new() -> Self {
     Self {
       cached_params: None,
       encoded_buf: Vec::new(),
