@@ -166,7 +166,7 @@ where
       };
 
       // 极致优化快路径：未压缩 Chunk 单调递增快速原地追加（避免 O(K) 反序列化与重新编码，零中间堆分配）
-      let fast_appended = if meta.chunk_type == ChunkType::Uncompressed
+      let fast_can_append = if meta.chunk_type == ChunkType::Uncompressed
         && old_data.len() >= ChunkHeader::ENCODED_SIZE
         && let Some(header) = ChunkHeader::decode(&old_data)
         && !header.is_compressed
@@ -181,22 +181,23 @@ where
         };
 
         if timestamp > last_ts {
-          let mut new_data = old_data.clone();
-          let new_count = (count + 1) as u32;
-          new_data[4..8].copy_from_slice(&new_count.to_be_bytes());
-          new_data.extend_from_slice(&timestamp.to_be_bytes());
-          new_data.extend_from_slice(&value.to_be_bytes());
-          batch.insert_data(&old_k, &new_data);
-          meta.total_samples += 1;
-          true
+          Some(count)
         } else {
-          false
+          None
         }
       } else {
-        false
+        None
       };
 
-      if !fast_appended {
+      if let Some(count) = fast_can_append {
+        let mut new_data = old_data;
+        let new_count = (count + 1) as u32;
+        new_data[4..8].copy_from_slice(&new_count.to_be_bytes());
+        new_data.extend_from_slice(&timestamp.to_be_bytes());
+        new_data.extend_from_slice(&value.to_be_bytes());
+        batch.insert_data(&old_k, &new_data);
+        meta.total_samples += 1;
+      } else {
         let mut samples = TSChunk::decode_samples(&old_data)?;
 
         match samples.binary_search_by_key(&timestamp, |s| s.ts) {
