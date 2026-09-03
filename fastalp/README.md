@@ -34,7 +34,7 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
 - [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
   - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
   - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
-  - [C++ ALP Benchmark Methodology & Fork Repository](#c-alp-benchmark-methodology-fork-repository)
+  - [C++ ALP Benchmark Methodology & Criteria Unification](#c-alp-benchmark-methodology-criteria-unification)
   - [Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)](#evaluation-datasets-authoritative-data-sources-all-37-benchmarks)
 - [Architecture Evolution & Optimization Breakdown](#architecture-evolution-optimization-breakdown)
   - [1. Architecture Patterns Adopted & Refined from C++ ALP (And Their Purposes)](#1-architecture-patterns-adopted-refined-from-c-alp-and-their-purposes)
@@ -295,16 +295,18 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 - **Chimp128** (VLDB 2022 floating-point time series)
 - **Gorilla** (VLDB 2015 XOR floating-point time series)
 
-### C++ ALP Benchmark Methodology & Fork Repository
+### C++ ALP Benchmark Methodology & Criteria Unification
 
 - **C++ ALP Fork Repository**: [github.com/x-at-01/ALP](https://github.com/x-at-01/ALP)
 - **Methodology & Architectural Verification**:
   - **Zero Modifications to Core Logic**: The fork preserves all core algorithm implementations in `include/` 100% untouched, ensuring true reference fidelity;
-  - **Unified End-to-End Measurement**:
-    - The original C++ ALP benchmark suite (`ALP/benchmarks/benchmark.cpp`) invoked `alp::encoder<PT>::init` outside the timing loop, measuring only raw encoding with pre-determined parameters rather than the end-to-end compression pipeline;
-    - In our fork, `init` is integrated into the benchmark loop and measured using `std::chrono::high_resolution_clock` on ARM64 macOS;
+  - **End-to-End Pipeline vs. Kernel-Only Criteria Unification**:
+    - **Kernel-Only Phase (Original Paper Criteria, ~4.3 GB/s)**: The original C++ ALP benchmark suite (`ALP/benchmarks/benchmark.cpp`) invoked `alp::encoder<PT>::init` outside the timing loop, assuming the optimal exponent and factor were pre-determined. It measured only the pure floating-point transform and bitpacking kernel, which yielded ~4 GB/s in the paper;
+    - **End-to-End Pipeline (Unified Criteria in this Benchmark, 0.8 GB/s)**: In real-world time-series ingestion, new blocks cannot know optimal parameters in advance and must undergo sampling. In our fork, `init` is integrated into the benchmark loop to measure realistic ingestion performance. Because C++ ALP employs exhaustive parameter search without pruning, sampling consumes over 80% of total CPU cycles, resulting in a measured end-to-end throughput of **0.8 GB/s**;
+    - **fastalp End-to-End Performance (5.5 GB/s)**: fastalp likewise executes the complete end-to-end pipeline (including sampling analysis from scratch). Equipped with a 3-tier micro-architectural pruning pipeline (decimal early exit, 4-sample prescreening, division exception filtering), it achieves **5.5 GB/s** end-to-end (7.0x speedup over C++ ALP);
+  - **Full 37 Datasets Evaluated**:
     - All 6 industrial scenario datasets were integrated into `data/samples/` and `your_own_dataset.csv`, ensuring C++ ALP executed the complete suite of all 37 datasets (31 paper datasets + 6 industrial scenarios) on the exact same physical host;
-  - **Strict Geometric Mean Aggregation**: All 37 benchmarks are evaluated end-to-end and aggregated via Geometric Mean across all algorithms.
+    - All algorithms adopt Geometric Mean across all 37 benchmarks without sampling bias.
 
 ### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
 
@@ -426,7 +428,7 @@ fastalp is not a literal translation, but an engineering overhaul engineered to 
 - [性能评测与多算法对比](#性能评测与多算法对比)
   - [测试环境与编译配置](#测试环境与编译配置)
   - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
-  - [C++ ALP 测试机制与 Fork 开源仓库](#c-alp-测试机制与-fork-开源仓库)
+  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
   - [评测数据集全景与公开数据源 (37 项工业与学术全集)](#评测数据集全景与公开数据源-37-项工业与学术全集)
 - [架构演进与优化全景 (Architecture & Optimization Breakdown)](#架构演进与优化全景-architecture-optimization-breakdown)
   - [一、参考与借鉴 C++ ALP 的架构设计（用于解决什么问题）](#一参考与借鉴-c-alp-的架构设计用于解决什么问题)
@@ -687,16 +689,18 @@ fastalp/
 - **Chimp128** (VLDB 2022 浮点时序压缩)
 - **Gorilla** (VLDB 2015 XOR 浮点时序压缩)
 
-### C++ ALP 测试机制与 Fork 开源仓库
+### C++ ALP 测试机制与统计口径说明
 
 - **C++ ALP Fork 仓库地址**：[github.com/x-at-01/ALP](https://github.com/x-at-01/ALP)
-- **测试代码与核心逻辑说明**：
+- **统计口径统一与测试机制说明**：
   - **核心算法保持 100% 官方原貌**：Fork 仓库未对 C++ ALP 的核心算法逻辑（`include/` 目录）做任何修改，原汁原味保留官方实现的向量化与十进制反向映射逻辑；
-  - **端到端测试口径统一**：
-    - C++ ALP 官方原版测试套件（`ALP/benchmarks/benchmark.cpp`）在计时循环外执行了 `alp::encoder<PT>::init`（即未将采样开销计入压缩耗时）；
-    - 在 Fork 仓库中，我们将 `alp::encoder<PT>::init` 纳入计时测试循环，并在 macOS ARM64 环境下以高精度时钟（`std::chrono::high_resolution_clock`）统计端到端全量压缩耗时；
-    - 同时在 `ALP/data/samples/` 与 `your_own_dataset.csv` 中补充了 6 大典型工业场景，使 C++ ALP 在本物理机上完整跑完全量全部 37 个评测数据集（31 个论文公开数据集 + 6 个工业场景补充数据集）；
-  - **全量无偏统计**：所有算法统一以全量 37 项评测数据计算几何平均值（Geometric Mean），杜绝任何采样偏倚。
+  - **端到端全流程 vs 纯编码内核的口径统一**：
+    - **纯编码内核（原论文测试口径，约 4.3 GB/s）**：C++ ALP 官方原版测试代码（`ALP/benchmarks/benchmark.cpp`）在计时循环外调用了 `alp::encoder<PT>::init`，假设已预先获知最佳指数与因子，仅测量跳过采样后的“纯浮点变换 + 位打包”内核速度，因此在原论文中录得约 4 GB/s 吞吐；
+    - **端到端全量流水线（本文统一评测口径，0.8 GB/s）**：在真实时序写入时，新数据块无法预知最佳模型参数，必须经历采样分析。为了公平衡量工程实际性能，我们在 Fork 仓库中将 `init` 采样分析纳入计时循环。由于 C++ ALP 采用无剪枝的暴力全量穷举，采样阶段占用了 80% 以上的时间，其实际端到端吞吐测得为 **0.8 GB/s**；
+    - **fastalp 的端到端表现（5.5 GB/s）**：fastalp 同样执行完整的全量端到端压缩（含从零采样分析），得益于 3 层采样微架构剪枝（纯十进制早停、4 采样快筛、除法异常过滤），端到端吞吐达到 **5.5 GB/s**（较 C++ ALP 端到端提速 7.0x）；
+  - **37 项数据集全量无偏实测**：
+    - 在 `ALP/data/samples/` 与 `your_own_dataset.csv` 中补充了 6 大典型工业场景，使 C++ ALP 在本物理机上完整跑完全量全部 37 个评测数据集（31 个论文公开数据集 + 6 个工业场景补充数据集）；
+    - 所有算法统一采用全量 37 项评测数据计算几何平均值（Geometric Mean），杜绝任何采样偏倚。
 
 ### 评测数据集全景与公开数据源 (37 项工业与学术全集)
 

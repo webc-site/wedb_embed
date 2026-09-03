@@ -266,16 +266,18 @@ Evaluated side-by-side across industry-standard floating-point and time-series c
 - **Chimp128** (VLDB 2022 floating-point time series)
 - **Gorilla** (VLDB 2015 XOR floating-point time series)
 
-### C++ ALP Benchmark Methodology & Fork Repository
+### C++ ALP Benchmark Methodology & Criteria Unification
 
 - **C++ ALP Fork Repository**: [github.com/x-at-01/ALP](https://github.com/x-at-01/ALP)
 - **Methodology & Architectural Verification**:
   - **Zero Modifications to Core Logic**: The fork preserves all core algorithm implementations in `include/` 100% untouched, ensuring true reference fidelity;
-  - **Unified End-to-End Measurement**:
-    - The original C++ ALP benchmark suite (`ALP/benchmarks/benchmark.cpp`) invoked `alp::encoder<PT>::init` outside the timing loop, measuring only raw encoding with pre-determined parameters rather than the end-to-end compression pipeline;
-    - In our fork, `init` is integrated into the benchmark loop and measured using `std::chrono::high_resolution_clock` on ARM64 macOS;
+  - **End-to-End Pipeline vs. Kernel-Only Criteria Unification**:
+    - **Kernel-Only Phase (Original Paper Criteria, ~4.3 GB/s)**: The original C++ ALP benchmark suite (`ALP/benchmarks/benchmark.cpp`) invoked `alp::encoder<PT>::init` outside the timing loop, assuming the optimal exponent and factor were pre-determined. It measured only the pure floating-point transform and bitpacking kernel, which yielded ~4 GB/s in the paper;
+    - **End-to-End Pipeline (Unified Criteria in this Benchmark, 0.8 GB/s)**: In real-world time-series ingestion, new blocks cannot know optimal parameters in advance and must undergo sampling. In our fork, `init` is integrated into the benchmark loop to measure realistic ingestion performance. Because C++ ALP employs exhaustive parameter search without pruning, sampling consumes over 80% of total CPU cycles, resulting in a measured end-to-end throughput of **0.8 GB/s**;
+    - **fastalp End-to-End Performance (5.5 GB/s)**: fastalp likewise executes the complete end-to-end pipeline (including sampling analysis from scratch). Equipped with a 3-tier micro-architectural pruning pipeline (decimal early exit, 4-sample prescreening, division exception filtering), it achieves **5.5 GB/s** end-to-end (7.0x speedup over C++ ALP);
+  - **Full 37 Datasets Evaluated**:
     - All 6 industrial scenario datasets were integrated into `data/samples/` and `your_own_dataset.csv`, ensuring C++ ALP executed the complete suite of all 37 datasets (31 paper datasets + 6 industrial scenarios) on the exact same physical host;
-  - **Strict Geometric Mean Aggregation**: All 37 benchmarks are evaluated end-to-end and aggregated via Geometric Mean across all algorithms.
+    - All algorithms adopt Geometric Mean across all 37 benchmarks without sampling bias.
 
 ### Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)
 
