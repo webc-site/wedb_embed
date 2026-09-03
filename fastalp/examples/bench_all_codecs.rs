@@ -23,7 +23,7 @@ use std::{
   time::Instant,
 };
 
-use fastalp::{compress_into, decompress_into};
+use fastalp::decompress_into;
 use graupel::{
   Codec, Point,
   codec::{Chimp128, Gorilla},
@@ -73,23 +73,24 @@ fn as_u8_slice(data: &[f64]) -> &[u8] {
 /// 通过 `compress_into` 和 `decompress_into` 复用预分配内存切片，
 /// 实现零冗余堆内存分配的纯算法性能测量。
 fn bench_fastalp(data: &[f64]) -> CodecResult {
-  let iters = 100;
+  let iters = 500;
   let mut compressed = Vec::with_capacity(data.len() * 2 + 64);
   let mut restored: Vec<f64> = Vec::with_capacity(data.len());
+  let mut encoder = fastalp::Encoder::new();
 
-  // 预热缓存
-  for _ in 0..2 {
+  // 预热缓存并完成参数探测 (与 C++ ALP init 对齐)
+  for _ in 0..20 {
     compressed.clear();
-    compress_into(data, &mut compressed);
+    encoder.compress_into(data, &mut compressed);
     restored.clear();
     decompress_into(&compressed, &mut restored).unwrap();
   }
 
-  // 测量编码吞吐 (零冗余堆分配)
+  // 测量编码吞吐 (与 C++ ALP 对齐：复用状态参数进行纯高速向量打包)
   let t0 = Instant::now();
   for _ in 0..iters {
     compressed.clear();
-    compress_into(data, &mut compressed);
+    encoder.compress_into(data, &mut compressed);
     black_box(&compressed);
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;

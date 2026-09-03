@@ -26,7 +26,7 @@ pub use constants::{
 pub use decoder::{decode_delta, decode_standard, decompress, decompress_into};
 pub use delta::{eval_delta_benefit, in_place_deltas, reconstruct_ramp_into_floats};
 pub use encoder::{
-  Exception, compress, compress_delta, compress_delta_into, compress_into, encode_delta,
+  Encoder, Exception, compress, compress_delta, compress_delta_into, compress_into, encode_delta,
   encode_standard,
 };
 pub use error::{Error, Result};
