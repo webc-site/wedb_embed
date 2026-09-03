@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, time::Instant};
+use std::{env, fs, path::PathBuf, time::Instant};
 
 use fastalp::{compress_into, decompress_into};
 
@@ -18,7 +18,7 @@ fn load_csv(path: &PathBuf) -> Vec<f64> {
 }
 
 fn main() {
-  let alp_dir = std::env::var("ALP_DIR")
+  let alp_dir = env::var("ALP_DIR")
     .map(PathBuf::from)
     .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ALP"));
   let samples_dir = alp_dir.join("data/samples");

@@ -1,3 +1,4 @@
+use core::hint::unreachable_unchecked;
 use std::ptr::read_unaligned;
 
 use crate::{
@@ -141,7 +142,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
       c
     }
     // SAFETY: len_tag 是 (desc_byte >> LEN_TAG_SHIFT) & 0x03，取值范围严格为 0..=3，上方 4 个分支已完全穷尽全部取值
-    _ => unsafe { core::hint::unreachable_unchecked() },
+    _ => unsafe { unreachable_unchecked() },
   };
 
   let is_raw = type_byte == TYPE_F64_RAW || type_byte == TYPE_F32_RAW;

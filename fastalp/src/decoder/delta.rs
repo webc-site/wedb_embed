@@ -38,6 +38,8 @@ pub fn decode_delta<F: AlpFloat>(
   if count == 1 {
     let val = if use_div {
       F::decode_from_int_div(first, exp_factor)
+    } else if fac_int == 1 {
+      F::decode_from_int_fac1(first, frac_flt)
     } else {
       F::decode_from_int(first, fac_int, frac_flt)
     };
