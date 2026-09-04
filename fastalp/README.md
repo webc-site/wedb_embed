@@ -421,7 +421,7 @@ In our architecture evolution, fastalp preserved and absorbed the mathematically
 
 - **Stateful Encoder with Cross-Block Parameter Caching**:<br>
   Solves the bottleneck of repetitive parameter sampling in columnar time-series storage.<br>
-  In industrial time-series streams, adjacent blocks of the same metric (e.g., temperature) exhibit identical scale and precision. fastalp adopts the C++ design to reuse the previously discovered `(exp, fac)` across 1024-element blocks, skipping sample scanning entirely and accelerating sustained compression throughput from 4~5 GB/s to **15~20+ GB/s**.
+  In industrial time-series streams, adjacent blocks of the same metric (e.g., temperature) exhibit identical scale and precision. fastalp adopts the C++ design to reuse the previously discovered `(exp, fac)` across 1024-element blocks, skipping sample scanning entirely and accelerating sustained compression throughput from `4-5 GB/s` to `15-20+ GB/s`.
 
 ---
 
@@ -516,7 +516,7 @@ To enable the C API in `Cargo.toml`:
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.31", features = ["capi"] }
+fastalp = { version = "0.1.32", features = ["capi"] }
 ```
 
 To build a standalone static library (`libfastalp.a`) or shared library (`libfastalp.so` / `libfastalp.dylib`):
@@ -970,7 +970,7 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 
 - **状态化编码器与跨块参数缓存**：<br>
   用于解决时序数据库连续写入时频繁重复采样的性能瓶颈。<br>
-  在工业时序流中，同一指标列（如温度）相邻数据块的量纲和精度具有高度连续性。fastalp 借鉴 C++ 跨块状态管理思想，支持跨 1024 块复用上一数据块探测出的指数 `exp` 与因子 `fac`。连续写入时直接跳过全部样本扫描，使连续压缩吞吐由 4~5 GB/s 跃升至 **15~20+ GB/s**。
+  在工业时序流中，同一指标列（如温度）相邻数据块的量纲和精度具有高度连续性。fastalp 借鉴 C++ 跨块状态管理思想，支持跨 1024 元素数据块复用上一数据块探测出的指数 `exp` 与因子 `fac`。连续写入时直接跳过全部样本扫描，使连续压缩吞吐由 `4-5 GB/s` 跃升至 `15-20+ GB/s`。
 
 ---
 
@@ -1065,7 +1065,7 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.31", features = ["capi"] }
+fastalp = { version = "0.1.32", features = ["capi"] }
 ```
 
 构建独立的静态库（`libfastalp.a`）或动态库（`libfastalp.so` / `libfastalp.dylib`）：

@@ -412,7 +412,7 @@ In our architecture evolution, fastalp preserved and absorbed the mathematically
 
 - **Stateful Encoder with Cross-Block Parameter Caching**:<br>
   Solves the bottleneck of repetitive parameter sampling in columnar time-series storage.<br>
-  In industrial time-series streams, adjacent blocks of the same metric (e.g., temperature) exhibit identical scale and precision. fastalp adopts the C++ design to reuse the previously discovered `(exp, fac)` across 1024-element blocks, skipping sample scanning entirely and accelerating sustained compression throughput from 4~5 GB/s to **15~20+ GB/s**.
+  In industrial time-series streams, adjacent blocks of the same metric (e.g., temperature) exhibit identical scale and precision. fastalp adopts the C++ design to reuse the previously discovered `(exp, fac)` across 1024-element blocks, skipping sample scanning entirely and accelerating sustained compression throughput from `4-5 GB/s` to `15-20+ GB/s`.
 
 ---
 
@@ -507,7 +507,7 @@ To enable the C API in `Cargo.toml`:
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.31", features = ["capi"] }
+fastalp = { version = "0.1.32", features = ["capi"] }
 ```
 
 To build a standalone static library (`libfastalp.a`) or shared library (`libfastalp.so` / `libfastalp.dylib`):
