@@ -689,3 +689,162 @@ fn test_exposed_utilities() -> aok::Result<()> {
 
   Ok(())
 }
+
+#[test]
+fn test_dictionary_mode_roundtrip() -> fastalp::Result<()> {
+  use fastalp::{
+    compress, decompress,
+    header::{TYPE_F64_DICT, read_header},
+  };
+
+  // 1. 20 个离散值随机分布（模拟 scene_macro），验证字典压缩模式与完全无损解压
+  let dict_vals = [
+    1250.0f64, 1265.5, 1281.0, 1296.5, 1312.0, 1327.5, 1343.0, 1358.5, 1374.0, 1389.5, 1405.0,
+    1420.5, 1436.0, 1451.5, 1467.0, 1482.5, 1498.0, 1513.5, 1529.0, 1544.5,
+  ];
+  let mut data = Vec::with_capacity(1024);
+  for i in 0..1024 {
+    data.push(dict_vals[(i * 7 + 13) % dict_vals.len()]);
+  }
+
+  let compressed = compress(&data);
+  let hdr = read_header(&compressed)?;
+  assert_eq!(
+    hdr.type_byte, TYPE_F64_DICT,
+    "低基数离散数据应优先选用字典压缩"
+  );
+  assert!(
+    compressed.len() <= 850,
+    "1024 个 20 离散浮点数字典压缩大小应 <= 850B，实际：{}B",
+    compressed.len()
+  );
+
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), data.len());
+  for (orig, dec) in data.iter().zip(&decompressed) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  // 2. 两个交替浮点数（0.0 与 1.0），无连续重复，字典压缩位宽应为 1
+  let mut alt_data = Vec::with_capacity(1024);
+  for i in 0..1024 {
+    alt_data.push(if i % 2 == 0 { 0.0f64 } else { 1.0f64 });
+  }
+  let comp_alt = compress(&alt_data);
+  let hdr_alt = read_header(&comp_alt)?;
+  assert_eq!(hdr_alt.type_byte, TYPE_F64_DICT);
+  // 1 字节头部 + 2 字节元数据 + 16 字节字典 + 1024/8 = 128 字节位打包 = 147 字节
+  assert!(comp_alt.len() <= 160);
+  let dec_alt: Vec<f64> = decompress(&comp_alt)?;
+  assert_eq!(dec_alt.len(), alt_data.len());
+  for (orig, dec) in alt_data.iter().zip(&dec_alt) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  // 3. 所有元素全部相同的单值字典压缩
+  let single_data = vec![42.5f64; 1024];
+  let comp_single = compress(&single_data);
+  let hdr_single = read_header(&comp_single)?;
+  assert_eq!(hdr_single.type_byte, TYPE_F64_DICT);
+  assert!(comp_single.len() <= 15);
+  let dec_single: Vec<f64> = decompress(&comp_single)?;
+  assert_eq!(dec_single, single_data);
+
+  Ok(())
+}
+
+#[test]
+fn test_dictionary_mode_f32_roundtrip() -> fastalp::Result<()> {
+  use fastalp::{
+    compress, decompress,
+    header::{TYPE_F32_DICT, read_header},
+  };
+
+  let dict_vals = [10.5f32, -20.25, 0.0, -0.0, 100.125, 999.0];
+  let mut data = Vec::with_capacity(1024);
+  for i in 0..1024 {
+    data.push(dict_vals[i % dict_vals.len()]);
+  }
+
+  let compressed = compress(&data);
+  let hdr = read_header(&compressed)?;
+  assert_eq!(hdr.type_byte, TYPE_F32_DICT);
+
+  let decompressed: Vec<f32> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), data.len());
+  for (orig, dec) in data.iter().zip(&decompressed) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  Ok(())
+}
+
+#[test]
+fn test_rd_mode_roundtrip() -> fastalp::Result<()> {
+  use fastalp::{
+    compress, decompress,
+    header::{TYPE_F64_RD, read_header},
+  };
+
+  // 构造真实双精度高熵尾数数据（指数集中在极少离散值，低位尾数连续高熵分布，无法十进制化）
+  // 此时标准 ALP 回退，ALP-RD 高低位解耦可自动触发并高吞吐无损编解码
+  let mut data = Vec::with_capacity(1024);
+  for i in 0..1024 {
+    let exp_bias = ((i % 3) as u64 + 1023) << 52;
+    let mantissa = (i as u64)
+      .wrapping_mul(6364136223846793005)
+      .wrapping_add(1442695040888963407)
+      & 0x000F_FFFF_FFFF_FFFF;
+    data.push(f64::from_bits(exp_bias | mantissa));
+  }
+
+  let compressed = compress(&data);
+  let hdr = read_header(&compressed)?;
+  assert_eq!(hdr.type_byte, TYPE_F64_RD, "高位聚集浮点数据应触发 ALP-RD 压缩");
+  assert!(
+    compressed.len() < data.len() * 8,
+    "ALP-RD 压缩体积应小于未压缩原始体积"
+  );
+
+  let decompressed: Vec<f64> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), data.len());
+  for (orig, dec) in data.iter().zip(&decompressed) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  Ok(())
+}
+
+#[test]
+fn test_rd_mode_f32_roundtrip() -> fastalp::Result<()> {
+  use fastalp::{
+    compress, decompress,
+    header::{TYPE_F32_RD, read_header},
+  };
+
+  let mut data = Vec::with_capacity(1024);
+  for i in 0..1024 {
+    let exp_bias = ((i % 2) as u32 + 127) << 23;
+    let mantissa = (i as u32)
+      .wrapping_mul(1103515245)
+      .wrapping_add(12345)
+      & 0x007F_FFFF;
+    data.push(f32::from_bits(exp_bias | mantissa));
+  }
+
+  let compressed = compress(&data);
+  let hdr = read_header(&compressed)?;
+  assert_eq!(hdr.type_byte, TYPE_F32_RD, "f32 高位聚集浮点数据应触发 ALP-RD 压缩");
+  assert!(
+    compressed.len() < data.len() * 4,
+    "f32 ALP-RD 压缩体积应小于原始体积"
+  );
+
+  let decompressed: Vec<f32> = decompress(&compressed)?;
+  assert_eq!(decompressed.len(), data.len());
+  for (orig, dec) in data.iter().zip(&decompressed) {
+    assert_eq!(orig.to_bits(), dec.to_bits());
+  }
+
+  Ok(())
+}

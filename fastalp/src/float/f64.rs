@@ -4,7 +4,7 @@ use super::AlpFloat;
 use crate::constants::{
   BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F64, EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F64, FACT_ARR_F64,
   FRAC_ARR_F64, MAX_EXPONENT_F64, MAX_FAC_F64, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
-  TYPE_F64_DELTA, TYPE_F64_RAW,
+  TYPE_F64_DELTA, TYPE_F64_DICT, TYPE_F64_RAW, TYPE_F64_RD,
 };
 
 impl AlpFloat for f64 {
@@ -16,6 +16,10 @@ impl AlpFloat for f64 {
   const TYPE_DELTA_BYTE: u8 = TYPE_F64_DELTA;
   const TYPE_DEC_BYTE: u8 = TYPE_F64_DEC;
   const TYPE_DEC_DELTA_BYTE: u8 = TYPE_F64_DEC_DELTA;
+  const TYPE_DICT_BYTE: u8 = TYPE_F64_DICT;
+  const TYPE_RD_BYTE: u8 = TYPE_F64_RD;
+  const RD_TOTAL_BITS: u8 = 64;
+  const RD_MAX_CUT: u8 = 16;
   const MAX_EXPONENT: u8 = MAX_EXPONENT_F64;
   const MAX_FAC: u8 = MAX_FAC_F64;
   const MAX_BIT_WIDTH: u8 = u64::BITS as u8;
@@ -183,6 +187,27 @@ impl AlpFloat for f64 {
   #[inline(always)]
   fn from_raw_bits(bits: Self::RawBits) -> Self {
     f64::from_bits(bits)
+  }
+
+  #[inline(always)]
+  fn to_u64_key(self) -> u64 {
+    self.to_bits()
+  }
+
+  #[inline(always)]
+  fn write_raw(self, dst: &mut Vec<u8>) {
+    dst.extend_from_slice(&self.to_bits().to_le_bytes());
+  }
+
+  #[inline(always)]
+  fn read_raw(src: &[u8]) -> Self {
+    // SAFETY: 调用方保证 src 至少包含 8 字节，read_unaligned 支持任意内存对齐安全读取 u64。
+    unsafe { f64::from_bits(u64::from_le(read_unaligned(src.as_ptr().cast::<u64>()))) }
+  }
+
+  #[inline(always)]
+  fn from_u64_raw(raw: u64) -> Self {
+    f64::from_bits(raw)
   }
 
   #[inline(always)]

@@ -14,6 +14,10 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
   const TYPE_DELTA_BYTE: u8;
   const TYPE_DEC_BYTE: u8;
   const TYPE_DEC_DELTA_BYTE: u8;
+  const TYPE_DICT_BYTE: u8;
+  const TYPE_RD_BYTE: u8;
+  const RD_TOTAL_BITS: u8;
+  const RD_MAX_CUT: u8;
   const MAX_EXPONENT: u8;
   const MAX_FAC: u8;
   const MAX_BIT_WIDTH: u8;
@@ -54,6 +58,22 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
 
   fn to_raw_bits(self) -> Self::RawBits;
   fn from_raw_bits(bits: Self::RawBits) -> Self;
+
+  /// Returns 64-bit unsigned integer representation for hash table key.
+  /// 返回用于哈希表键的 64 位无符号整数表示
+  fn to_u64_key(self) -> u64;
+
+  /// Appends raw little-endian bytes of float into destination vector.
+  /// 将浮点数的原始小端字节追加至目标向量
+  fn write_raw(self, dst: &mut Vec<u8>);
+
+  /// Reads float directly from raw little-endian bytes.
+  /// 从原始小端字节直接读取浮点数
+  fn read_raw(src: &[u8]) -> Self;
+
+  /// Reconstructs float from 64-bit unsigned integer raw bit representation.
+  /// 从 64 位无符号整数原始二进制位重建浮点数
+  fn from_u64_raw(raw: u64) -> Self;
 
   /// Strictly checks whether two floating-point values are bitwise identical (distinguishes +0.0 and -0.0).
   /// 基于底层二进制比特位严格判断两浮点数是否完全相同（可区分 +0.0 与 -0.0）

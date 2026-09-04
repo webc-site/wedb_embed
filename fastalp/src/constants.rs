@@ -52,9 +52,37 @@ pub const TYPE_F64_DEC_DELTA: u8 = 9;
 /// f32 十进制精确除法时序差分压缩数据块类型标识
 pub const TYPE_F32_DEC_DELTA: u8 = 10;
 
+/// Format type identifier for f64 Dictionary compressed chunk.
+/// f64 低基数紧凑字典压缩数据块类型标识
+pub const TYPE_F64_DICT: u8 = 11;
+
+/// Format type identifier for f32 Dictionary compressed chunk.
+/// f32 低基数紧凑字典压缩数据块类型标识
+pub const TYPE_F32_DICT: u8 = 12;
+
+/// Format type identifier for f64 Real Doubles (ALP-RD) compressed chunk.
+/// f64 真实双精度浮点高低位解耦（ALP-RD）压缩数据块类型标识
+pub const TYPE_F64_RD: u8 = 13;
+
+/// Format type identifier for f32 Real Doubles (ALP-RD) compressed chunk.
+/// f32 真实单精度浮点高低位解耦（ALP-RD）压缩数据块类型标识
+pub const TYPE_F32_RD: u8 = 14;
+
 /// Maximum valid format type identifier.
 /// 最大有效编码格式类型标识
-pub const MAX_TYPE_BYTE: u8 = TYPE_F32_DEC_DELTA;
+pub const MAX_TYPE_BYTE: u8 = TYPE_F32_RD;
+
+/// Maximum number of distinct entries in low-cardinality dictionary mode.
+/// 低基数紧凑字典模式下支持的最大字典项数
+pub const MAX_DICT_ENTRIES: usize = 64;
+
+/// Size ratio threshold numerator for attempting ALP-RD bit decoupling (4/5 = 80%).
+/// 尝试高低位解耦（ALP-RD）压缩的数据大小比例阈值分子 (4/5 = 80%)
+pub(crate) const RD_SIZE_THRESHOLD_NUM: usize = 4;
+
+/// Size ratio threshold denominator for attempting ALP-RD bit decoupling (4/5 = 80%).
+/// 尝试高低位解耦（ALP-RD）压缩的数据大小比例阈值分母 (4/5 = 80%)
+pub(crate) const RD_SIZE_THRESHOLD_DEN: usize = 5;
 
 /// Maximum decimal exponent for double precision f64.
 /// f64 最大十进制指数
@@ -88,6 +116,10 @@ pub const CHUNK_SIZE_1024: usize = CHUNK_SIZE;
 /// Type ID mask (lower 4 bits of descriptor byte: 0..=15).
 /// 描述符字节低 4 位：编码类型掩码
 pub const TYPE_MASK: u8 = 0x0F;
+
+/// Repeat value run-length bitmask flag (bit 6 of descriptor byte).
+/// 重复值时序行程掩码标志位 (描述符字节第 6 位)
+pub const FLAG_REPEAT: u8 = 0x40;
 
 /// Length tag bit shift (bits 4..=5 of descriptor byte).
 /// 长度档位位移偏移 (第 4~5 位)
