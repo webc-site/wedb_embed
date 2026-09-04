@@ -24,6 +24,7 @@ const CHUNK_8: usize = 8;
 const CHUNK_4: usize = 4;
 const CHUNK_2: usize = 2;
 
+/// Fast slice bit-unpacking: unpacks `count` integers of `bit_width` from `src` into `dst` slice (zero-heap allocation).
 /// 高速切片位解包：从 `src` 解包出 `count` 个 `bit_width` 位的整数至 `dst` 切片（零堆分配）
 pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u64]) -> Result<()> {
   if count == 0 {
@@ -49,8 +50,10 @@ pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u
   }
 
   // SAFETY:
-  // 1. 上方已校验 src.len() >= required_bytes，保证读指针与 read_unaligned 严格在 src 有效内存边界内；
-  // 2. dst.len() >= count，写入 0..count 空间完全充足且无越界风险。
+  // 1. Verified src.len() >= required_bytes above, ensuring pointer is within bounds.
+  //    上方已校验 src.len() >= required_bytes，保证读指针与 read_unaligned 严格在 src 有效内存边界内；
+  // 2. dst.len() >= count, ensuring sufficient destination space without out-of-bounds risk.
+  //    dst.len() >= count，写入 0..count 空间完全充足且无越界风险。
   unsafe {
     let mut dst_ptr = dst.as_mut_ptr();
 
@@ -196,6 +199,7 @@ unsafe fn unpack_u64_le16<const BW: usize>(
   let mut byte_offset = 0;
   let mut i = 0;
 
+  // SAFETY: Caller guarantees src_ptr has at least src_len bytes readable and dst_ptr has count writable elements
   // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 16 <= fast_end_8 {
@@ -284,6 +288,7 @@ unsafe fn unpack_u64_17_to_32<const BW: usize>(
   let mut byte_offset = 0;
   let mut i = 0;
 
+  // SAFETY: Caller guarantees src_ptr has at least src_len bytes readable and dst_ptr has count writable elements
   // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 8 <= fast_end_8 {
@@ -340,6 +345,7 @@ unsafe fn unpack_u64_33_to_56<const BW: usize>(
   let fast_limit = max_safe_i.min(count);
   let mut i = 0;
 
+  // SAFETY: Caller guarantees src_ptr has at least src_len bytes readable and dst_ptr has count writable elements
   // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 4 <= fast_end_4 {
@@ -406,6 +412,7 @@ unsafe fn unpack_u64_generic(
   let fast_limit = max_safe_i.min(count);
   let mut i = 0;
 
+  // SAFETY: Caller guarantees src_ptr has at least src_len bytes readable and dst_ptr has count writable elements
   // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 4 <= fast_end_4 {
@@ -457,6 +464,7 @@ unsafe fn unpack_u64_generic(
   }
 }
 
+/// Fast bit-unpacking: unpacks `count` integers of `bit_width` from `src` into `dst` (zero double-init overhead).
 /// 高速位解包：从 `src` 解包出 `count` 个 `bit_width` 位的整数至 `dst`（零双重初始化开销）
 #[inline]
 pub fn bitunpack_u64(src: &[u8], count: usize, bit_width: u8, dst: &mut Vec<u64>) -> Result<()> {
@@ -465,6 +473,7 @@ pub fn bitunpack_u64(src: &[u8], count: usize, bit_width: u8, dst: &mut Vec<u64>
   }
   let old_len = dst.len();
   dst.reserve(count);
+  // SAFETY: dst has reserved count space, safely unpack into slice without double-init overhead
   // SAFETY: dst 已预分配 count 空间，通过切片零堆分配安全解包，消除 resize 双重写零开销
   let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
   bitunpack_u64_slice(src, count, bit_width, slice)?;
@@ -474,20 +483,27 @@ pub fn bitunpack_u64(src: &[u8], count: usize, bit_width: u8, dst: &mut Vec<u64>
   Ok(())
 }
 
+/// Generic trait for ALP floating-point reconstruction decoders.
 /// ALP 浮点重构解码器通用抽象 Trait
 pub trait AlpDecoder<F: AlpFloat>: Copy {
+  /// Reconstructs float from unsigned integer offset
   /// 根据无符号整型偏移量还原浮点数
   fn decode_offset(&self, off: u64) -> F;
+  /// Reconstructs float from encoded integer value
   /// 根据已编码整型原值还原浮点数
   fn decode_int(&self, val: F::Int) -> F;
+  /// Builds 1-bit decoding lookup table
   /// 构建 1-bit 解码查找表
   fn build_lut_1(&self) -> [F; LUT_SIZE_1BIT];
+  /// Builds 2-bit decoding lookup table
   /// 构建 2-bit 解码查找表
   fn build_lut_2(&self) -> [F; LUT_SIZE_2BIT];
+  /// Builds 4-bit decoding lookup table
   /// 构建 4-bit 解码查找表
   fn build_lut_4(&self) -> [F; LUT_SIZE_4BIT];
 }
 
+/// High-efficiency decoder for factor == 1 (pure multiplication).
 /// 针对纯乘法且因子为 1 (fac_int == 1) 的高效解码器
 #[derive(Copy, Clone)]
 pub struct AlpFac1Decoder<F: AlpFloat> {
@@ -522,6 +538,7 @@ impl<F: AlpFloat> AlpDecoder<F> for AlpFac1Decoder<F> {
   }
 }
 
+/// General multiplier decoder for fac_int != 1.
 /// 针对带因子乘法 (fac_int != 1) 的通用乘法解码器
 #[derive(Copy, Clone)]
 pub struct AlpMulDecoder<F: AlpFloat> {
@@ -557,6 +574,7 @@ impl<F: AlpFloat> AlpDecoder<F> for AlpMulDecoder<F> {
   }
 }
 
+/// Decimal division decoder for division mode (use_div == true).
 /// 针对除法模式 (use_div == true) 的十进制除法解码器
 #[derive(Copy, Clone)]
 pub struct AlpDivDecoder<F: AlpFloat> {
@@ -591,11 +609,14 @@ impl<F: AlpFloat> AlpDecoder<F> for AlpDivDecoder<F> {
   }
 }
 
+/// Core generic bit-unpacking and float reconstruction kernel: writes directly to target raw pointer (zero heap allocation, zero abstraction overhead).
 /// 核心通用位解包与浮点重构内核：直接写入目标裸指针（零堆分配、零抽象开销）
 ///
 /// # Safety
-/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
-/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
+/// 1. `src` must contain at least `packed_byte_size(count, bit_width)` valid bytes.
+///    `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
+/// 2. `dst_ptr` must point to valid memory for at least `count` continuous writable `F` elements.
+///    `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
 #[inline(always)]
 pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
   src: &[u8],
@@ -604,6 +625,7 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
   decoder: D,
   mut dst_ptr: *mut F,
 ) {
+  // SAFETY: Caller guarantees src has at least packed_byte_size bytes, and dst_ptr has capacity for count elements
   // SAFETY: 调用方保证 src 具备至少 packed_byte_size 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     if bit_width == BITS_1 {
@@ -699,18 +721,27 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
       let src_ptr = src.as_ptr().cast::<u16>();
       let mut i = 0;
       while i + 8 <= count {
-        *dst_ptr.add(i) = decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
-        *dst_ptr.add(i + 1) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
-        *dst_ptr.add(i + 2) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
-        *dst_ptr.add(i + 3) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
-        *dst_ptr.add(i + 4) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
-        *dst_ptr.add(i + 5) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
-        *dst_ptr.add(i + 6) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
-        *dst_ptr.add(i + 7) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
+        *dst_ptr.add(i) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i + 1) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
+        *dst_ptr.add(i + 2) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
+        *dst_ptr.add(i + 3) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
+        *dst_ptr.add(i + 4) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
+        *dst_ptr.add(i + 5) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
+        *dst_ptr.add(i + 6) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
+        *dst_ptr.add(i + 7) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
         i += 8;
       }
       while i < count {
-        *dst_ptr.add(i) = decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i) =
+          decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
         i += 1;
       }
 
@@ -719,18 +750,27 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
       let src_ptr = src.as_ptr().cast::<u32>();
       let mut i = 0;
       while i + 8 <= count {
-        *dst_ptr.add(i) = decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
-        *dst_ptr.add(i + 1) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
-        *dst_ptr.add(i + 2) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
-        *dst_ptr.add(i + 3) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
-        *dst_ptr.add(i + 4) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
-        *dst_ptr.add(i + 5) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
-        *dst_ptr.add(i + 6) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
-        *dst_ptr.add(i + 7) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
+        *dst_ptr.add(i) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i + 1) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
+        *dst_ptr.add(i + 2) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
+        *dst_ptr.add(i + 3) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
+        *dst_ptr.add(i + 4) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
+        *dst_ptr.add(i + 5) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
+        *dst_ptr.add(i + 6) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
+        *dst_ptr.add(i + 7) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
         i += 8;
       }
       while i < count {
-        *dst_ptr.add(i) = decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i) =
+          decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
         i += 1;
       }
 
@@ -740,13 +780,20 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
       let mut i = 0;
       while i + 8 <= count {
         *dst_ptr.add(i) = decoder.decode_offset(u64::from_le(src_ptr.add(i).read_unaligned()));
-        *dst_ptr.add(i + 1) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 1).read_unaligned()));
-        *dst_ptr.add(i + 2) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 2).read_unaligned()));
-        *dst_ptr.add(i + 3) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 3).read_unaligned()));
-        *dst_ptr.add(i + 4) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 4).read_unaligned()));
-        *dst_ptr.add(i + 5) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 5).read_unaligned()));
-        *dst_ptr.add(i + 6) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 6).read_unaligned()));
-        *dst_ptr.add(i + 7) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 7).read_unaligned()));
+        *dst_ptr.add(i + 1) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 1).read_unaligned()));
+        *dst_ptr.add(i + 2) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 2).read_unaligned()));
+        *dst_ptr.add(i + 3) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 3).read_unaligned()));
+        *dst_ptr.add(i + 4) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 4).read_unaligned()));
+        *dst_ptr.add(i + 5) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 5).read_unaligned()));
+        *dst_ptr.add(i + 6) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 6).read_unaligned()));
+        *dst_ptr.add(i + 7) =
+          decoder.decode_offset(u64::from_le(src_ptr.add(i + 7).read_unaligned()));
         i += 8;
       }
       while i < count {
@@ -886,14 +933,14 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
         let p1 = p0 + bw;
         let p2 = p1 + bw;
         let p3 = p2 + bw;
-        let w0 = (u128::from_le(src_ptr.add(p0 >> 3).cast::<u128>().read_unaligned()) >> (p0 & 7))
-          as u64;
-        let w1 = (u128::from_le(src_ptr.add(p1 >> 3).cast::<u128>().read_unaligned()) >> (p1 & 7))
-          as u64;
-        let w2 = (u128::from_le(src_ptr.add(p2 >> 3).cast::<u128>().read_unaligned()) >> (p2 & 7))
-          as u64;
-        let w3 = (u128::from_le(src_ptr.add(p3 >> 3).cast::<u128>().read_unaligned()) >> (p3 & 7))
-          as u64;
+        let w0 =
+          (u128::from_le(src_ptr.add(p0 >> 3).cast::<u128>().read_unaligned()) >> (p0 & 7)) as u64;
+        let w1 =
+          (u128::from_le(src_ptr.add(p1 >> 3).cast::<u128>().read_unaligned()) >> (p1 & 7)) as u64;
+        let w2 =
+          (u128::from_le(src_ptr.add(p2 >> 3).cast::<u128>().read_unaligned()) >> (p2 & 7)) as u64;
+        let w3 =
+          (u128::from_le(src_ptr.add(p3 >> 3).cast::<u128>().read_unaligned()) >> (p3 & 7)) as u64;
         *dst_ptr.add(i) = decoder.decode_offset(w0 & mask);
         *dst_ptr.add(i + 1) = decoder.decode_offset(w1 & mask);
         *dst_ptr.add(i + 2) = decoder.decode_offset(w2 & mask);
@@ -974,75 +1021,7 @@ pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
   }
 }
 
-/// 内部核心位解包逻辑：直接写入目标裸指针（兼容性封装）
-///
-/// # Safety
-/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
-/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
-#[allow(dead_code)]
-#[inline(always)]
-pub unsafe fn bitunpack_core<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  bit_width: u8,
-  base: F::Int,
-  fac_int: i64,
-  frac_flt: F,
-  dst_ptr: *mut F,
-) {
-  if fac_int == 1 {
-    unsafe {
-      bitunpack_core_generic(
-        src,
-        count,
-        bit_width,
-        AlpFac1Decoder { base, frac_flt },
-        dst_ptr,
-      );
-    }
-  } else {
-    unsafe {
-      bitunpack_core_generic(
-        src,
-        count,
-        bit_width,
-        AlpMulDecoder {
-          base,
-          fac_int,
-          frac_flt,
-        },
-        dst_ptr,
-      );
-    }
-  }
-}
-
-/// 内部核心十进制除法位解包逻辑：直接写入目标裸指针（兼容性封装）
-///
-/// # Safety
-/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
-/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
-#[allow(dead_code)]
-#[inline(always)]
-pub unsafe fn bitunpack_core_div<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  bit_width: u8,
-  base: F::Int,
-  exp_factor: F,
-  dst_ptr: *mut F,
-) {
-  unsafe {
-    bitunpack_core_generic(
-      src,
-      count,
-      bit_width,
-      AlpDivDecoder { base, exp_factor },
-      dst_ptr,
-    );
-  }
-}
-
+/// Unpacks and reconstructs floating-point data directly to destination slice.
 /// 通用直接位解包并重构浮点数据至目标切片
 #[inline(always)]
 pub fn bitunpack_slice_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
@@ -1073,6 +1052,7 @@ pub fn bitunpack_slice_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
     dst[..count].fill(val);
     return Ok(());
   }
+  // SAFETY: Available bytes verified above and dst.len() >= count
   // SAFETY: 上方已检验可用字节充足且 dst.len() >= count
   unsafe {
     bitunpack_core_generic(src, count, bit_width, decoder, dst.as_mut_ptr());
@@ -1080,6 +1060,7 @@ pub fn bitunpack_slice_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
   Ok(())
 }
 
+/// Unpacks and reconstructs floating-point data into `dst` (writes directly to raw pointer, avoiding uninitialized slice construction).
 /// 通用直接位解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
 pub fn bitunpack_into_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
@@ -1106,6 +1087,7 @@ pub fn bitunpack_into_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
     return Ok(());
   }
   dst.reserve(count);
+  // SAFETY: Available bytes verified above, write directly into continuous raw pointer and update length after completion
   // SAFETY: 上方已校验可用字节充足，直接写入连续裸指针并在完成后更新长度
   unsafe {
     bitunpack_core_generic(
@@ -1120,6 +1102,7 @@ pub fn bitunpack_into_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
   Ok(())
 }
 
+/// Unpacks and reconstructs floating-point data directly to destination slice (zero heap allocation, zero copy).
 /// 直接解包并重构浮点数据至目标切片（零堆分配、零内存拷贝）
 #[inline(always)]
 pub fn bitunpack_slice<F: AlpFloat>(
@@ -1132,7 +1115,13 @@ pub fn bitunpack_slice<F: AlpFloat>(
   dst: &mut [F],
 ) -> Result<()> {
   if fac_int == 1 {
-    bitunpack_slice_with_decoder(src, count, bit_width, AlpFac1Decoder { base, frac_flt }, dst)
+    bitunpack_slice_with_decoder(
+      src,
+      count,
+      bit_width,
+      AlpFac1Decoder { base, frac_flt },
+      dst,
+    )
   } else {
     bitunpack_slice_with_decoder(
       src,
@@ -1148,6 +1137,7 @@ pub fn bitunpack_slice<F: AlpFloat>(
   }
 }
 
+/// Unpacks and reconstructs floating-point data using decimal division directly to destination slice (zero heap allocation, zero copy).
 /// 直接解包并采用十进制除法重构浮点数据至目标切片（零堆分配、零内存拷贝）
 #[inline(always)]
 pub fn bitunpack_slice_div<F: AlpFloat>(
@@ -1158,9 +1148,16 @@ pub fn bitunpack_slice_div<F: AlpFloat>(
   exp_factor: F,
   dst: &mut [F],
 ) -> Result<()> {
-  bitunpack_slice_with_decoder(src, count, bit_width, AlpDivDecoder { base, exp_factor }, dst)
+  bitunpack_slice_with_decoder(
+    src,
+    count,
+    bit_width,
+    AlpDivDecoder { base, exp_factor },
+    dst,
+  )
 }
 
+/// Generic unpack and reconstructs floating-point data into `dst` (writes directly to raw pointer, avoiding uninitialized slice construction).
 /// 通用直接解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
 pub fn bitunpack_into<F: AlpFloat>(
@@ -1173,7 +1170,13 @@ pub fn bitunpack_into<F: AlpFloat>(
   dst: &mut Vec<F>,
 ) -> Result<()> {
   if fac_int == 1 {
-    bitunpack_into_with_decoder(src, count, bit_width, AlpFac1Decoder { base, frac_flt }, dst)
+    bitunpack_into_with_decoder(
+      src,
+      count,
+      bit_width,
+      AlpFac1Decoder { base, frac_flt },
+      dst,
+    )
   } else {
     bitunpack_into_with_decoder(
       src,
@@ -1189,6 +1192,7 @@ pub fn bitunpack_into<F: AlpFloat>(
   }
 }
 
+/// Generic unpack and reconstructs floating-point data using decimal division into `dst` (writes directly to raw pointer).
 /// 通用直接解包并采用十进制除法重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
 pub fn bitunpack_into_div<F: AlpFloat>(
@@ -1199,5 +1203,11 @@ pub fn bitunpack_into_div<F: AlpFloat>(
   exp_factor: F,
   dst: &mut Vec<F>,
 ) -> Result<()> {
-  bitunpack_into_with_decoder(src, count, bit_width, AlpDivDecoder { base, exp_factor }, dst)
+  bitunpack_into_with_decoder(
+    src,
+    count,
+    bit_width,
+    AlpDivDecoder { base, exp_factor },
+    dst,
+  )
 }

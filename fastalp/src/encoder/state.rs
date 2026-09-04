@@ -24,6 +24,7 @@ impl<F: AlpFloat> Default for Encoder<F> {
 }
 
 impl<F: AlpFloat> Encoder<F> {
+  /// Creates a new encoder (empty buffers, dynamically allocated on demand and reused).
   /// 创建新的编码器（空缓冲区，按需动态分配并长久复用）
   #[inline]
   pub const fn new() -> Self {
@@ -34,6 +35,7 @@ impl<F: AlpFloat> Encoder<F> {
     }
   }
 
+  /// Creates an encoder with specified initial capacity (pre-allocated buffers for zero heap allocation).
   /// 创建具有指定初始容量的编码器（预分配缓冲区，实现全程零堆分配）
   #[inline]
   pub fn with_capacity(capacity: usize) -> Self {
@@ -44,6 +46,7 @@ impl<F: AlpFloat> Encoder<F> {
     }
   }
 
+  /// Resets cached optimal parameters and clears internal buffers.
   /// 重置已缓存的最优参数与内部缓冲区
   #[inline]
   pub fn reset(&mut self) {
@@ -52,6 +55,7 @@ impl<F: AlpFloat> Encoder<F> {
     self.exceptions.clear();
   }
 
+  /// Compresses float data slice into destination buffer (adaptive FOR/Delta, reusing parameters and memory).
   /// 压缩浮点数据切片并写入目标缓冲区（自适应 FOR 或 Delta 模式，复用采样参数与工作内存）
   #[inline]
   pub fn compress_into(&mut self, data: &[F], dst: &mut Vec<u8>) {
@@ -65,6 +69,7 @@ impl<F: AlpFloat> Encoder<F> {
     );
   }
 
+  /// Compresses float data slice using Delta differential mode into destination buffer.
   /// 强制使用 Delta 差分模式压缩浮点数据切片并写入目标缓冲区
   #[inline]
   pub fn compress_delta_into(&mut self, data: &[F], dst: &mut Vec<u8>) {
@@ -78,6 +83,7 @@ impl<F: AlpFloat> Encoder<F> {
     );
   }
 
+  /// Compresses float data slice and returns newly allocated byte vector.
   /// 压缩浮点数据切片并返回新分配的字节向量
   #[inline]
   pub fn compress(&mut self, data: &[F]) -> Vec<u8> {
@@ -86,6 +92,7 @@ impl<F: AlpFloat> Encoder<F> {
     dst
   }
 
+  /// Compresses float data slice using Delta differential mode and returns newly allocated byte vector.
   /// 强制使用 Delta 差分模式压缩浮点数据切片并返回新分配的字节向量
   #[inline]
   pub fn compress_delta(&mut self, data: &[F]) -> Vec<u8> {
@@ -94,6 +101,7 @@ impl<F: AlpFloat> Encoder<F> {
     dst
   }
 
+  /// Shrinks the capacity of the internal work buffer as much as possible.
   /// 释放内部工作缓冲区多余分配的容量
   #[inline]
   pub fn shrink_to_fit(&mut self) {
@@ -101,6 +109,7 @@ impl<F: AlpFloat> Encoder<F> {
     self.exceptions.shrink_to_fit();
   }
 
+  /// Returns the current capacity of the internal work buffer.
   /// 获取内部工作缓冲区的当前容量
   #[inline]
   pub fn capacity(&self) -> usize {

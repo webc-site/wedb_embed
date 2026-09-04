@@ -1,4 +1,5 @@
-[English](#en) | [中文](#zh)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg)](https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#en)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg)](https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#zh)
 
 ---
 

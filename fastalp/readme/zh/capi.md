@@ -7,7 +7,7 @@
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.36", features = ["capi"] }
+fastalp = { version = "0.1.37", features = ["capi"] }
 ```
 
 构建独立的静态库（`libfastalp.a`）或动态库（`libfastalp.so` / `libfastalp.dylib`）：

@@ -31,6 +31,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
     let mask = bit_mask(bit_width);
     let (chunks, rem) = values.as_chunks::<CHUNK_8>();
 
+    // SAFETY: dst reserved (total_bytes + 16), writes stride bytes per 8 integers, trailing remainder filled, bounds safe
     // SAFETY: dst 已 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，余数在结尾填充，完全覆盖 total_bytes 且不越界。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -47,6 +48,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
     }
     return;
   } else if bit_width == BITS_64 {
+    // SAFETY: dst reserved (total_bytes + 16), writes 8-byte LE sequence per element and safely updates length
     // SAFETY: dst 已 reserve(total_bytes + 16)，逐元素写入 8-byte 小端序列后安全更新长度。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -63,6 +65,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
   let mut acc: u128 = 0;
   let mut bits: u32 = 0;
 
+  // SAFETY: dst pre-reserved (total_bytes + 16), writes 64-bit word or remainder directly, covers total_bytes
   // SAFETY: dst 已预先 reserve(total_bytes + 16)，通过指针直接写入累加器中的完整 64 位或剩余字节，完全覆盖 total_bytes。
   unsafe {
     let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -94,6 +97,7 @@ pub fn bitpack_encoded<F: AlpFloat>(
     let stride = bit_width as usize;
     let (chunks, rem) = encoded_ints.as_chunks::<CHUNK_8>();
 
+    // SAFETY: dst pre-reserved (total_bytes + 16), writes stride bytes per 8 integers, covers total_bytes
     // SAFETY: dst 已预先 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，完全覆盖 total_bytes。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -107,6 +111,7 @@ pub fn bitpack_encoded<F: AlpFloat>(
     }
     return;
   } else if bit_width == BITS_64 {
+    // SAFETY: dst reserved (total_bytes + 16), writes 8-byte LE sequence per element
     // SAFETY: dst 已 reserve(total_bytes + 16)，逐元素写入 8-byte 小端序列。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -124,6 +129,7 @@ pub fn bitpack_encoded<F: AlpFloat>(
   let mut acc: u128 = 0;
   let mut bits: u32 = 0;
 
+  // SAFETY: dst pre-reserved (total_bytes + 16), writes 64-bit word or remainder directly, covers total_bytes
   // SAFETY: dst 已预先 reserve(total_bytes + 16)，通过指针直接写入累加器中的完整 64 位或剩余字节，完全覆盖 total_bytes。
   unsafe {
     let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -172,6 +178,7 @@ pub fn bitpack_fused_delta<F: AlpFloat>(
     }
     return;
   } else if bit_width == BITS_64 {
+    // SAFETY: dst reserved (total_bytes + 16), writes 8-byte LE sequence per element
     // SAFETY: dst 已 reserve(total_bytes + 16)，逐元素写入 8-byte 小端序列。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
@@ -288,6 +295,7 @@ fn diff_chunk_8<F: AlpFloat>(chunk: &[F::Int; CHUNK_8], base: F::Int) -> [u64; C
 /// 从原始指针就地快速计算 8 个相邻一阶差分偏移量
 #[inline(always)]
 unsafe fn delta_chunk_8<F: AlpFloat>(raw_ptr: *const F::Int, min_delta: F::Int) -> [u64; CHUNK_8] {
+  // SAFETY: Caller guarantees raw_ptr has readable range of at least 9 elements (prev + 8 values)
   // SAFETY: 调用方保证 raw_ptr 具有至少 9 个元素的有效读取范围 (prev + 8 values)
   unsafe {
     let prev = *raw_ptr;

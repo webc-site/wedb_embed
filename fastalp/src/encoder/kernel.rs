@@ -1,5 +1,7 @@
 use crate::{constants::MAX_EXCEPTIONS, encoder::exception::Exception, float::AlpFloat};
 
+/// Branchless 8-way unrolled kernel for float encoding:
+/// Processes 8 elements per chunk. When all 8 match with zero exceptions, writes directly and aggregates min/max via branchless tree.
 /// 针对浮点数编码的无分支 8 路展开内核：
 /// 批处理 8 个元素，若 100% 精确命中（无异常），直接连续写入并利用无分支树形聚合更新 min/max，消除 95% 异常分支开销。
 #[inline(always)]
@@ -10,6 +12,7 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
   decode: D,
   exceptions: &mut Vec<Exception<F::RawBits>>,
 ) -> (F::Int, F::Int) {
+  // SAFETY: Caller guarantees slice is continuous and enc_ptr has space for at least slice.len() elements.
   // SAFETY: 调用方保证 slice 连续有效，且 enc_ptr 具备至少 slice.len() 个连续可写 F::Int 元素空间。
   unsafe {
     let mut min_val = F::MAX_INT;
@@ -35,6 +38,7 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
     }
 
     while i < unroll_len {
+      // SAFETY: i + 7 < unroll_len <= len, strictly within bounds
       // SAFETY: i + 7 < unroll_len <= len，严格在切片边界内
       let v0 = *slice.get_unchecked(i);
       let v1 = *slice.get_unchecked(i + 1);
@@ -104,6 +108,7 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
     }
 
     while i < len {
+      // SAFETY: i < len, strictly within bounds
       // SAFETY: i < len，严格在切片边界内
       let val = *slice.get_unchecked(i);
       let enc = val.fast_round_to_int(exp_factor);
@@ -119,6 +124,7 @@ unsafe fn encode_loop_core<F: AlpFloat, D: Fn(F::Int) -> F>(
   }
 }
 
+/// Dispatches to optimal unrolled encoding kernel based on parameter traits (division mode, factor==1, general two-factor).
 /// 统一根据参数特征分发至最优的展开编码内核（除法模式、fac_int==1 无因子模式、常规双因子模式）
 #[inline(always)]
 pub(crate) unsafe fn encode_slice<F: AlpFloat>(

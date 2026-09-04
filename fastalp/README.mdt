@@ -1,11 +1,14 @@
-[English](#en) | [中文](#zh)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg)](https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#en)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg)](https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#zh)
 
 [![crates.io](https://img.shields.io/crates/v/fastalp.svg)](https://crates.io/crates/fastalp)
 [![docs.rs](https://docs.rs/fastalp/badge.svg)](https://docs.rs/fastalp)
+[![Twitter](https://img.shields.io/badge/Twitter-@iwebcsite-1DA1F2?logo=x&logoColor=white)](https://x.com/iwebcsite)
+[![Bluesky](https://img.shields.io/badge/Bluesky-@webc--site.bsky.social-0285FF?logo=bluesky&logoColor=white)](https://bsky.app/profile/webc-site.bsky.social)
 
 ---
 
-<a name="en"></a>
+<a id="en"></a>
 
 <+ ./readme/en/intro.md >
 
@@ -23,7 +26,7 @@
 
 ---
 
-<a name="zh"></a>
+<a id="zh"></a>
 
 <+ ./readme/zh/intro.md >
 

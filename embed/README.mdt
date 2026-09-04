@@ -1,7 +1,10 @@
-[English](#en) | [中文](#zh)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg)](https://github.com/webc-site/wedb_embed/blob/main/embed/README.md#en)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg)](https://github.com/webc-site/wedb_embed/blob/main/embed/README.md#zh)
 
 [![crates.io](https://img.shields.io/crates/v/wedb_embed.svg)](https://crates.io/crates/wedb_embed)
 [![docs.rs](https://docs.rs/wedb_embed/badge.svg)](https://docs.rs/wedb_embed)
+[![Twitter](https://img.shields.io/badge/Twitter-@iwebcsite-1DA1F2?logo=x&logoColor=white)](https://x.com/iwebcsite)
+[![Bluesky](https://img.shields.io/badge/Bluesky-@webc--site.bsky.social-0285FF?logo=bluesky&logoColor=white)](https://bsky.app/profile/webc-site.bsky.social)
 
 ---
 

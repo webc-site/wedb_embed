@@ -4,7 +4,7 @@ mod f64;
 use crate::params::bits_needed;
 
 /// ALP floating-point abstraction trait (unifies zero-cost f32 and f64 compression).
-/// ALP 浮点数抽象特征（统一 f32 / f64 零成本编解码）
+/// ALP 浮点数抽象特征（统一 f32 与 f64 零成本编解码）
 pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'static {
   type Int: Copy + Default + PartialEq + Eq + PartialOrd + Ord + Send + Sync + 'static;
   type RawBits: Copy + Default + PartialEq + Eq + Send + Sync + 'static;

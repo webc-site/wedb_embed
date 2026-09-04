@@ -1,5 +1,16 @@
 ## Changelog
 
+### v0.1.37
+
+- **Zero-Cost Decoder Trait & Architectural Deduplication**:
+  Abstracted the `AlpDecoder<F>` core trait with monomorphized implementations (`AlpFac1Decoder`, `AlpMulDecoder`, `AlpDivDecoder`); introduced the `dispatch_decoder!` compile-time dispatch macro to eliminate runtime branch overhead in batch loops; unified generic bit-unpacking and dequantization kernels (`bitunpack_core_generic`), eliminating 800+ lines of duplicated code.
+- **End-to-End Compression Ratio Leap (+11.2%)**:
+  Across all 37 public and industrial time-series datasets, total compressed size dropped from 104,465 B to 93,909 B, saving 10,556 bytes (a 10.1% size reduction and +11.2% ratio improvement); relaxed Delta evaluation threshold (`>= 4`) unlocks smooth time-series data pathways with ratios up to 431x; introduced monotonic descending outlier pruning and predecessor smoothing to release the full benefits of differential encoding.
+- **Decompression Throughput Boost (+14.7%)**:
+  Decompression throughput climbed from 28.36 GB/s to 32.53 GB/s (+14.7% improvement) on modern architectures, while maintaining high-speed end-to-end encoding throughput at 4.87 GB/s.
+- **100% Bilingual Code Comments & Production Engineering Quality**:
+  Implemented complete Chinese/English bilingual comments across all core modules (sampler, bitunpack, encoder engine, standard/delta decoders, C-API); magic numbers replaced with compile-time constants; passed clippy with zero warnings; 100% pass rate across 355 unit and bit-exact lossless roundtrip tests.
+
 ### v0.1.36
 
 - **Rigorous Academic Benchmark Alignment with C++ ALP**:

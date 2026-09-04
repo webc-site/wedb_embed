@@ -31,7 +31,8 @@ pub fn encode_delta<F: AlpFloat>(
     header_len(count) + F::BASE_SIZE * 2 + packed_byte_size(deltas_len, params.bit_width) + exc_len;
   dst.reserve(total_len);
 
-  // 1. Header: 紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
+  // 1. Header: compact self-describing header (1B descriptor + optional count + 2B params)
+  // 1. 头部：紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
   let type_byte = params.delta_type::<F>();
   write_header(type_byte, count, Some(params.pack()), dst);
 
@@ -39,11 +40,13 @@ pub fn encode_delta<F: AlpFloat>(
   F::write_base(first, dst);
   F::write_base(min_delta, dst);
 
-  // 3. Bitpacked deltas (熔合差分直接打包，省去 1024 元素的大内存回写)
+  // 3. Bitpacked deltas (fused delta bitpacking, eliminates 1024-element memory writeback)
+  // 3. 差分位打包 (熔合差分直接打包，省去 1024 元素的大内存回写)
   if params.bit_width > 0 && encoded_ints.len() > 1 {
     bitpack_fused_delta::<F>(encoded_ints, min_delta, params.bit_width, dst);
   }
 
-  // 4. Exceptions (仅在存在异常值时写入)
+  // 4. Exceptions (written only when exceptions exist)
+  // 4. 异常值 (仅在存在异常值时写入)
   write_exceptions::<F>(count, exceptions, dst);
 }

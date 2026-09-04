@@ -10,6 +10,7 @@ use crate::{
 ///
 /// # Safety
 ///
+/// `dst_ptr` must point to valid memory for at least `count` continuous writable `F` elements.
 /// `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
 #[inline(always)]
 pub unsafe fn decode_delta_raw<F: AlpFloat>(
@@ -38,6 +39,7 @@ pub unsafe fn decode_delta_raw<F: AlpFloat>(
 
   let payload = &src[cursor..];
   dispatch_decoder!(params, first, F, decoder => {
+    // SAFETY: Valid byte count verified above, and caller guarantees dst_ptr has count space
     // SAFETY: 上方已校验有效字节数，且调用方保证 dst_ptr 具有 count 空间
     unsafe {
       decode_delta_inner(payload, count, params, decoder, first, min_delta, dst_ptr)?;
@@ -49,6 +51,7 @@ pub unsafe fn decode_delta_raw<F: AlpFloat>(
     cursor += packed_len;
   }
 
+  // Restore exceptions (patch dictionary)
   // 恢复异常值（Patch 字典）
   unsafe {
     super::patch_exceptions(&src[cursor..], count, dst_ptr)?;
@@ -72,6 +75,7 @@ unsafe fn decode_delta_inner<F: AlpFloat, D: AlpDecoder<F>>(
       *dst_ptr = decoder.decode_int(first);
     }
   } else if params.bit_width == 0 {
+    // SAFETY: dst has count slots, write directly via pointer in single pass
     // SAFETY: dst 已具备 count 个空间，使用底层指针单遍写入，消除双重写零开销
     unsafe {
       let ptr = dst_ptr;
@@ -106,6 +110,7 @@ unsafe fn decode_delta_inner<F: AlpFloat, D: AlpDecoder<F>>(
       });
     }
 
+    // SAFETY: dst has count slots, stream unpack into ptr in 1024-element batches
     // SAFETY: dst 已具备 count 个空间，按 1024 分批流式解包写入 ptr
     unsafe {
       let ptr = dst_ptr;
@@ -166,6 +171,7 @@ pub fn decode_delta<F: AlpFloat>(
 ///
 /// # Safety
 ///
+/// Caller must ensure `out_ptr` has valid continuous writable memory for at least `offsets.len()` elements.
 /// 调用方必须确保 `out_ptr` 具备至少 `offsets.len()` 个元素的连续可写内存空间。
 #[inline(always)]
 unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
@@ -226,10 +232,12 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
   }
 }
 
-/// Decodes bitpacked delta stream in 1024-element stack batches (O(1) 空间复杂度，零堆分配，L1 缓存高度友好)
+/// Decodes bitpacked delta stream in 1024-element stack batches (O(1) space complexity, zero-heap allocation, L1-cache friendly).
+/// 按 1024 元素分批解码差分位打包数据流 (O(1) 空间复杂度，零堆分配，L1 缓存高度友好)
 ///
 /// # Safety
 ///
+/// Caller must ensure `out_ptr` has valid continuous writable memory for at least `rest_count` elements.
 /// 调用方必须确保 `out_ptr` 具备至少 `rest_count` 个元素的连续可写内存空间。
 #[inline(always)]
 unsafe fn decode_delta_stream<F: AlpFloat, D: Fn(F::Int) -> F>(

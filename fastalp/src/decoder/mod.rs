@@ -1,3 +1,4 @@
+/// Dynamically dispatches concrete decoder type according to AlpParams (zero virtual function overhead, monomorphized).
 /// 根据 AlpParams 参数动态派发具体的解码器类型（零运行时虚函数开销，单次单态化展开）
 macro_rules! dispatch_decoder {
   ($params:expr, $base:expr, $F:ty, $decoder:ident => $body:expr) => {{
@@ -71,6 +72,7 @@ pub unsafe fn decompress_into_raw<F: AlpFloat>(
     });
   }
 
+  // RAW mode unpacking path: direct zero-copy memory restoration
   // RAW 原始数据解包路径：直接内存零拷贝恢复
   if type_byte == F::TYPE_RAW_BYTE {
     let raw_bytes_needed = count
@@ -82,6 +84,7 @@ pub unsafe fn decompress_into_raw<F: AlpFloat>(
         available: src.len(),
       });
     }
+    // SAFETY: Verified sufficient bytes above and dst_cap >= count
     // SAFETY: 上方已检验可用字节充足且 dst_cap >= count
     unsafe {
       copy_nonoverlapping(
@@ -142,6 +145,8 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
   }
   let old_len = dst.len();
   dst.reserve(count);
+  // SAFETY: dst has reserved count slots, decompress_into_raw writes directly to pointer,
+  // initializes count elements before updating Vec len. Never constructs uninitialized slice.
   // SAFETY: dst 已预留 count 个空间，decompress_into_raw 直接写入裸指针，
   // 严格初始化 count 个元素后安全更新 Vec 长度。绝不构造未初始化内存的切片引用。
   unsafe {
@@ -185,6 +190,7 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
         available: src.len(),
       });
     }
+    // SAFETY: Verified src.len() >= cursor + 4 above, read_unaligned safely reads little-endian u32
     // SAFETY: 上方已校验 src.len() >= cursor + 4，read_unaligned 安全读取小端 u32
     let c =
       unsafe { u32::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u32>())) } as usize;
@@ -196,6 +202,7 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
         available: src.len(),
       });
     }
+    // SAFETY: Verified src.len() >= cursor + 2 above, read_unaligned safely reads little-endian u16
     // SAFETY: 上方已校验 src.len() >= cursor + 2，read_unaligned 安全读取小端 u16
     let c =
       unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) } as usize;
@@ -225,6 +232,7 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
       if pos >= count {
         return Err(Error::CorruptedData { index: pos, count });
       }
+      // SAFETY: pos < count verified above, and caller guarantees dst_ptr is valid for count elements
       // SAFETY: 上方已校验 pos < count，且调用方保证 count 范围内指针有效
       unsafe {
         *dst_ptr.add(pos) = val;
@@ -236,6 +244,7 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
       if pos >= count {
         return Err(Error::CorruptedData { index: pos, count });
       }
+      // SAFETY: pos < count verified above, and caller guarantees dst_ptr is valid for count elements
       // SAFETY: 上方已校验 pos < count，且调用方保证 count 范围内指针有效
       unsafe {
         *dst_ptr.add(pos) = val;

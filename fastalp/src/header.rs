@@ -123,6 +123,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
           available: src.len(),
         });
       }
+      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u16
       // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u16
       let c =
         unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) } as usize;
@@ -136,12 +137,14 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
           available: src.len(),
         });
       }
+      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u32
       // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u32
       let c =
         unsafe { u32::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u32>())) } as usize;
       cursor += 4;
       c
     }
+    // SAFETY: len_tag is (desc_byte >> LEN_TAG_SHIFT) & 0x03 in 0..=3, fully covered by the 4 branches above
     // SAFETY: len_tag 是 (desc_byte >> LEN_TAG_SHIFT) & 0x03，取值范围严格为 0..=3，上方 4 个分支已完全穷尽全部取值
     _ => unsafe { unreachable_unchecked() },
   };
@@ -164,6 +167,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
     });
   }
 
+  // SAFETY: Available bytes verified above, read_unaligned safely reads 2-byte packed params
   // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取 2 字节 packed params
   let raw_params = unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) };
   cursor += 2;

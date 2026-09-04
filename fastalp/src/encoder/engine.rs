@@ -21,14 +21,19 @@ use crate::{
   sampler::{BestParams, find_best_params, find_identical_base},
 };
 
+/// Bit-width threshold to trigger high bit-width outlier pre-pruning
 /// 针对高位宽数据触发离群值前置剪枝的位宽阈值
 const HIGH_BW_PRUNE_THRESHOLD: u8 = 16;
+/// Minimum bit-width threshold to evaluate Delta benefit
 /// 评估 Delta 差分收益的最小位宽门限（低于此门限时直接走 FOR 编码）
 const DELTA_EVAL_MIN_BW: u8 = 4;
+/// Minimum bit-width floor for low bit-width outlier pruning in FOR mode
 /// FOR 模式低位宽离群值剪枝位宽下限
 const LOW_BW_PRUNE_MIN: u8 = 4;
+/// Stack work buffer capacity in elements
 /// 栈上预分配工作缓冲区大小（元素个数，避免小数组堆分配）
 const STACK_BUFFER_CAPACITY: usize = 1024;
+/// Sample count for quick validation of cached parameters
 /// 缓存参数快速校验抽样数量
 const CACHE_VALIDATE_SAMPLE_N: usize = 4;
 
@@ -40,6 +45,7 @@ fn check_roundtrip<F: AlpFloat>(slice: &[F], exp_factor: F, decode: impl Fn(F::I
   })
 }
 
+/// Quickly validates whether cached parameters still apply to the new sample.
 /// 检查并快筛缓存参数是否继续适用于新样本
 #[inline]
 pub(crate) fn validate_cached_params<F: AlpFloat>(params: BestParams, sample: &[F]) -> bool {
@@ -64,6 +70,7 @@ pub(crate) fn validate_cached_params<F: AlpFloat>(params: BestParams, sample: &[
   }
 }
 
+/// Writes uncompressed raw float slice into destination buffer as fallback.
 /// 写入未压缩的原始浮点切片至目标缓冲区作为保底回退
 #[inline]
 fn write_raw_fallback<F: AlpFloat>(slice: &[F], count: usize, dst: &mut Vec<u8>) {
@@ -71,6 +78,7 @@ fn write_raw_fallback<F: AlpFloat>(slice: &[F], count: usize, dst: &mut Vec<u8>)
   let raw_hdr = raw_header_len(count);
   dst.reserve(raw_hdr + raw_len);
   write_header(F::TYPE_RAW_BYTE, count, None, dst);
+  // SAFETY: slice is valid continuous float memory, safely cast to raw byte sequence
   // SAFETY: slice 是有效且连续的浮点内存切片，转换为底层紧凑字节序列安全无误
   let raw_slice = unsafe { from_raw_parts(slice.as_ptr().cast::<u8>(), raw_len) };
   dst.extend_from_slice(raw_slice);
@@ -99,6 +107,7 @@ unsafe fn encode_pass<F: AlpFloat>(
   }
 }
 
+/// Core compression engine: parameter probing, unrolled encoding, outlier pruning, FOR/Delta scheduling, and RAW fallback.
 /// 核心压缩引擎：执行参数快筛、编码展开、离群值剪枝、FOR/Delta 调度与 RAW 回退保底
 pub(crate) fn compress_into_engine<F: AlpFloat>(
   slice: &[F],
@@ -116,8 +125,8 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     return None;
   }
 
-  // 全等序列检测：先探测第 1 个与第 0 个元素是否相同（若不同在单指令周期内快速短路），
-  // 确认首元素可编码后单次遍历验证全集，零堆分配
+  // Identical sequence detection: check first two elements then full slice (O(1) fast exit)
+  // 全等序列检测：先探测第 1 个与第 0 个元素是否相同（若不同在单指令周期内快速短路）
   let first = slice[0];
   if (count == 1 || slice[1].is_exact_same(first))
     && let Some((exp, base)) = find_identical_base(first)
@@ -135,12 +144,14 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     });
   }
 
+  // 1. Parameter selection: prefer validated cached params, else run full sampling
   // 1. 参数选择：优先使用验证通过的缓存参数，否则全量采样
   let mut best_params = match cached_params {
     Some(p) if validate_cached_params(p, slice) => p,
     _ => find_best_params(slice),
   };
 
+  // Prepare work buffer using MaybeUninit to eliminate 8KB stack zeroing overhead
   // 准备内部工作缓冲区（采用 MaybeUninit 避免 8KB 栈内存重复清零开销）
   let mut stack_encoded = MaybeUninit::<[F::Int; STACK_BUFFER_CAPACITY]>::uninit();
   exceptions.clear();
@@ -156,9 +167,11 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     encoded_buf.as_mut_ptr()
   };
 
+  // 2. Execute main encoding kernel
   // 2. 主编码内核执行
   let (mut min_val, mut max_val) = unsafe { encode_pass(slice, enc_ptr, best_params, exceptions) };
 
+  // 3. Cache salvage: resample if cached params produced too many exceptions
   // 3. 缓存失效挽救机制：若使用了缓存参数但异常 > MAX_EXCEPTIONS，重新采样尝试挽救
   if exceptions.len() > MAX_EXCEPTIONS && cached_params.is_some() {
     let fresh_params = find_best_params(slice);
@@ -173,6 +186,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     }
   }
 
+  // 4. Incompressible fallback to RAW mode when exceptions exceed threshold
   // 4. 不可压缩回退 RAW 模式（异常 > MAX_EXCEPTIONS）
   if exceptions.len() > MAX_EXCEPTIONS {
     write_raw_fallback(slice, count, dst);
@@ -180,9 +194,11 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   }
 
   let encoded_ints: &mut [F::Int] = if use_stack {
+    // SAFETY: encode_pass has fully initialized valid integers in 0..count
     // SAFETY: encode_pass 已在 0..count 范围内完整写入有效整数
     unsafe { from_raw_parts_mut(stack_encoded.as_mut_ptr().cast::<F::Int>(), count) }
   } else {
+    // SAFETY: encode_slice has fully initialized valid integers in 0..count
     // SAFETY: encode_slice 已在 0..count 范围内完整写入有效整数
     unsafe { encoded_buf.set_len(count) };
     &mut encoded_buf[..count]
@@ -197,8 +213,8 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   let is_large = count > u16::MAX as usize;
   let mut for_bit_width = F::bits_needed(max_offset);
 
-  // 5. 离群值预剪枝：若位宽较高 (>= HIGH_BW_PRUNE_THRESHOLD 且异常较少)，先尝试剪枝收窄位宽并消除尖峰，
-  // 从而使得随后的 Delta 差分不会被极少数孤立尖峰断崖阻断
+  // 5. Outlier pre-pruning: narrow bit-width and eliminate isolated spikes
+  // 5. 离群值预剪枝：若位宽较高先尝试剪枝收窄位宽并消除尖峰
   if for_bit_width >= HIGH_BW_PRUNE_THRESHOLD && exceptions.len() < MAX_EXCEPTIONS {
     let pruned_bw = try_prune_outliers::<F>(
       slice,
@@ -213,15 +229,18 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     }
   }
 
+  // Exception backfill: patch with predecessor value to eliminate delta cliffs
   // 异常值回填：填充前一个有效整型值，消除相邻一阶差分的跳变
   if !exceptions.is_empty() {
     for exc in exceptions.iter() {
       let patch_val = if exc.pos > 0 {
+        // SAFETY: exc.pos > 0 and strictly less than encoded_ints.len()
         // SAFETY: exc.pos > 0 且严格小于 encoded_ints.len()
         unsafe { *encoded_ints.get_unchecked(exc.pos - 1) }
       } else {
         base
       };
+      // SAFETY: exc.pos is strictly less than encoded_ints.len()
       // SAFETY: exc.pos 严格小于 encoded_ints.len()
       unsafe {
         *encoded_ints.get_unchecked_mut(exc.pos) = patch_val;
@@ -234,6 +253,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   let hdr_len = header_len(count);
   let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
 
+  // 6. Evaluate Delta benefit (threshold relaxed to >= DELTA_EVAL_MIN_BW for smooth sequences)
   // 6. 评估 Delta 差分收益 (门限放宽至 >= DELTA_EVAL_MIN_BW，平滑数据和线性斜坡可压缩至 0~3 位)
   let delta_decision = if count > 1 && (force_delta || for_bit_width >= DELTA_EVAL_MIN_BW) {
     let first = encoded_ints[0];
@@ -260,6 +280,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     None => (false, F::ZERO_INT, 0, for_total),
   };
 
+  // 7. Low bit-width outlier pruning for FOR mode (when Delta was not selected)
   // 7. FOR 模式低位宽离群值剪枝 (针对未进前置剪枝且未进 Delta 的情况，如 8/12 位剪枝)
   if !use_delta && for_bit_width > LOW_BW_PRUNE_MIN && for_bit_width < HIGH_BW_PRUNE_THRESHOLD {
     let new_bw = try_prune_outliers::<F>(
@@ -278,6 +299,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     total_needed = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
   }
 
+  // 8. Fallback to RAW mode if compressed size exceeds raw data
   // 8. 负压缩保底回退 RAW 模式
   let raw_len = size_of_val(slice);
   let raw_hdr = raw_header_len(count);
@@ -286,6 +308,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     return None;
   }
 
+  // 9. Write final encoded bitstream
   // 9. 最终输出写入
   dst.reserve(total_needed);
   if use_delta {

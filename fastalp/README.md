@@ -1,18 +1,21 @@
-[English](#en) | [中文](#zh)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg)](https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#en)
+[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg)](https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#zh)
 
 [![crates.io](https://img.shields.io/crates/v/fastalp.svg)](https://crates.io/crates/fastalp)
 [![docs.rs](https://docs.rs/fastalp/badge.svg)](https://docs.rs/fastalp)
+[![Twitter](https://img.shields.io/badge/Twitter-@iwebcsite-1DA1F2?logo=x&logoColor=white)](https://x.com/iwebcsite)
+[![Bluesky](https://img.shields.io/badge/Bluesky-@webc--site.bsky.social-0285FF?logo=bluesky&logoColor=white)](https://bsky.app/profile/webc-site.bsky.social)
 
 ---
 
-<a name="en"></a>
+<a id="en"></a>
 
 # fastalp : Lossless Floating-Point Compression in Pure Rust
 
 A pure Rust implementation of adaptive lossless floating-point compression, deeply absorbing and extending the theoretical foundation of the ACM SIGMOD 2024 Best Artifact paper [ALP](https://dl.acm.org/doi/10.1145/3626717), providing high-performance unified generic interfaces for both `f64` and `f32` streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@PQ/wZlYnSCRgaBfHf3Zo3WQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@a7/qyVfIPRoSHiPBG3NqS6w.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -52,6 +55,7 @@ A pure Rust implementation of adaptive lossless floating-point compression, deep
   - [Thread-Local Streaming Interface](#thread-local-streaming-interface)
   - [Explicit Instance Handle Interface](#explicit-instance-handle-interface)
 - [Changelog](#changelog)
+  - [v0.1.37](#v0137)
   - [v0.1.36](#v0136)
   - [v0.1.35](#v0135)
   - [v0.1.34](#v0134)
@@ -533,7 +537,7 @@ Enable the feature in `Cargo.toml`:
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.36", features = ["capi"] }
+fastalp = { version = "0.1.37", features = ["capi"] }
 ```
 
 Build standalone static libraries (`libfastalp.a`) or shared libraries (`libfastalp.so` / `libfastalp.dylib`):
@@ -571,6 +575,17 @@ Designed for worker-pool architectures and per-column isolated states:
 
 
 ## Changelog
+
+### v0.1.37
+
+- **Zero-Cost Decoder Trait & Architectural Deduplication**:
+  Abstracted the `AlpDecoder<F>` core trait with monomorphized implementations (`AlpFac1Decoder`, `AlpMulDecoder`, `AlpDivDecoder`); introduced the `dispatch_decoder!` compile-time dispatch macro to eliminate runtime branch overhead in batch loops; unified generic bit-unpacking and dequantization kernels (`bitunpack_core_generic`), eliminating 800+ lines of duplicated code.
+- **End-to-End Compression Ratio Leap (+11.2%)**:
+  Across all 37 public and industrial time-series datasets, total compressed size dropped from 104,465 B to 93,909 B, saving 10,556 bytes (a 10.1% size reduction and +11.2% ratio improvement); relaxed Delta evaluation threshold (`>= 4`) unlocks smooth time-series data pathways with ratios up to 431x; introduced monotonic descending outlier pruning and predecessor smoothing to release the full benefits of differential encoding.
+- **Decompression Throughput Boost (+14.7%)**:
+  Decompression throughput climbed from 28.36 GB/s to 32.53 GB/s (+14.7% improvement) on modern architectures, while maintaining high-speed end-to-end encoding throughput at 4.87 GB/s.
+- **100% Bilingual Code Comments & Production Engineering Quality**:
+  Implemented complete Chinese/English bilingual comments across all core modules (sampler, bitunpack, encoder engine, standard/delta decoders, C-API); magic numbers replaced with compile-time constants; passed clippy with zero warnings; 100% pass rate across 355 unit and bit-exact lossless roundtrip tests.
 
 ### v0.1.36
 
@@ -626,14 +641,14 @@ Designed for worker-pool architectures and per-column isolated states:
 
 ---
 
-<a name="zh"></a>
+<a id="zh"></a>
 
 # fastalp : 高性能自适应通用时序浮点无损压缩
 
 纯 Rust 实现的自适应无损浮点数压缩算法库，深度吸收并拓展了 ACM SIGMOD 2024 最佳 Artifact 论文 [ALP](https://dl.acm.org/doi/10.1145/3626717) 的理论体系，通过统一泛型接口提供对 `f64` 与 `f32` 数据流的高性能压缩与解压。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@9b/xwGlCAGOKXyrRokSjVSA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Ii/xyipQrehim9Ibpw0ILWA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -673,6 +688,7 @@ Designed for worker-pool architectures and per-column isolated states:
   - [线程局部流式接口](#线程局部流式接口)
   - [独立实例句柄接口](#独立实例句柄接口)
 - [更新日志](#更新日志)
+  - [v0.1.37](#v0137)
   - [v0.1.36](#v0136)
   - [v0.1.35](#v0135)
   - [v0.1.34](#v0134)
@@ -1237,7 +1253,7 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.36", features = ["capi"] }
+fastalp = { version = "0.1.37", features = ["capi"] }
 ```
 
 构建独立的静态库（`libfastalp.a`）或动态库（`libfastalp.so` / `libfastalp.dylib`）：
@@ -1275,6 +1291,17 @@ cargo build --release --features capi
 
 
 ## 更新日志
+
+### v0.1.37
+
+- **零成本抽象与解码内核统一去重重构**：<br>
+  抽象 `AlpDecoder<F>` 核心特质及单态化实现 `AlpFac1Decoder`（单位因子）、`AlpMulDecoder`（十进制乘法）与 `AlpDivDecoder`（十进制除法）；引入 `dispatch_decoder!` 编译期调度宏，消除标准与 Delta 解码内层批处理中的运行时分支判断；统一任意位宽通用位解包与反量化逻辑（`bitunpack_core_generic`），消除 800+ 行重复实现。
+- **端到端综合压缩率跃升 +11.2%**：<br>
+  在 37 项公开及工业时序数据集上，压缩总体积从 104,465 字节降至 93,909 字节，净节省 10,556 字节（体积降低 10.1%，综合压缩率跃升 +11.2%）；放宽 Delta 一阶差分评估门限（`>= 4`）打通平滑时序通道，平滑时序数据集压缩比突破 431x；引入单调降序离群值剪枝与前值平滑回填，消除相邻跳变断崖，释放时序差分红利。
+- **解码吞吐显著提升 +14.7%**：<br>
+  在现代硬件架构上，解码吞吐从 28.36 GB/s 进一步攀升至 32.53 GB/s（提升 +14.7%），端到端编码吞吐维持在 4.87 GB/s 极高水准。
+- **全量代码双语注释与生产级工程规范达标**：<br>
+  核心模块（采样器、位解包、编码引擎、标准/差分解码器、C-API）实现全量中英文双语注释；魔法数字 100% 编译期常量化，消除冗余分支与内存分配；Clippy 零告警，全量 355 项单元测试与端到端往返无损测试 100% 通过。
 
 ### v0.1.36
 

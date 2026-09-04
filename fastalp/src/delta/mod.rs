@@ -56,6 +56,8 @@ pub fn eval_delta_benefit<F: AlpFloat>(
     return None;
   }
 
+  // Mathematical property fast pre-filter: sub-interval extremum range <= full range.
+  // If first 16 elements already have delta bit-width >= for_bit_width, abort early.
   // 数学性质快筛：子区间的极值跨度恒 <= 全量区间极值跨度。
   // 若前 16 个元素的差分位宽已 >= for_bit_width，则全集差分位宽绝不可能小于 for_bit_width，立即短路早停。
   let pre_n = rest.len().min(16);

@@ -32,6 +32,7 @@ impl AlpFloat for f32 {
   #[inline(always)]
   fn exp_factor(exp: u8, fac: u8) -> Self {
     debug_assert!(fac <= exp && exp <= Self::MAX_EXPONENT);
+    // SAFETY: Pre-validated fac <= exp <= MAX_EXPONENT_F32 (10), EXP_ARR_F32 has length 11, bounds checked
     // SAFETY: 调用方已前置校验 fac <= exp <= MAX_EXPONENT_F32 (10)，且 EXP_ARR_F32 长度为 11，(exp - fac) 必然在 [0, 10] 范围内，索引绝不越界。
     unsafe { *EXP_ARR_F32.get_unchecked((exp - fac) as usize) }
   }
@@ -39,6 +40,7 @@ impl AlpFloat for f32 {
   #[inline(always)]
   fn fac_int(fac: u8) -> i64 {
     debug_assert!(fac <= Self::MAX_FAC);
+    // SAFETY: Pre-validated fac <= MAX_FAC (4) <= 10, FACT_ARR_F32 has length 11, bounds checked
     // SAFETY: 调用方已前置校验 fac <= MAX_FAC (4) <= 10，且 FACT_ARR_F32 长度为 11，fac 必然在 [0, 4] 范围内，索引绝不越界。
     unsafe { *FACT_ARR_F32.get_unchecked(fac as usize) }
   }
@@ -46,6 +48,7 @@ impl AlpFloat for f32 {
   #[inline(always)]
   fn frac_exp(exp: u8) -> Self {
     debug_assert!(exp <= Self::MAX_EXPONENT);
+    // SAFETY: Pre-validated exp <= MAX_EXPONENT_F32 (10), FRAC_ARR_F32 has length 11, bounds checked
     // SAFETY: 调用方已前置校验 exp <= MAX_EXPONENT_F32 (10)，且 FRAC_ARR_F32 长度为 11，exp 必然在 [0, 10] 范围内，索引绝不越界。
     unsafe { *FRAC_ARR_F32.get_unchecked(exp as usize) }
   }
@@ -189,6 +192,7 @@ impl AlpFloat for f32 {
 
   #[inline(always)]
   fn read_base(src: &[u8]) -> Self::Int {
+    // SAFETY: Verified src.len() >= BASE_SIZE (4), read_unaligned safely reads across any alignment
     // SAFETY: 调用方在进入前已校验 src.len() >= BASE_SIZE (4)，使用 read_unaligned 保证任何内存对齐下的安全读取。
     unsafe { i32::from_le(read_unaligned(src.as_ptr().cast::<i32>())) }
   }
@@ -203,6 +207,7 @@ impl AlpFloat for f32 {
 
   #[inline(always)]
   fn read_exception(chunk: &[u8]) -> (usize, Self) {
+    // SAFETY: Verified chunk.len() >= EXC_ENTRY_SIZE (6), read_unaligned safely reads u16 and u32
     // SAFETY: 调用方在进入前已校验 chunk.len() >= EXC_ENTRY_SIZE (6)，使用 read_unaligned 保证安全读取 u16 与 u32。
     unsafe {
       let pos = u16::from_le(read_unaligned(chunk.as_ptr().cast::<u16>())) as usize;
@@ -223,6 +228,7 @@ impl AlpFloat for f32 {
 
   #[inline(always)]
   fn read_exception_u32(chunk: &[u8]) -> (usize, Self) {
+    // SAFETY: Verified chunk.len() >= EXC_ENTRY_SIZE_U32 (8), read_unaligned safely reads u32 and u32
     // SAFETY: 调用方在进入前已校验 chunk.len() >= EXC_ENTRY_SIZE_U32 (8)，使用 read_unaligned 保证安全读取 u32 与 u32。
     unsafe {
       let pos = u32::from_le(read_unaligned(chunk.as_ptr().cast::<u32>())) as usize;

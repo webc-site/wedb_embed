@@ -26,7 +26,8 @@ pub fn encode_standard<F: AlpFloat>(
     header_len(count) + F::BASE_SIZE + packed_byte_size(count, params.bit_width) + exc_len;
   dst.reserve(total_len);
 
-  // 1. Header: 紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
+  // 1. Header: compact self-describing header (1B descriptor + optional count + 2B params)
+  // 1. 头部：紧凑自描述头部 (1B 描述符 + 可选 count + 2B params)
   let type_byte = params.standard_type::<F>();
   write_header(type_byte, count, Some(params.pack()), dst);
 
@@ -36,6 +37,7 @@ pub fn encode_standard<F: AlpFloat>(
   // 3. Bitpacked data
   bitpack_encoded::<F>(encoded_ints, base, params.bit_width, dst);
 
-  // 4. Exceptions (仅在存在异常值时写入)
+  // 4. Exceptions (written only when exceptions exist)
+  // 4. 异常值 (仅在存在异常值时写入)
   write_exceptions::<F>(count, exceptions, dst);
 }
