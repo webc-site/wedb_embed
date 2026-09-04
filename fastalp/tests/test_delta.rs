@@ -113,3 +113,30 @@ fn test_decimal_division_mode_exact_match() -> Result<()> {
   }
   Ok(())
 }
+
+#[test]
+fn test_delta_empty_and_single() -> Result<()> {
+  let empty: [f64; 0] = [];
+  let comp_empty = compress_delta(&empty);
+  let dec_empty: Vec<f64> = decompress(&comp_empty)?;
+  assert!(dec_empty.is_empty());
+
+  let single = [42.125f64];
+  let comp_single = compress_delta(&single);
+  let dec_single: Vec<f64> = decompress(&comp_single)?;
+  assert_eq!(dec_single.len(), 1);
+  assert_eq!(single[0].to_bits(), dec_single[0].to_bits());
+
+  let empty_f32: [f32; 0] = [];
+  let comp_empty_f32 = compress_delta(&empty_f32);
+  let dec_empty_f32: Vec<f32> = decompress(&comp_empty_f32)?;
+  assert!(dec_empty_f32.is_empty());
+
+  let single_f32 = [99.5f32];
+  let comp_single_f32 = compress_delta(&single_f32);
+  let dec_single_f32: Vec<f32> = decompress(&comp_single_f32)?;
+  assert_eq!(dec_single_f32.len(), 1);
+  assert_eq!(single_f32[0].to_bits(), dec_single_f32[0].to_bits());
+
+  Ok(())
+}

@@ -91,6 +91,11 @@ pub extern "C" fn fastalp_reset_encoder_f32() {
   });
 }
 
+#[inline(always)]
+fn is_aligned_to<T>(ptr: *const T) -> bool {
+  (ptr as usize).is_multiple_of(core::mem::align_of::<T>())
+}
+
 /// Compresses an array of f64 floating-point values with dynamic parameter sampling.
 ///
 /// # Arguments
@@ -131,7 +136,7 @@ pub unsafe extern "C" fn fastalp_compress_f64(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || len == 0 {
+  if src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let input = unsafe { from_raw_parts(src, len) };
@@ -194,7 +199,7 @@ pub unsafe extern "C" fn fastalp_compress_cached_f64(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || len == 0 {
+  if src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let input = unsafe { from_raw_parts(src, len) };
@@ -257,7 +262,7 @@ pub unsafe extern "C" fn fastalp_decompress_f64(
   dst: *mut f64,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 {
+  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 || !is_aligned_to(dst) {
     return 0;
   }
   // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f64 可写空间且互不重叠
@@ -308,7 +313,7 @@ pub unsafe extern "C" fn fastalp_compress_f32(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || len == 0 {
+  if src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let input = unsafe { from_raw_parts(src, len) };
@@ -371,7 +376,7 @@ pub unsafe extern "C" fn fastalp_compress_cached_f32(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || len == 0 {
+  if src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let input = unsafe { from_raw_parts(src, len) };
@@ -434,7 +439,7 @@ pub unsafe extern "C" fn fastalp_decompress_f32(
   dst: *mut f32,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 {
+  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 || !is_aligned_to(dst) {
     return 0;
   }
   // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f32 可写空间且互不重叠
@@ -494,7 +499,7 @@ pub extern "C" fn fastalp_encoder_f64_new() -> *mut FastAlpEncoderF64 {
 /// `enc` 必须是由 `fastalp_encoder_f64_new` 返回且尚未被释放的有效指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fastalp_encoder_f64_free(enc: *mut FastAlpEncoderF64) {
-  if !enc.is_null() {
+  if !enc.is_null() && is_aligned_to(enc) {
     let _ = catch_unwind(|| unsafe {
       drop(Box::from_raw(enc));
     });
@@ -514,10 +519,12 @@ pub unsafe extern "C" fn fastalp_encoder_f64_free(enc: *mut FastAlpEncoderF64) {
 /// `enc` 必须指向有效的 `FastAlpEncoderF64` 实例。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fastalp_encoder_f64_reset(enc: *mut FastAlpEncoderF64) {
-  if let Some(enc_ref) = unsafe { enc.as_mut() } {
-    let _ = catch_unwind(AssertUnwindSafe(|| {
-      enc_ref.inner.reset();
-    }));
+  if !enc.is_null() && is_aligned_to(enc) {
+    if let Some(enc_ref) = unsafe { enc.as_mut() } {
+      let _ = catch_unwind(AssertUnwindSafe(|| {
+        enc_ref.inner.reset();
+      }));
+    }
   }
 }
 
@@ -560,7 +567,7 @@ pub unsafe extern "C" fn fastalp_encoder_f64_compress(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if enc.is_null() || src.is_null() || dst.is_null() || len == 0 {
+  if enc.is_null() || !is_aligned_to(enc) || src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let enc_ref = unsafe { &mut *enc };
@@ -628,7 +635,7 @@ pub extern "C" fn fastalp_encoder_f32_new() -> *mut FastAlpEncoderF32 {
 /// `enc` 必须是由 `fastalp_encoder_f32_new` 返回且尚未被释放的有效指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fastalp_encoder_f32_free(enc: *mut FastAlpEncoderF32) {
-  if !enc.is_null() {
+  if !enc.is_null() && is_aligned_to(enc) {
     let _ = catch_unwind(|| unsafe {
       drop(Box::from_raw(enc));
     });
@@ -648,10 +655,12 @@ pub unsafe extern "C" fn fastalp_encoder_f32_free(enc: *mut FastAlpEncoderF32) {
 /// `enc` 必须指向有效的 `FastAlpEncoderF32` 实例。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fastalp_encoder_f32_reset(enc: *mut FastAlpEncoderF32) {
-  if let Some(enc_ref) = unsafe { enc.as_mut() } {
-    let _ = catch_unwind(AssertUnwindSafe(|| {
-      enc_ref.inner.reset();
-    }));
+  if !enc.is_null() && is_aligned_to(enc) {
+    if let Some(enc_ref) = unsafe { enc.as_mut() } {
+      let _ = catch_unwind(AssertUnwindSafe(|| {
+        enc_ref.inner.reset();
+      }));
+    }
   }
 }
 
@@ -694,7 +703,7 @@ pub unsafe extern "C" fn fastalp_encoder_f32_compress(
   dst: *mut u8,
   dst_cap: usize,
 ) -> usize {
-  if enc.is_null() || src.is_null() || dst.is_null() || len == 0 {
+  if enc.is_null() || !is_aligned_to(enc) || src.is_null() || dst.is_null() || len == 0 || !is_aligned_to(src) {
     return 0;
   }
   let enc_ref = unsafe { &mut *enc };

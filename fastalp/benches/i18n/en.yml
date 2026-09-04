@@ -24,6 +24,19 @@ card4_sub: "{val} higher compression ratio vs C++ ALP"
 sec1_title: "Overall Compression Benchmark (8 Codecs)"
 sec1_sub: "Benchmarked on all 37 public datasets & industrial scenarios (Geometric Mean)"
 
+dual_title: "Advanced Throughput: Pure Kernel & Streaming Cache"
+dual_sub: "Benchmarking the official paper test-code pure kernel (no sampling) and industrial streaming state reuse"
+
+dual_card1_title: "Pure Encoding Kernel"
+dual_card1_tag: "No Sampling (Kernel)"
+dual_card1_desc: "Bypasses sampling, measuring pure integer mapping & bitpacking"
+dual_card1_cpp: "Official C++ paper test-code: {val} GB/s"
+
+dual_card2_title: "Streaming Parameter Cache"
+dual_card2_tag: "Cross-Block State Reuse"
+dual_card2_desc: "Stateful Encoder reuses parameters, streaming without re-sampling"
+dual_card2_cpp: "Steady-state streaming throughput with hot L1D cache"
+
 sec2_title: "Scenario Breakdown"
 sec2_sub: "Covering all 37 datasets across IoT, Finance, Geospatial, Healthcare, Civic & Waveforms"
 

@@ -130,13 +130,14 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   // 准备内部工作缓冲区（采用 MaybeUninit 避免 8KB 栈内存重复清零开销）
   let mut stack_encoded = MaybeUninit::<[F::Int; 1024]>::uninit();
   exceptions.clear();
+  encoded_buf.clear();
 
   let use_stack = count <= 1024 && encoded_buf.capacity() < count;
   let enc_ptr: *mut F::Int = if use_stack {
     stack_encoded.as_mut_ptr().cast::<F::Int>()
   } else {
     if encoded_buf.capacity() < count {
-      encoded_buf.reserve(count.saturating_sub(encoded_buf.len()));
+      encoded_buf.reserve(count);
     }
     encoded_buf.as_mut_ptr()
   };
@@ -203,7 +204,7 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
 
   // 6. 评估 Delta 差分收益
-  let delta_decision = if count > 1 && (force_delta || for_bit_width >= 12) {
+  let delta_decision = if count > 1 && (force_delta || for_bit_width >= 4) {
     let first = encoded_ints[0];
     let rest = &encoded_ints[1..];
     if force_delta {

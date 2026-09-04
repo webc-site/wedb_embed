@@ -7,14 +7,14 @@
 - **Two-Level Adaptive Sampling**:
   Derives optimal decimal scaling parameters `(exp, fac)` that minimize combined bit-width and exception penalties through two-phase coarse and fine sampling.
 
-- **Magic Number Floating-Point Rounding**:
-  Utilizes the IEEE 754 bias constant `0x0018000000000000` (single-precision `12582912.0`) to round values inside floating-point units without expensive conversion instructions or branch mispredictions.
+- **Hardware-Native Round-Ties-Even (Upgraded from Magic Number)**:
+  Original ALP utilized IEEE 754 bias constants (`0x0018000000000000` / `12582912.0`) inside floating-point units. `fastalp` investigates its $[-2^{51}, 2^{51}]$ range boundary limitations and upgrades it to hardware-native round-to-nearest-even instructions (x86 `ROUNDSD` / ARM64 `FRINTN`), eliminating range overflow risks while maintaining branchless latency.
 
 - **FOR Frame-of-Reference Subtraction**:
   Subtracts the frame-wide minimum value to shift signed ranges into compact non-negative domains, reducing encoded bit-widths.
 
 - **Stateful Encoder & Parameter Caching**:
-  Enables caching of derived `(exp, fac)` models across consecutive 1024-element blocks in continuous streams, boosting steady-state throughput from `4-5 GB/s` to `15-20+ GB/s`.
+  Enables caching of derived `(exp, fac)` models across consecutive 1024-element blocks in continuous streams, boosting steady-state throughput from `4-5 GB/s` to `15-24+ GB/s`.
 
 ---
 
@@ -42,10 +42,10 @@
   Checks `slice[1] == slice[0]` on block entry; non-constant streams exit in 1 CPU cycle, while constant sequences encode 1024 elements into 11 bytes (744x ratio).
 
 - **Three-Stage Microarchitectural Pruning Pipeline**:
-  Replaces unpruned parameter searches with a 3-tier cascade (pure decimal early return, 4/16-sample short-circuiting, and non-decimal abort), boosting end-to-end compression throughput from 0.80 GB/s to **3.6 GB/s** (4.5x geometric mean speedup, up to 7.0x in specific datasets).
+  Replaces unpruned parameter searches with a 3-tier cascade (pure decimal early return, 4/16-sample short-circuiting, and non-decimal abort), boosting end-to-end compression throughput from 0.80 GB/s to **3.7 GB/s** (4.6x geometric mean speedup, up to 7.0x in specific datasets); pure encoding kernel throughput reaches **6.0 GB/s (1.10x faster than C++ ALP)**; streaming throughput reaches **15~24+ GB/s** with cached parameters.
 
 - **Pure Register SIMD Decompression**:
-  Vectorizes common bit-widths (8, 16, 32, 64) into branchless register pipelines, achieving **26.9 GB/s** geometric mean decompression throughput (surpassing C++ ALP's 19.9 GB/s, 1.4x faster).
+  Vectorizes common bit-widths (8, 16, 32, 64) into branchless register pipelines, achieving **27.0 GB/s** geometric mean decompression throughput (surpassing C++ ALP's 20.0 GB/s, 1.35x faster).
 
 - **256-Entry L1D Stack-Allocated Lookup Tables**:
   Eliminates costly division latency by maintaining stack-resident tables that fit entirely in L1D cache.

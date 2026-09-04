@@ -7,7 +7,7 @@ Enable the feature in `Cargo.toml`:
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.33", features = ["capi"] }
+fastalp = { version = "0.1.36", features = ["capi"] }
 ```
 
 Build standalone static libraries (`libfastalp.a`) or shared libraries (`libfastalp.so` / `libfastalp.dylib`):

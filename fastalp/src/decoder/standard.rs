@@ -18,6 +18,9 @@ pub unsafe fn decode_standard_raw<F: AlpFloat>(
   params: AlpParams,
   dst_ptr: *mut F,
 ) -> Result<()> {
+  if count == 0 {
+    return Ok(());
+  }
   let mut cursor = 0;
 
   if src.len() < cursor + F::BASE_SIZE {

@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf, time::Instant};
 
-use fastalp::{compress_into, decompress_into};
+use fastalp::{Encoder, compress_into, decompress_into};
 
 fn load_csv(path: &PathBuf) -> Vec<f64> {
   let content = fs::read_to_string(path).expect("Failed to read CSV");
@@ -38,10 +38,12 @@ fn main() {
   let mut total_raw_bytes = 0;
   let mut total_comp_bytes = 0;
   let mut sum_enc = 0.0;
+  let mut sum_enc_kern = 0.0;
   let mut sum_dec = 0.0;
 
   let mut comp_buf = Vec::with_capacity(65536);
   let mut dec_buf = Vec::with_capacity(1024);
+  let mut encoder = Encoder::<f64>::with_capacity(1024);
 
   for entry in &entries {
     let path = entry.path();
@@ -55,6 +57,7 @@ fn main() {
     total_raw_bytes += raw_bytes;
 
     // Warmup
+    encoder.reset();
     for _ in 0..100 {
       comp_buf.clear();
       compress_into(&data, &mut comp_buf);
@@ -62,7 +65,7 @@ fn main() {
       let _ = decompress_into::<f64>(&comp_buf, &mut dec_buf);
     }
 
-    // Measure Compression (1000 iters - exact match with C++ ALP benchmark)
+    // Measure End-to-End Compression with Dynamic Sampling (1000 iters)
     let comp_iters = 1000;
     let start_enc = Instant::now();
     for _ in 0..comp_iters {
@@ -71,6 +74,19 @@ fn main() {
     }
     let enc_dur = start_enc.elapsed();
     let enc_gb_s = (raw_bytes as f64 * comp_iters as f64) / (enc_dur.as_secs_f64() * 1e9);
+
+    // Measure Pure Encoding Kernel Without Sampling (Reusing Cached Parameters, 1000 iters)
+    encoder.reset();
+    comp_buf.clear();
+    encoder.compress_into(&data, &mut comp_buf); // First pass establishes cached parameters
+    let start_enc_kern = Instant::now();
+    for _ in 0..comp_iters {
+      comp_buf.clear();
+      encoder.compress_into(&data, &mut comp_buf);
+    }
+    let enc_kern_dur = start_enc_kern.elapsed();
+    let enc_kernel_gb_s =
+      (raw_bytes as f64 * comp_iters as f64) / (enc_kern_dur.as_secs_f64() * 1e9);
 
     // Measure Decompression (1000 iters - exact match with C++ ALP benchmark)
     let dec_iters = 1000;
@@ -88,11 +104,12 @@ fn main() {
     let bits_per_val = (comp_bytes * 8) as f64 / data.len() as f64;
 
     sum_enc += enc_gb_s;
+    sum_enc_kern += enc_kernel_gb_s;
     sum_dec += dec_gb_s;
 
     println!(
-      "{:<24} | Ratio: {:>6.2}x | Enc: {:>6.2} GB/s | Dec: {:>6.2} GB/s",
-      name, ratio, enc_gb_s, dec_gb_s
+      "{:<24} | Ratio: {:>6.2}x | Enc(samp): {:>5.2} GB/s | Enc(kern): {:>5.2} GB/s | Dec: {:>5.2} GB/s",
+      name, ratio, enc_gb_s, enc_kernel_gb_s, dec_gb_s
     );
 
     datasets_json.push(format!(
@@ -103,6 +120,8 @@ fn main() {
         "ratio": {ratio:.4},
         "bits_per_val": {bits_per_val:.2},
         "enc_gb_s": {enc_gb_s:.2},
+        "enc_sampled_gb_s": {enc_gb_s:.2},
+        "enc_kernel_gb_s": {enc_kernel_gb_s:.2},
         "dec_gb_s": {dec_gb_s:.2}
       }}"#
     ));
@@ -110,6 +129,7 @@ fn main() {
 
   let n = entries.len() as f64;
   let avg_enc = sum_enc / n;
+  let avg_enc_kern = sum_enc_kern / n;
   let avg_dec = sum_dec / n;
   let total_ratio = total_raw_bytes as f64 / total_comp_bytes as f64;
   let total_bpv = (total_comp_bytes * 8) as f64 / (total_raw_bytes as f64 / 8.0);
@@ -125,6 +145,8 @@ fn main() {
     "ratio": {total_ratio:.4},
     "bits_per_val": {total_bpv:.2},
     "avg_enc_gb_s": {avg_enc:.2},
+    "avg_enc_sampled_gb_s": {avg_enc:.2},
+    "avg_enc_kernel_gb_s": {avg_enc_kern:.2},
     "avg_dec_gb_s": {avg_dec:.2},
     "datasets": [
 {}

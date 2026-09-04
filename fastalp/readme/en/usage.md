@@ -95,7 +95,7 @@ fn main() -> Result<()> {
 
 ### High-Performance Engineering Tips & Best Practices
 
-#### 1. Enable Parameter Caching for Streaming Pipelines (15~24+ GB/s Throughput)
+#### Enable Parameter Caching for Streaming Pipelines
 In time-series databases and metrics ingestion engines, the physical scale and precision of consecutive blocks on the same metric (e.g., temperature sensor, trade prices) remain highly uniform.<br>
 While `compress` performs a 32-sample exploration on every invocation, reusing a stateful `Encoder` instance hits cached model parameters across subsequent blocks, skipping exploration entirely and elevating throughput to **15~24+ GB/s**:
 
@@ -114,7 +114,7 @@ for chunk in incoming_stream {
 }
 ```
 
-#### 2. In-Place Buffer Reuse to Eliminate Allocation Jitter
+#### In-Place Buffer Reuse to Eliminate Allocation Jitter
 Frequent allocations and deallocations in hot loops cause heap fragmentation and lock contention. Use `_into` function variants to write directly into long-lived memory buffers:
 
 ```rust
@@ -133,6 +133,6 @@ for batch in batches {
 }
 ```
 
-#### 3. Low-Entropy and Monotonic Waveform Acceleration
+#### Low-Entropy and Monotonic Waveform Acceleration
 - **Constant Streams & Heartbeats**: On standby sensors or heartbeat streams, `fastalp` verifies equality in 1 CPU cycle, encoding 1024 items into 11 bytes (**744x ratio**).
 - **Linear Ramps & Physical Steps**: For monotonic waveforms (industrial PID, hydrological levels), `fastalp` automatically engages first-order Delta difference encoding to eliminate large span offsets, achieving **430x+** compression.

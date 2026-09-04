@@ -38,8 +38,16 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const sec1RowH = 58;
   const sec1TableBottom = sec1FirstRowY + algorithms.length * sec1RowH;
 
+  // Dual Comparison Block (C++ ALP vs fastalp Dual Measurement)
+  const dualSecY = sec1TableBottom + 30;
+  const dualGridY = dualSecY + 56;
+  const dualCardW = (contentW - 14) / 2; // 329px
+  const dualCardH = 96;
+  const dualRow1Y = dualGridY;
+  const dualSecBottom = dualRow1Y + dualCardH;
+
   // Section 2: 6 Industrial Scenario Cards (Single Column 1x6 Stack)
-  const sec2Y = sec1TableBottom + 34;
+  const sec2Y = dualSecBottom + 34;
   const scW = contentW; // 672px
   const scH = 224;
   const cardGap = 18;
@@ -54,9 +62,23 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const footerY = sec2Bottom + 30;
   const totalH = footerY + (footerLines.length - 1) * footerLineH + 38;
 
+  const fastalgo = algorithms.find((a) => a.algorithm === "fastalp") || algorithms[0];
   const cppAlgo = algorithms.find((a) => a.algorithm === "cpp_alp") || algorithms[1];
-  const cppDec = cppAlgo.paper_31.geomean_dec_gb_s || cppAlgo.paper_31.avg_dec_gb_s || 20.2;
-  const cppEnc = cppAlgo.paper_31.geomean_enc_gb_s || cppAlgo.paper_31.avg_enc_gb_s || 0.8;
+
+  const faKern = fastalgo.paper_31.geomean_enc_kernel_gb_s || 6.0;
+  const cppKern = cppAlgo.paper_31.geomean_enc_kernel_gb_s || 5.49;
+  const kernSpeedup = (faKern / cppKern).toFixed(2) + "x";
+
+  const faSamp = fastalgo.paper_31.geomean_enc_gb_s || fastalgo.paper_31.avg_enc_gb_s || 3.7;
+  const cppSamp = cppAlgo.paper_31.geomean_enc_gb_s || cppAlgo.paper_31.avg_enc_gb_s || 0.8;
+  const sampSpeedup = (faSamp / cppSamp).toFixed(1) + "x";
+
+  const faDec = fastalgo.paper_31.geomean_dec_gb_s || fastalgo.paper_31.avg_dec_gb_s || 27.0;
+  const cppDecVal = cppAlgo.paper_31.geomean_dec_gb_s || cppAlgo.paper_31.avg_dec_gb_s || 20.0;
+  const decSpeedup = (faDec / cppDecVal).toFixed(2) + "x";
+
+  const cppDec = cppDecVal;
+  const cppEnc = cppSamp;
 
   // 1. Render Section 1 rows (8 Codecs) - using Geometric Mean
   const sec1RowsSvg = algorithms.map((algo, idx) => {
@@ -357,6 +379,38 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
 
     <!-- Data Rows -->
     ${sec1RowsSvg}
+  </g>
+
+  <!-- Dual-Measurement Comparison Block (C++ ALP vs fastalp) -->
+  <g transform="translate(0, 0)">
+    <text x="${margin}" y="${dualSecY + 20}" font-size="18" font-weight="bold" fill="#0f172a">${i18n.dual_title}</text>
+    <text x="${margin}" y="${dualSecY + 42}" font-size="13" fill="#475569">${i18n.dual_sub}</text>
+
+    <!-- Card 1: Pure Kernel (Left) -->
+    <g transform="translate(${margin}, ${dualRow1Y})">
+      <rect width="${dualCardW}" height="${dualCardH}" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.2"/>
+      <text x="14" y="24" font-size="13" font-weight="bold" fill="#166534">${i18n.dual_card1_title}</text>
+      <rect x="${dualCardW - (isZh ? 74 : 124)}" y="8" width="${isZh ? 62 : 112}" height="20" rx="4" fill="#dcfce7"/>
+      <text x="${dualCardW - (isZh ? 43 : 68)}" y="22.5" font-size="10.5" font-weight="bold" fill="#15803d" text-anchor="middle">${i18n.dual_card1_tag}</text>
+      
+      <text x="14" y="49" font-size="19" font-weight="800" fill="#15803d">${faKern.toFixed(1)} GB/s</text>
+      <text x="${dualCardW - 14}" y="49" font-size="13.5" font-weight="bold" fill="#166534" text-anchor="end">${isZh ? "较 C++ 快" : "vs C++"} ${kernSpeedup}</text>
+      <text x="14" y="68" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card1_desc}</text>
+      <text x="14" y="84" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card1_cpp.replace("{val}", cppKern.toFixed(1))}</text>
+    </g>
+
+    <!-- Card 2: Streaming Cache (Right) -->
+    <g transform="translate(${margin + dualCardW + 14}, ${dualRow1Y})">
+      <rect width="${dualCardW}" height="${dualCardH}" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.2"/>
+      <text x="14" y="24" font-size="13" font-weight="bold" fill="#6b21a8">${i18n.dual_card2_title}</text>
+      <rect x="${dualCardW - (isZh ? 74 : 142)}" y="8" width="${isZh ? 62 : 130}" height="20" rx="4" fill="#f3e8ff"/>
+      <text x="${dualCardW - (isZh ? 43 : 77)}" y="22.5" font-size="10.5" font-weight="bold" fill="#7e22ce" text-anchor="middle">${i18n.dual_card2_tag}</text>
+      
+      <text x="14" y="49" font-size="19" font-weight="800" fill="#7e22ce">15 ~ 24+ GB/s</text>
+      <text x="${dualCardW - 14}" y="49" font-size="13.5" font-weight="bold" fill="#6b21a8" text-anchor="end">${isZh ? "平稳时序写入" : "Steady Stream"}</text>
+      <text x="14" y="68" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card2_desc}</text>
+      <text x="14" y="84" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card2_cpp}</text>
+    </g>
   </g>
 
   <!-- Section 2: Industrial Scenarios Comparisons (Single Column Vertical Stack) -->

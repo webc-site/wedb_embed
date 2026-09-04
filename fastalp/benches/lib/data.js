@@ -186,9 +186,11 @@ export const loadBenchData = async () => {
     // 1. Calculate Comprehensive Geometric Mean strictly across the real benchmark datasets
     const decs = baseDatasets.map((d) => d.dec_gb_s || 0.1);
     const encs = baseDatasets.map((d) => d.enc_gb_s || 0.1);
+    const encKerns = baseDatasets.map((d) => d.enc_kernel_gb_s || d.enc_gb_s || 0.1);
     const ratios = baseDatasets.map((d) => d.ratio || 1.0);
     content.paper_31.geomean_dec_gb_s = geomean(decs);
     content.paper_31.geomean_enc_gb_s = geomean(encs);
+    content.paper_31.geomean_enc_kernel_gb_s = geomean(encKerns);
     content.paper_31.geomean_ratio = geomean(ratios);
 
     // 2. Compute dynamic scenario metrics for Section 2 scenario cards
@@ -244,6 +246,15 @@ export const loadBenchData = async () => {
     gorilla,
     chimp,
     // Comparisons
+    encKernelSpeedupVsCpp: (
+      fastalp.paper_31.geomean_enc_kernel_gb_s / (cppAlp.paper_31.geomean_enc_kernel_gb_s || 5.49)
+    ).toFixed(2),
+    encSampledSpeedupVsCpp: (
+      fastalp.paper_31.geomean_enc_gb_s / (cppAlp.paper_31.geomean_enc_gb_s || 0.8)
+    ).toFixed(1),
+    decSpeedupVsCpp: (
+      fastalp.paper_31.geomean_dec_gb_s / (cppAlp.paper_31.geomean_dec_gb_s || 20.0)
+    ).toFixed(2),
     decSpeedupVsPco: (fastalp.paper_31.geomean_dec_gb_s / pco.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsZstd: (fastalp.paper_31.geomean_dec_gb_s / zstd.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsGorilla: (fastalp.paper_31.geomean_dec_gb_s / gorilla.paper_31.geomean_dec_gb_s).toFixed(1),
