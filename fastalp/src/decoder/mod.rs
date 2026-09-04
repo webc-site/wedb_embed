@@ -1,3 +1,30 @@
+/// 根据 AlpParams 参数动态派发具体的解码器类型（零运行时虚函数开销，单次单态化展开）
+macro_rules! dispatch_decoder {
+  ($params:expr, $base:expr, $F:ty, $decoder:ident => $body:expr) => {{
+    let (exp_factor, fac_int, frac_flt) = $params.factors::<$F>();
+    if $params.use_div {
+      let $decoder = $crate::bitpack::AlpDivDecoder {
+        base: $base,
+        exp_factor,
+      };
+      $body
+    } else if fac_int == 1 {
+      let $decoder = $crate::bitpack::AlpFac1Decoder {
+        base: $base,
+        frac_flt,
+      };
+      $body
+    } else {
+      let $decoder = $crate::bitpack::AlpMulDecoder {
+        base: $base,
+        fac_int,
+        frac_flt,
+      };
+      $body
+    }
+  }};
+}
+
 mod delta;
 mod standard;
 
