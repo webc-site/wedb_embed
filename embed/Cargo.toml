@@ -52,7 +52,7 @@ version = "0.1.9"
 path = "../engine"
 
 [dependencies.fastalp]
-version = "0.1.39"
+version = "0.1.40"
 path = "../fastalp"
 
 [dependencies.hipstr]
