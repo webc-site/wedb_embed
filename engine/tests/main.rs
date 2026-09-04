@@ -138,6 +138,18 @@ impl Iterator for MemIter {
   fn next(&mut self) -> Option<Self::Item> {
     self.iter.next().map(Ok)
   }
+
+  #[inline]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    self.iter.size_hint()
+  }
+}
+
+impl ExactSizeIterator for MemIter {
+  #[inline]
+  fn len(&self) -> usize {
+    self.iter.len()
+  }
 }
 
 impl DoubleEndedIterator for MemIter {
@@ -173,17 +185,10 @@ impl Batch for MemBatch {
   }
 
   fn commit(self) -> Result<(), Self::Error> {
-    for op in self.ops {
-      match op {
-        BatchOp::Insert(part, key, value) => {
-          part.insert(&key, &value)?;
-        }
-        BatchOp::Rm(part, key) => {
-          part.rm(&key)?;
-        }
-      }
-    }
-    Ok(())
+    self.ops.into_iter().try_for_each(|op| match op {
+      BatchOp::Insert(part, key, value) => part.insert(&key, &value),
+      BatchOp::Rm(part, key) => part.rm(&key),
+    })
   }
 }
 
@@ -228,6 +233,14 @@ fn test_kv_entry_blanket_impl() {
   let pair = (b"key1".to_vec(), b"val1".to_vec());
   assert_eq!(pair.key(), b"key1");
   assert_eq!(pair.value(), b"val1");
+  assert_eq!(pair.key_ref(), b"key1");
+  assert_eq!(pair.value_ref(), b"val1");
+
+  let ref_pair = &pair;
+  assert_eq!(ref_pair.key(), b"key1");
+  assert_eq!(ref_pair.value(), b"val1");
+  assert_eq!(ref_pair.key_ref(), b"key1");
+  assert_eq!(ref_pair.value_ref(), b"val1");
 }
 
 #[test]
@@ -302,11 +315,8 @@ fn test_engine_iterators() -> Void {
   // Prefix scan
   let prefix_items: Vec<_> = part
     .prefix(b"user:")
-    .map(|res| {
-      let entry = res.unwrap();
-      (entry.key().clone(), entry.value().clone())
-    })
-    .collect();
+    .map(|res| res.map(|entry| (entry.key().clone(), entry.value().clone())))
+    .collect::<Result<Vec<_>, _>>()?;
   assert_eq!(prefix_items.len(), 3);
   assert_eq!(prefix_items[0].0, b"user:001");
   assert_eq!(prefix_items[2].0, b"user:003");
@@ -314,21 +324,27 @@ fn test_engine_iterators() -> Void {
   // Range scan
   let range_items: Vec<_> = part
     .range((Bound::Included(b"user:002"), Bound::Included(b"zone:001")))
-    .map(|res| {
-      let entry = res.unwrap();
-      (entry.key().clone(), entry.value().clone())
-    })
-    .collect();
+    .map(|res| res.map(|entry| (entry.key().clone(), entry.value().clone())))
+    .collect::<Result<Vec<_>, _>>()?;
   assert_eq!(range_items.len(), 3);
   assert_eq!(range_items[0].0, b"user:002");
   assert_eq!(range_items[2].0, b"zone:001");
 
   // Double ended iterator
   let mut iter = part.prefix(b"user:");
-  assert_eq!(iter.next().unwrap().unwrap().key(), b"user:001");
-  assert_eq!(iter.next_back().unwrap().unwrap().key(), b"user:003");
-  assert_eq!(iter.next().unwrap().unwrap().key(), b"user:002");
-  assert!(iter.next().is_none());
+  assert_eq!(
+    iter.next().transpose()?.as_ref().map(KvEntry::key_ref),
+    Some(&b"user:001"[..])
+  );
+  assert_eq!(
+    iter.next_back().transpose()?.as_ref().map(KvEntry::key_ref),
+    Some(&b"user:003"[..])
+  );
+  assert_eq!(
+    iter.next().transpose()?.as_ref().map(KvEntry::key_ref),
+    Some(&b"user:002"[..])
+  );
+  assert!(iter.next().transpose()?.is_none());
 
   info!("test_engine_iterators passed");
   OK
@@ -435,6 +451,8 @@ fn test_engine_sync() -> Void {
 
   let snap = engine.snapshot();
   assert_eq!(snap.seqno(), 42);
+  assert!(!snap.is_empty(&part)?);
+  assert_eq!(snap.len(&part)?, 2);
   assert_eq!(snap.get(&part, b"k1")?.as_deref(), Some(&b"v1"[..]));
   assert!(snap.contains_key(&part, b"k2")?);
 

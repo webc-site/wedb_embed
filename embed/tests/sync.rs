@@ -106,13 +106,13 @@ fn test_fjall_sync_snapshot_and_isolation() -> Void {
 
   let first = snapshot
     .first_entry(&part_data)?
-    .ok_or("missing first entry")?;
+    .expect("snapshot first entry must exist");
   assert_eq!(first.key_ref(), b"user:1");
   assert_eq!(first.value_ref(), b"alice");
 
   let last = snapshot
     .last_entry(&part_data)?
-    .ok_or("missing last entry")?;
+    .expect("snapshot last entry must exist");
   assert_eq!(last.key_ref(), b"user:2");
   assert_eq!(last.value_ref(), b"bob");
 
