@@ -1,12 +1,14 @@
 use divan::{Bencher, black_box};
-use fastalp::{compress, compress_into, decompress_into};
+use fastalp::{Encoder, compress, compress_into, decompress_into};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// Single block standard vector element count (1024 floats).
 /// 单块标准向量元素数 (1024 浮点数)
 const BLOCK_SIZE: usize = 1024;
 
+/// Large batch throughput evaluation vector size (65536 floats, f64 is 512 KB, f32 is 256 KB).
 /// 大批量吞吐评测向量元素数 (65536 浮点数，对应 f64 512 KB，f32 256 KB)
 const LARGE_BATCH_SIZE: usize = 65536;
 
@@ -14,11 +16,13 @@ fn main() {
   divan::main();
 }
 
+/// Generate simulated sensor decimal fractional time-series data.
 /// 生成模拟传感器十进制小数时序数据
 fn generate_sensor_data(count: usize) -> Vec<f64> {
   (0..count).map(|i| (200 + (i % 150)) as f64 * 0.1).collect()
 }
 
+/// Generate simulated sensor f32 decimal fractional time-series data.
 /// 生成模拟传感器 f32 小数时序数据
 fn generate_sensor_data_f32(count: usize) -> Vec<f32> {
   (0..count)
@@ -26,16 +30,19 @@ fn generate_sensor_data_f32(count: usize) -> Vec<f32> {
     .collect()
 }
 
+/// Generate smooth monotonically increasing time-series data (for Delta-ALP evaluation).
 /// 生成平滑线性递增时序数据 (评测 Delta-ALP 差分模式)
 fn generate_ramp_data(count: usize) -> Vec<f64> {
   (0..count).map(|i| 100.0 + i as f64 * 0.05).collect()
 }
 
+/// Generate smooth monotonically increasing f32 time-series data (for Delta-ALP evaluation).
 /// 生成平滑线性递增 f32 时序数据 (评测 Delta-ALP 差分模式)
 fn generate_ramp_data_f32(count: usize) -> Vec<f32> {
   (0..count).map(|i| 100.0f32 + i as f32 * 0.05f32).collect()
 }
 
+/// Generate deterministic random floating-point data (with fixed random seed).
 /// 生成确定性随机浮点数数据 (带固定随机种子)
 fn generate_random_data(count: usize) -> Vec<f64> {
   fastrand::seed(42);
@@ -49,16 +56,30 @@ fn generate_random_data(count: usize) -> Vec<f64> {
 }
 
 // ───────────────────────────────────────────────
+// 1. f64 compression & decompression benchmarks (1024 floats, standard vector size)
 // 1. f64 压缩与解压基准测试 (1024 浮点数，标准向量大小)
 // ───────────────────────────────────────────────
 
 #[divan::bench]
-fn bench_compress_f64_sensor_1024(bencher: Bencher) {
+fn bench_compress_f64_sensor_sampled_1024(bencher: Bencher) {
   let data = generate_sensor_data(BLOCK_SIZE);
   let mut dst = Vec::with_capacity(data.len() * 2 + 16);
   bencher.bench_local(|| {
     dst.clear();
     compress_into(&data, &mut dst);
+    black_box(&dst);
+  });
+}
+
+#[divan::bench]
+fn bench_compress_f64_sensor_cached_1024(bencher: Bencher) {
+  let data = generate_sensor_data(BLOCK_SIZE);
+  let mut dst = Vec::with_capacity(data.len() * 2 + 16);
+  let mut encoder = Encoder::new();
+  encoder.compress_into(&data, &mut dst);
+  bencher.bench_local(|| {
+    dst.clear();
+    encoder.compress_into(&data, &mut dst);
     black_box(&dst);
   });
 }
@@ -76,12 +97,25 @@ fn bench_decompress_f64_sensor_1024(bencher: Bencher) {
 }
 
 #[divan::bench]
-fn bench_compress_f64_ramp_1024(bencher: Bencher) {
+fn bench_compress_f64_ramp_sampled_1024(bencher: Bencher) {
   let data = generate_ramp_data(BLOCK_SIZE);
   let mut dst = Vec::with_capacity(data.len() * 2 + 16);
   bencher.bench_local(|| {
     dst.clear();
     compress_into(&data[..], &mut dst);
+    black_box(&dst);
+  });
+}
+
+#[divan::bench]
+fn bench_compress_f64_ramp_cached_1024(bencher: Bencher) {
+  let data = generate_ramp_data(BLOCK_SIZE);
+  let mut dst = Vec::with_capacity(data.len() * 2 + 16);
+  let mut encoder = Encoder::new();
+  encoder.compress_into(&data, &mut dst);
+  bencher.bench_local(|| {
+    dst.clear();
+    encoder.compress_into(&data, &mut dst);
     black_box(&dst);
   });
 }
@@ -145,6 +179,7 @@ fn bench_decompress_f64_identical_1024(bencher: Bencher) {
 }
 
 // ───────────────────────────────────────────────
+// 2. f32 compression & decompression benchmarks (1024 floats)
 // 2. f32 压缩与解压基准测试 (1024 浮点数)
 // ───────────────────────────────────────────────
 
@@ -195,6 +230,7 @@ fn bench_decompress_f32_ramp_1024(bencher: Bencher) {
 }
 
 // ───────────────────────────────────────────────
+// 3. Large batch throughput benchmarks (65536 floats, f64 512 KB, f32 256 KB)
 // 3. 大块批量压缩与解压吞吐测试 (65536 浮点数，f64 为 512 KB，f32 为 256 KB)
 // ───────────────────────────────────────────────
 
