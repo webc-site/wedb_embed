@@ -1,5 +1,5 @@
-[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg)](https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#en)
-[![](https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg)](https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#zh)
+<a href="https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#en"><img src="https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg" height="28"></a>
+<a href="https://github.com/webc-site/wedb_embed/blob/main/engine/README.md#zh"><img src="https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg" height="28"></a>
 
 ---
 
