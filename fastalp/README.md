@@ -22,6 +22,50 @@ A pure Rust implementation of adaptive lossless floating-point compression, deep
 
 ---
 
+- [Theoretical Background & Official Paper](#theoretical-background-official-paper)
+- [Features](#features)
+  - [Key Algorithmic & Architectural Breakthroughs over C++ ALP](#key-algorithmic-architectural-breakthroughs-over-c-alp)
+- [Usage](#usage)
+  - [Installation](#installation)
+  - [Basic Compression and Decompression](#basic-compression-and-decompression)
+  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
+  - [Zero-Allocation Slice Decompression & O(1) Count](#zero-allocation-slice-decompression-o1-count)
+  - [Stateful Encoder & Parameter Caching](#stateful-encoder-parameter-caching)
+  - [Single-Precision Floating-Point Processing](#single-precision-floating-point-processing)
+  - [High-Performance Engineering Tips & Best Practices](#high-performance-engineering-tips-best-practices)
+    - [Enable Parameter Caching for Streaming Pipelines](#enable-parameter-caching-for-streaming-pipelines)
+    - [In-Place Buffer Reuse to Eliminate Allocation Jitter](#in-place-buffer-reuse-to-eliminate-allocation-jitter)
+    - [Low-Entropy and Monotonic Waveform Acceleration](#low-entropy-and-monotonic-waveform-acceleration)
+- [Architecture & Design](#architecture-design)
+  - [Compression Pipeline](#compression-pipeline)
+  - [Decompression Pipeline](#decompression-pipeline)
+- [Technology Stack](#technology-stack)
+- [Project Architecture](#project-architecture)
+- [Performance & Comparative Benchmarks](#performance-comparative-benchmarks)
+  - [Test Environment and Compiler Setup](#test-environment-and-compiler-setup)
+  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
+  - [Pure Encoding & Streaming Cache Throughput Deep Dive](#pure-encoding-streaming-cache-throughput-deep-dive)
+  - [Industrial Scenario Micro-Benchmarks](#industrial-scenario-micro-benchmarks)
+  - [C++ ALP Benchmark Methodology & Calibration](#c-alp-benchmark-methodology-calibration)
+  - [Comprehensive Dataset Coverage & Sources](#comprehensive-dataset-coverage-sources)
+- [Architectural Evolution & Novel Optimizations](#architectural-evolution-novel-optimizations)
+  - [Foundations Inherited from Original ALP](#foundations-inherited-from-original-alp)
+  - [Proprietary Algorithmic & Performance Breakthroughs](#proprietary-algorithmic-performance-breakthroughs)
+- [C-Compatible API & Cross-Language Integration](#c-compatible-api-cross-language-integration)
+  - [Buffer Capacity Estimation & Element Extraction](#buffer-capacity-estimation-element-extraction)
+  - [Thread-Local Streaming Interface](#thread-local-streaming-interface)
+  - [Explicit Instance Handle Interface](#explicit-instance-handle-interface)
+- [Changelog](#changelog)
+  - [v0.1.38](#v0138)
+  - [v0.1.37](#v0137)
+  - [v0.1.36](#v0136)
+  - [v0.1.35](#v0135)
+  - [v0.1.34](#v0134)
+  - [v0.1.33](#v0133)
+  - [v0.1.32](#v0132)
+  - [v0.1.31](#v0131)
+  - [v0.1.30](#v0130)
+
 ## Theoretical Background & Official Paper
 
 ALP (Adaptive Lossless Floating-Point Compression) was introduced at **ACM SIGMOD 2024** by the database research team at CWI (Azim Afroozeh, Leonardo Kuffó, Peter Boncz) and won the **SIGMOD 2024 Best Artifact Award**. It is integrated into modern columnar database engines such as **DuckDB**, **FastLanes**, and **KuzuDB**:
@@ -90,6 +134,7 @@ Due to the IEEE 754 layout of exponents and mantissas, general-purpose byte comp
 
 - **Three-Stage Microarchitectural Sampling Pruning**:<br>
   Replaces unpruned parameter searches with a 3-tier cascade (pure decimal early return, 4/16-sample short-circuiting, and non-decimal abort), boosting end-to-end compression throughput to **3.7 GB/s (4.6x faster than C++ ALP)**; pure encoding kernel throughput reaches **6.0 GB/s (1.10x faster than C++ ALP)**; streaming throughput reaches **15~24+ GB/s** with cached parameters.
+
 
 ## Usage
 
@@ -261,6 +306,7 @@ for batch in batches {
 - **Constant Streams & Heartbeats**: On standby sensors or heartbeat streams, `fastalp` verifies equality in 1 CPU cycle, encoding 1024 items into 11 bytes (**744x ratio**).
 - **Linear Ramps & Physical Steps**: For monotonic waveforms (industrial PID, hydrological levels), `fastalp` automatically engages first-order Delta difference encoding to eliminate large span offsets, achieving **430x+** compression.
 
+
 ## Architecture & Design
 
 `fastalp` executes compression and decompression through modular pipeline stages:
@@ -364,6 +410,7 @@ fastalp/
     └── test_roundtrip.rs   # Comprehensive lossless roundtrip & boundary tests
 ```
 
+
 ## Performance & Comparative Benchmarks
 
 ### Test Environment and Compiler Setup
@@ -446,6 +493,7 @@ Evaluated on all 31 public datasets from the original ALP paper plus 6 represent
 - **Government & Macroeconomics (6 datasets)**: `gov10`, `gov26`, `gov30`, `gov31`, `gov40`, `scene_macro`.
 - **Hardware Storage & Physical Waveforms (3 datasets)**: `ssd_hdd_benchmarks_f`, `scene_ramp`, `scene_steady`.
 
+
 ## Architectural Evolution & Novel Optimizations
 
 `fastalp` is an engineered reimagining of the ALP paradigm for modern superscalar architectures and columnar time-series storage engines.
@@ -513,6 +561,7 @@ Evaluated on all 31 public datasets from the original ALP paper plus 6 represent
 - **Zero-Cost Generic Trait Abstraction**:
   Unifies `f64` and `f32` operations under `AlpFloat` with precomputed static power tables and compile-time inlining.
 
+
 ## C-Compatible API & Cross-Language Integration
 
 `fastalp` provides an optional, disabled-by-default C-compatible FFI layer for integration into C, C++, Python, Go, and other language runtimes.<br>
@@ -558,6 +607,7 @@ Designed for worker-pool architectures and per-column isolated states:
 - `fastalp_encoder_f64_reset(enc)`: Clears cached model parameters in the handle.<br>
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`: Compresses data using the specified encoder handle.<br>
 - Single-precision equivalents: `FastAlpEncoderF32`, `fastalp_encoder_f32_new`, `fastalp_encoder_f32_free`, `fastalp_encoder_f32_reset`, and `fastalp_encoder_f32_compress`.
+
 
 ## Changelog
 
@@ -632,6 +682,7 @@ Designed for worker-pool architectures and per-column isolated states:
 
 - Clarified standard ALP baseline vs custom compression ratio optimizations; enhanced floating-point precision stability.
 
+
 ---
 
 <a id="zh"></a>
@@ -647,6 +698,50 @@ Designed for worker-pool architectures and per-column isolated states:
 </p>
 
 ---
+
+- [理论背景与官方论文](#理论背景与官方论文)
+- [功能特性](#功能特性)
+  - [针对 C++ 官方实现（`cwida/ALP`）的核心算法与架构升级](#针对-c-官方实现cwidaalp的核心算法与架构升级)
+- [使用示例](#使用示例)
+  - [添加依赖](#添加依赖)
+  - [基础压缩与解压](#基础压缩与解压)
+  - [内存缓冲区复用](#内存缓冲区复用)
+  - [零堆分配切片解压与 O(1) 元素计数](#零堆分配切片解压与-o1-元素计数)
+  - [状态化编码与参数缓存](#状态化编码与参数缓存)
+  - [单精度浮点数据处理](#单精度浮点数据处理)
+  - [高性能工程技巧与最佳实践](#高性能工程技巧与最佳实践)
+    - [连续时序流启用参数缓存](#连续时序流启用参数缓存)
+    - [就地复用缓冲区消除堆分配与内存抖动](#就地复用缓冲区消除堆分配与内存抖动)
+    - [极低熵与单调波形自适应增益](#极低熵与单调波形自适应增益)
+- [架构设计](#架构设计)
+  - [压缩流程](#压缩流程)
+  - [解压流程](#解压流程)
+- [技术栈](#技术栈)
+- [目录结构](#目录结构)
+- [性能评测与多算法对比](#性能评测与多算法对比)
+  - [测试环境与编译配置](#测试环境与编译配置)
+  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
+  - [压缩纯编码与流式参数复用进阶对比](#压缩纯编码与流式参数复用进阶对比)
+  - [典型工业场景微基准细分实测](#典型工业场景微基准细分实测)
+  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
+  - [评测数据集全景与公开数据源](#评测数据集全景与公开数据源)
+- [架构演进与优化全景](#架构演进与优化全景)
+  - [参考与借鉴原版 ALP 的架构设计](#参考与借鉴原版-alp-的架构设计)
+  - [自主研发的算法与性能优化](#自主研发的算法与性能优化)
+- [C 兼容接口与跨语言集成](#c-兼容接口与跨语言集成)
+  - [缓冲区容量预估与元素提取](#缓冲区容量预估与元素提取)
+  - [线程局部流式接口](#线程局部流式接口)
+  - [独立实例句柄接口](#独立实例句柄接口)
+- [更新日志](#更新日志)
+  - [v0.1.38](#v0138)
+  - [v0.1.37](#v0137)
+  - [v0.1.36](#v0136)
+  - [v0.1.35](#v0135)
+  - [v0.1.34](#v0134)
+  - [v0.1.33](#v0133)
+  - [v0.1.32](#v0132)
+  - [v0.1.31](#v0131)
+  - [v0.1.30](#v0130)
 
 ## 理论背景与官方论文
 
@@ -725,6 +820,7 @@ ALP（Adaptive Lossless Floating-Point Compression）是由荷兰国家数学与
 - **三级级联微架构采样剪枝**：<br>
   原版 `init` 采用全量暴力穷举，采样耗时占全流程 80% 以上，导致端到端压缩吞吐仅约 0.80 GB/s；<br>
   `fastalp` 采用纯十进制早停、4 样本短路快筛和非十进制熔断的三级剪枝流水线，将端到端压缩吞吐提升至 **3.7 GB/s（提速 4.6x）**；在压缩纯编码吞吐（不含采样）口径下达 **6.0 GB/s（较 C++ 快 1.10x）**；在命中状态化参数缓存时，流式参数缓存吞吐可达 **15~24+ GB/s**。
+
 
 ## 使用示例
 
@@ -896,6 +992,7 @@ for batch in batches {
 - **常数流与设备心跳**：当遇到设备断线、待机或心跳常数时，`fastalp` 入口仅需 1 个 CPU 时钟周期识别全等流，1024 元素以 11 字节高速输出（压缩比达 **744x**）。
 - **线性升降波形与步进计数**：针对工业 PID 调节、水文流量与连续计数器，`fastalp` 自动激活 Delta 一阶差分编码，动态消除波形大跨度基准，压缩比突破 **430x+**。
 
+
 ## 架构设计
 
 `fastalp` 编解码流程划分为以下阶段：
@@ -1003,6 +1100,7 @@ fastalp/
     ├── test_delta.rs       # Delta 差分时序专项与异常测试
     └── test_roundtrip.rs   # 往返无损与边界测试
 ```
+
 
 ## 性能评测与多算法对比
 
@@ -1128,6 +1226,7 @@ fastalp/
   - `scene_ramp`：平滑升降坡道、连续物理量与单调时序（1024 点）· 工业 PID 调节、水文流量与连续步进计数器
   - `scene_steady`：恒定传感、无故障零冗余与心跳流（1024 点）· 设备自检心跳流与高频常数工业监控
 
+
 ## 架构演进与优化全景
 
 fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓的基础上，针对现代多核流水线与时序数据库列存痛点重构的高性能压缩引擎。
@@ -1222,6 +1321,7 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
   用于一套代码兼顾 `f64` 与 `f32`，避免代码膨胀与运行时分支开销。<br>
   通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的高效内联。
 
+
 ## C 兼容接口与跨语言集成
 
 `fastalp` 提供默认不启用的可选 C 兼容接口（FFI），便于集成到 C、C++、Python、Go 等多语言运行环境中。<br>
@@ -1267,6 +1367,7 @@ cargo build --release --features capi
 - `fastalp_encoder_f64_reset(enc)`：重置指定编码器句柄中的已缓存模型参数。<br>
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`：使用指定编码器句柄压缩 `f64` 浮点数组。<br>
 - 单精度浮点对应句柄接口：`FastAlpEncoderF32`、`fastalp_encoder_f32_new`、`fastalp_encoder_f32_free`、`fastalp_encoder_f32_reset` 以及 `fastalp_encoder_f32_compress`。
+
 
 ## 更新日志
 
@@ -1340,3 +1441,4 @@ cargo build --release --features capi
 ### v0.1.30
 
 - 明确标准 ALP 基线与定制算法压缩比对比；增强浮点极值与高精度时序数据压缩稳定性。
+
