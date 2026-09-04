@@ -21,6 +21,10 @@ categories = [
 default = []
 capi = []
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 crate-type = ["rlib", "staticlib", "cdylib"]
 

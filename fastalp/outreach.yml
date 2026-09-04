@@ -414,3 +414,12 @@ records:
     title: "feat(codec): add fastalp floating-point compression codec"
     status: submitted
     date: 2026-09-04
+
+  - type: pull_request
+    repo: aidlx/tsink
+    pr_number: 18
+    url: https://github.com/aidlx/tsink/pull/18
+    title: "feat(engine): add adaptive fastalp lossless floating-point compression codec"
+    status: submitted
+    date: 2026-09-04
+
