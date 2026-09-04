@@ -1,20 +1,27 @@
+use core::slice::from_raw_parts_mut;
+
 use crate::{
   bitpack::{bitunpack_u64_slice, packed_byte_size},
   error::{Error, Result},
   float::AlpFloat,
+  params::AlpParams,
 };
 
-/// Decodes an ALP Delta differential compressed block into `dst`.
-/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 缓冲区 (src 为头部之后的有效载荷)
-pub fn decode_delta<F: AlpFloat>(
+/// Decodes an ALP Delta differential compressed block into `dst` slice.
+/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
+pub fn decode_delta_slice<F: AlpFloat>(
   src: &[u8],
   count: usize,
-  exp: u8,
-  fac: u8,
-  delta_bit_width: u8,
-  use_div: bool,
-  dst: &mut Vec<F>,
+  params: AlpParams,
+  dst: &mut [F],
 ) -> Result<()> {
+  if dst.len() < count {
+    return Err(Error::BufferTooSmall {
+      needed: count,
+      available: dst.len(),
+    });
+  }
+  let dst = &mut dst[..count];
   let mut cursor = 0;
 
   if src.len() < cursor + F::BASE_SIZE * 2 {
@@ -30,25 +37,21 @@ pub fn decode_delta<F: AlpFloat>(
   let min_delta = F::read_base(&src[cursor..cursor + F::BASE_SIZE]);
   cursor += F::BASE_SIZE;
 
-  let start_idx = dst.len();
-  let exp_factor = F::exp_factor(exp, fac);
-  let fac_int = F::fac_int(fac);
-  let frac_flt = F::frac_exp(exp);
+  let (exp_factor, fac_int, frac_flt) = params.factors::<F>();
 
   if count == 1 {
-    let val = if use_div {
+    let val = if params.use_div {
       F::decode_from_int_div(first, exp_factor)
     } else if fac_int == 1 {
       F::decode_from_int_fac1(first, frac_flt)
     } else {
       F::decode_from_int(first, fac_int, frac_flt)
     };
-    dst.push(val);
-  } else if delta_bit_width == 0 {
-    dst.reserve(count);
-    // SAFETY: dst 已预留 count 个空间，使用底层指针切片单遍写入并更新有效长度，消除 resize 的双重写零开销
+    dst[0] = val;
+  } else if params.bit_width == 0 {
+    // SAFETY: dst 已具备 count 个空间，使用底层指针单遍写入，消除双重写零开销
     unsafe {
-      let ptr = dst.as_mut_ptr().add(start_idx);
+      let ptr = dst.as_mut_ptr();
       let mut curr = first;
       macro_rules! reconstruct_unrolled {
         ($dec_expr:expr) => {{
@@ -73,7 +76,7 @@ pub fn decode_delta<F: AlpFloat>(
         }};
       }
 
-      if use_div {
+      if params.use_div {
         *ptr = F::decode_from_int_div(first, exp_factor);
         reconstruct_unrolled!(|c| F::decode_from_int_div(c, exp_factor));
       } else if fac_int == 1 {
@@ -83,11 +86,10 @@ pub fn decode_delta<F: AlpFloat>(
         *ptr = F::decode_from_int(first, fac_int, frac_flt);
         reconstruct_unrolled!(|c| F::decode_from_int(c, fac_int, frac_flt));
       }
-      dst.set_len(start_idx + count);
     }
   } else {
     let rest_count = count - 1;
-    let packed_len = packed_byte_size(rest_count, delta_bit_width);
+    let packed_len = packed_byte_size(rest_count, params.bit_width);
     if src.len() < cursor + packed_len {
       return Err(Error::UnexpectedEof {
         needed: cursor + packed_len,
@@ -95,19 +97,18 @@ pub fn decode_delta<F: AlpFloat>(
       });
     }
 
-    dst.reserve(count);
-    // SAFETY: dst 已 reserve(count)，按 1024 分批流式解包写入 ptr，最后 set_len 更新长度
+    // SAFETY: dst 已具备 count 个空间，按 1024 分批流式解包写入 ptr
     unsafe {
-      let ptr = dst.as_mut_ptr().add(start_idx);
+      let ptr = dst.as_mut_ptr();
       let mut curr = first;
       let packed_slice = &src[cursor..cursor + packed_len];
 
-      if use_div {
+      if params.use_div {
         *ptr = F::decode_from_int_div(first, exp_factor);
         decode_delta_stream(
           packed_slice,
           rest_count,
-          delta_bit_width,
+          params.bit_width,
           min_delta,
           &mut curr,
           ptr.add(1),
@@ -118,7 +119,7 @@ pub fn decode_delta<F: AlpFloat>(
         decode_delta_stream(
           packed_slice,
           rest_count,
-          delta_bit_width,
+          params.bit_width,
           min_delta,
           &mut curr,
           ptr.add(1),
@@ -129,26 +130,45 @@ pub fn decode_delta<F: AlpFloat>(
         decode_delta_stream(
           packed_slice,
           rest_count,
-          delta_bit_width,
+          params.bit_width,
           min_delta,
           &mut curr,
           ptr.add(1),
           |c| F::decode_from_int(c, fac_int, frac_flt),
         )?;
       }
-      dst.set_len(start_idx + count);
     }
     cursor += packed_len;
   }
 
   // 恢复异常值（Patch 字典）
-  super::patch_exceptions(&src[cursor..], count, start_idx, dst)?;
+  super::patch_exceptions(&src[cursor..], count, dst)?;
 
   Ok(())
 }
 
-/// Helper decoding a batch of delta offsets with 4-way unrolling into destination float pointer.
-/// 4路循环展开解码单批 Delta 偏移量至浮点目标指针
+/// Decodes an ALP Delta differential compressed block into `dst`.
+/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 缓冲区 (src 为头部之后的有效载荷)
+pub fn decode_delta<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  params: AlpParams,
+  dst: &mut Vec<F>,
+) -> Result<()> {
+  let old_len = dst.len();
+  dst.reserve(count);
+  // SAFETY: dst 已预留 count 个空间，from_raw_parts_mut 构造切片作为输出缓冲区供解码内核写入；
+  // 解码成功后严格安全更新有效长度。
+  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
+  decode_delta_slice(src, count, params, slice)?;
+  unsafe {
+    dst.set_len(old_len + count);
+  }
+  Ok(())
+}
+
+/// Helper decoding a batch of delta offsets with 8-way unrolling into destination float pointer.
+/// 8路循环展开解码单批 Delta 偏移量至浮点目标指针（采用树状前缀和降低依赖延迟）
 ///
 /// # Safety
 ///
@@ -161,7 +181,7 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
   out_ptr: *mut F,
   decode_fn: &D,
 ) {
-  let (chunks, rem) = offsets.as_chunks::<4>();
+  let (chunks, rem) = offsets.as_chunks::<8>();
   let mut idx = 0;
   // SAFETY: Caller guarantees out_ptr has at least offsets.len() space
   unsafe {
@@ -170,21 +190,38 @@ unsafe fn decode_delta_offsets<F: AlpFloat, D: Fn(F::Int) -> F>(
       let d1 = F::u64_to_int_add(chunk[1], min_delta);
       let d2 = F::u64_to_int_add(chunk[2], min_delta);
       let d3 = F::u64_to_int_add(chunk[3], min_delta);
+      let d4 = F::u64_to_int_add(chunk[4], min_delta);
+      let d5 = F::u64_to_int_add(chunk[5], min_delta);
+      let d6 = F::u64_to_int_add(chunk[6], min_delta);
+      let d7 = F::u64_to_int_add(chunk[7], min_delta);
 
       let s01 = F::int_add(d0, d1);
       let s23 = F::int_add(d2, d3);
+      let s45 = F::int_add(d4, d5);
+      let s67 = F::int_add(d6, d7);
+
+      let s0123 = F::int_add(s01, s23);
+      let s4567 = F::int_add(s45, s67);
 
       let c0 = F::int_add(*curr, d0);
       let c1 = F::int_add(*curr, s01);
       let c2 = F::int_add(c1, d2);
-      let c3 = F::int_add(c1, s23);
-      *curr = c3;
+      let c3 = F::int_add(*curr, s0123);
+      let c4 = F::int_add(c3, d4);
+      let c5 = F::int_add(c3, s45);
+      let c6 = F::int_add(c5, d6);
+      let c7 = F::int_add(c3, s4567);
+      *curr = c7;
 
       *out_ptr.add(idx) = decode_fn(c0);
       *out_ptr.add(idx + 1) = decode_fn(c1);
       *out_ptr.add(idx + 2) = decode_fn(c2);
       *out_ptr.add(idx + 3) = decode_fn(c3);
-      idx += 4;
+      *out_ptr.add(idx + 4) = decode_fn(c4);
+      *out_ptr.add(idx + 5) = decode_fn(c5);
+      *out_ptr.add(idx + 6) = decode_fn(c6);
+      *out_ptr.add(idx + 7) = decode_fn(c7);
+      idx += 8;
     }
     for &offset in rem {
       let delta = F::u64_to_int_add(offset, min_delta);

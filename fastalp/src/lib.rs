@@ -12,8 +12,8 @@ mod params;
 mod sampler;
 
 pub use bitpack::{
-  bitpack_encoded, bitpack_u64, bitunpack_into, bitunpack_into_div, bitunpack_u64,
-  bitunpack_u64_slice, packed_byte_size,
+  bitpack_encoded, bitpack_u64, bitunpack_into, bitunpack_into_div, bitunpack_slice,
+  bitunpack_slice_div, bitunpack_u64, bitunpack_u64_slice, packed_byte_size,
 };
 #[cfg(feature = "capi")]
 pub use capi::*;
@@ -27,7 +27,10 @@ pub use constants::{
   TYPE_F32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F32_RAW, TYPE_F64, TYPE_F64_DEC,
   TYPE_F64_DEC_DELTA, TYPE_F64_DELTA, TYPE_F64_RAW, TYPE_MASK,
 };
-pub use decoder::{decode_delta, decode_standard, decompress, decompress_into};
+pub use decoder::{
+  decode_delta, decode_delta_slice, decode_standard, decode_standard_slice, decompress,
+  decompress_into, decompress_into_slice,
+};
 pub use delta::{eval_delta_benefit, in_place_deltas, reconstruct_ramp_into_floats};
 pub use encoder::{
   Encoder, Exception, compress, compress_delta, compress_delta_into, compress_into, encode_delta,
@@ -39,7 +42,7 @@ pub use header::{
   MAX_HEADER_LEN, ParsedHeader, count_bytes, header_len, raw_header_len, read_header, write_header,
 };
 pub use params::{
-  BIT_WIDTH_MASK, BIT_WIDTH_SHIFT, EXP_MASK, FAC_MASK, FAC_SHIFT, bit_mask, bits_needed,
+  AlpParams, BIT_WIDTH_MASK, BIT_WIDTH_SHIFT, EXP_MASK, FAC_MASK, FAC_SHIFT, bit_mask, bits_needed,
   pack_params, unpack_params,
 };
 pub use sampler::{

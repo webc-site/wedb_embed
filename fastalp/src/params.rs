@@ -1,4 +1,4 @@
-use crate::constants::BITS_U64;
+use crate::{constants::BITS_U64, float::AlpFloat, sampler::BestParams};
 
 /// Packed parameters bitfield masks and shift constants.
 /// 参数位域掩码与位移常量
@@ -42,5 +42,90 @@ pub const fn bit_mask(bit_width: u8) -> u64 {
     u64::MAX
   } else {
     (1u64 << bit_width).wrapping_sub(1)
+  }
+}
+
+/// Compact ALP encoding and decoding parameters.
+/// 封装 ALP 核心参数 (exp, fac, bit_width, use_div)，消除多参数冗余传递并统一头部打包与类型判断
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AlpParams {
+  pub exp: u8,
+  pub fac: u8,
+  pub bit_width: u8,
+  pub use_div: bool,
+}
+
+impl AlpParams {
+  #[inline(always)]
+  pub const fn new(exp: u8, fac: u8, bit_width: u8, use_div: bool) -> Self {
+    Self {
+      exp,
+      fac,
+      bit_width,
+      use_div,
+    }
+  }
+
+  #[inline(always)]
+  pub const fn from_best_params(best: BestParams, bit_width: u8) -> Self {
+    Self {
+      exp: best.exp,
+      fac: best.fac,
+      bit_width,
+      use_div: best.use_div,
+    }
+  }
+
+  #[inline(always)]
+  pub const fn pack(&self) -> u16 {
+    pack_params(self.exp, self.fac, self.bit_width)
+  }
+
+  #[inline(always)]
+  pub const fn from_packed(packed: u16, use_div: bool) -> Self {
+    let (exp, fac, bit_width) = unpack_params(packed);
+    Self {
+      exp,
+      fac,
+      bit_width,
+      use_div,
+    }
+  }
+
+  #[inline(always)]
+  pub const fn standard_type<F: AlpFloat>(&self) -> u8 {
+    if self.use_div {
+      F::TYPE_DEC_BYTE
+    } else {
+      F::TYPE_BYTE
+    }
+  }
+
+  #[inline(always)]
+  pub const fn delta_type<F: AlpFloat>(&self) -> u8 {
+    if self.use_div {
+      F::TYPE_DEC_DELTA_BYTE
+    } else {
+      F::TYPE_DELTA_BYTE
+    }
+  }
+
+  #[inline(always)]
+  pub const fn validate<F: AlpFloat>(&self) -> bool {
+    self.exp <= F::MAX_EXPONENT
+      && self.fac <= F::MAX_FAC
+      && self.fac <= self.exp
+      && self.bit_width <= F::MAX_BIT_WIDTH
+  }
+
+  /// Computes decoding float factors (exp_factor, fac_int, frac_flt) for floating-point reconstruction.
+  /// 计算浮点重构所需的放大因子、整型因子与负幂小数因子
+  #[inline(always)]
+  pub fn factors<F: AlpFloat>(&self) -> (F, i64, F) {
+    (
+      F::exp_factor(self.exp, self.fac),
+      F::fac_int(self.fac),
+      F::frac_exp(self.exp),
+    )
   }
 }

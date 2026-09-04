@@ -4,10 +4,11 @@ use std::ptr::read_unaligned;
 use crate::{
   constants::{
     CHUNK_SIZE_1024, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT, LEN_TAG_U8, LEN_TAG_U16,
-    LEN_TAG_U32, TYPE_F32_RAW, TYPE_F64_RAW, TYPE_MASK,
+    LEN_TAG_U32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA, TYPE_F32_RAW, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
+    TYPE_F64_RAW, TYPE_MASK,
   },
   error::{Error, Result},
-  params::unpack_params,
+  params::AlpParams,
 };
 
 /// Maximum header length in bytes (1B desc + 4B count + 2B params).
@@ -21,7 +22,7 @@ pub struct ParsedHeader {
   pub type_byte: u8,
   pub count: usize,
   pub len_tag: u8,
-  pub params: Option<(u8, u8, u8)>,
+  pub params: Option<AlpParams>,
   pub cursor: usize,
 }
 
@@ -166,13 +167,17 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
   // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取 2 字节 packed params
   let raw_params = unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) };
   cursor += 2;
-  let (exp, fac, bit_width) = unpack_params(raw_params);
+  let is_dec = type_byte == TYPE_F64_DEC
+    || type_byte == TYPE_F32_DEC
+    || type_byte == TYPE_F64_DEC_DELTA
+    || type_byte == TYPE_F32_DEC_DELTA;
+  let alp_params = AlpParams::from_packed(raw_params, is_dec);
 
   Ok(ParsedHeader {
     type_byte,
     count,
     len_tag,
-    params: Some((exp, fac, bit_width)),
+    params: Some(alp_params),
     cursor,
   })
 }

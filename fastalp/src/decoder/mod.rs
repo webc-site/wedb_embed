@@ -1,10 +1,11 @@
 mod delta;
 mod standard;
 
-use std::ptr::{copy_nonoverlapping, read_unaligned};
+use core::{ptr::copy_nonoverlapping, slice::from_raw_parts_mut};
+use std::ptr::read_unaligned;
 
-pub use delta::decode_delta;
-pub use standard::decode_standard;
+pub use delta::{decode_delta, decode_delta_slice};
+pub use standard::{decode_standard, decode_standard_slice};
 
 use crate::{
   constants::{EXC_COUNT_LEN, EXC_COUNT_LEN_U32},
@@ -13,9 +14,9 @@ use crate::{
   header::{ParsedHeader, read_header},
 };
 
-/// Generic floating-point decompression into `dst` buffer.
-/// 通用解压浮点数组至 `dst` 缓冲区（自动分发 RAW、标准 FOR 与 Delta 差分块）
-pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> {
+/// Generic floating-point decompression into destination slice.
+/// 通用解压浮点数组至目标切片（零堆分配、零内存拷贝）
+pub fn decompress_into_slice<F: AlpFloat>(src: &[u8], dst: &mut [F]) -> Result<usize> {
   let ParsedHeader {
     type_byte,
     count,
@@ -25,7 +26,14 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
   } = read_header(src)?;
 
   if count == 0 {
-    return Ok(());
+    return Ok(0);
+  }
+
+  if dst.len() < count {
+    return Err(Error::BufferTooSmall {
+      needed: count,
+      available: dst.len(),
+    });
   }
 
   // RAW 原始数据解包路径：直接内存零拷贝恢复
@@ -39,47 +47,63 @@ pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> 
         available: src.len(),
       });
     }
-    let old_len = dst.len();
-    dst.reserve(count);
-    // SAFETY: 上方已检验可用字节充足，直接将连续的原始浮点内存数据拷贝入 dst
+    // SAFETY: 上方已检验可用字节充足且 dst.len() >= count
     unsafe {
       copy_nonoverlapping(
         src.as_ptr().add(cursor),
-        dst.as_mut_ptr().add(old_len).cast::<u8>(),
+        dst.as_mut_ptr().cast::<u8>(),
         raw_bytes_needed,
       );
-      dst.set_len(old_len + count);
     }
-    return Ok(());
+    return Ok(count);
   }
 
   let is_delta = type_byte == F::TYPE_DELTA_BYTE || type_byte == F::TYPE_DEC_DELTA_BYTE;
-  let is_dec = type_byte == F::TYPE_DEC_BYTE || type_byte == F::TYPE_DEC_DELTA_BYTE;
   let is_standard = type_byte == F::TYPE_BYTE || type_byte == F::TYPE_DEC_BYTE;
 
   if !is_standard && !is_delta {
     return Err(Error::InvalidHeader);
   }
 
-  let (exp, fac, bit_width) = match params {
+  let alp_params = match params {
     Some(p) => p,
     None => return Err(Error::InvalidHeader),
   };
 
-  if exp > F::MAX_EXPONENT || fac > F::MAX_FAC || fac > exp || bit_width > F::MAX_BIT_WIDTH {
+  if !alp_params.validate::<F>() {
     return Err(Error::UnsupportedParams {
-      exp,
-      fac,
-      bit_width,
+      exp: alp_params.exp,
+      fac: alp_params.fac,
+      bit_width: alp_params.bit_width,
     });
   }
 
   let payload = &src[cursor..];
   if is_delta {
-    decode_delta::<F>(payload, count, exp, fac, bit_width, is_dec, dst)
+    decode_delta_slice::<F>(payload, count, alp_params, &mut dst[..count])?;
   } else {
-    decode_standard::<F>(payload, count, exp, fac, bit_width, is_dec, dst)
+    decode_standard_slice::<F>(payload, count, alp_params, &mut dst[..count])?;
   }
+  Ok(count)
+}
+
+/// Generic floating-point decompression into `dst` buffer.
+/// 通用解压浮点数组至 `dst` 缓冲区（自动分发 RAW、标准 FOR 与 Delta 差分块）
+pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> {
+  let ParsedHeader { count, .. } = read_header(src)?;
+  if count == 0 {
+    return Ok(());
+  }
+  let old_len = dst.len();
+  dst.reserve(count);
+  // SAFETY: dst 已预留 count 个空间，from_raw_parts_mut 构造切片作为输出缓冲区供解码内核写入；
+  // 解码成功后严格安全更新实际写入的有效长度。
+  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
+  let written = decompress_into_slice(src, slice)?;
+  unsafe {
+    dst.set_len(old_len + written);
+  }
+  Ok(())
 }
 
 /// Generic floating-point slice decompression.
@@ -94,18 +118,13 @@ pub fn decompress<F: AlpFloat>(src: &[u8]) -> Result<Vec<F>> {
 /// Patches exceptions into decoded slice directly.
 /// 将异常值字典打补丁至解码切片（统一处理普通 u16 与超大数组 u32 格式，严格校验内存边界）
 #[inline]
-pub(crate) fn patch_exceptions<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  start_idx: usize,
-  dst: &mut [F],
-) -> Result<()> {
+pub(crate) fn patch_exceptions<F: AlpFloat>(src: &[u8], count: usize, dst: &mut [F]) -> Result<()> {
   if src.is_empty() {
     return Ok(());
   }
 
   debug_assert!(
-    dst.len() >= start_idx + count,
+    dst.len() >= count,
     "destination buffer too small for exceptions"
   );
 
@@ -158,9 +177,9 @@ pub(crate) fn patch_exceptions<F: AlpFloat>(
       if pos >= count {
         return Err(Error::CorruptedData { index: pos, count });
       }
-      // SAFETY: 上方已校验 pos < count，且调用方保证 start_idx + count <= dst.len()
+      // SAFETY: 上方已校验 pos < count，且调用方保证 count <= dst.len()
       unsafe {
-        *dst.get_unchecked_mut(start_idx + pos) = val;
+        *dst.get_unchecked_mut(pos) = val;
       }
     }
   } else {
@@ -170,9 +189,9 @@ pub(crate) fn patch_exceptions<F: AlpFloat>(
       if pos >= count {
         return Err(Error::CorruptedData { index: pos, count });
       }
-      // SAFETY: 上方已校验 pos < count，且调用方保证 start_idx + count <= dst.len()
+      // SAFETY: 上方已校验 pos < count，且调用方保证 count <= dst.len()
       unsafe {
-        *dst.get_unchecked_mut(start_idx + pos) = val;
+        *dst.get_unchecked_mut(pos) = val;
       }
     }
   }

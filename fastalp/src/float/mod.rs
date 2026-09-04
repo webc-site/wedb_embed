@@ -17,7 +17,6 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
   const MAX_EXPONENT: u8;
   const MAX_FAC: u8;
   const MAX_BIT_WIDTH: u8;
-  const MAGIC_NUMBER: Self;
   const ENCODING_UPPER_LIMIT: Self;
   const EXCEPTION_PENALTY: usize;
   const EXC_ENTRY_SIZE: usize;

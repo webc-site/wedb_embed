@@ -43,9 +43,9 @@ export const benchCdnPublish = async () => {
       cdnUrl = `https://raw.githubusercontent.com/webc-site/wedb_embed/main/fastalp/benches/img/${lang}/bench.svg`;
     }
 
-    // Update fastalp/readme/{lang}.md
-    console.log(`2. Updating fastalp/readme/${lang}.md hero image...`);
-    const readmePath = resolve(FASTALP_DIR, `readme/${lang}.md`);
+    // Update fastalp/readme/{lang}/intro.md
+    console.log(`2. Updating fastalp/readme/${lang}/intro.md hero image...`);
+    const readmePath = resolve(FASTALP_DIR, `readme/${lang}/intro.md`);
     const mdFile = Bun.file(readmePath);
     if (await mdFile.exists()) {
       let content = await mdFile.text();
@@ -71,7 +71,7 @@ export const benchCdnPublish = async () => {
   // Compile mdt to update fastalp/README.md
   console.log("\n3. Compiling fastalp/README.md with mdt...");
   try {
-    await $`npx mdt fastalp`.cwd(ROOT_DIR);
+    await $`bun x mdt fastalp`.cwd(ROOT_DIR);
     console.log("  -> Compiled fastalp/README.md successfully!");
   } catch (err) {
     console.warn(`  -> mdt compile warning: ${err.message || err}`);

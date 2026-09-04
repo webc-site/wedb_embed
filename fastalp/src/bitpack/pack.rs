@@ -26,7 +26,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
   let old_len = dst.len();
   dst.reserve(total_bytes + 16);
 
-  if bit_width <= 16 {
+  if bit_width <= 48 {
     let stride = bit_width as usize;
     let mask = bit_mask(bit_width);
     let (chunks, rem) = values.as_chunks::<CHUNK_8>();
@@ -35,82 +35,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
       for chunk in chunks {
-        pack_8_unrolled(
-          bit_width,
-          chunk[0] & mask,
-          chunk[1] & mask,
-          chunk[2] & mask,
-          chunk[3] & mask,
-          chunk[4] & mask,
-          chunk[5] & mask,
-          chunk[6] & mask,
-          chunk[7] & mask,
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-      }
-
-      if !rem.is_empty() {
-        pack_rem(rem.iter().copied(), bit_width, dst_ptr);
-      }
-
-      dst.set_len(old_len + total_bytes);
-    }
-    return;
-  } else if bit_width <= 32 {
-    let stride = bit_width as usize;
-    let mask = bit_mask(bit_width);
-    let (chunks, rem) = values.as_chunks::<CHUNK_8>();
-
-    // SAFETY: dst 已 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，余数在结尾填充，完全覆盖 total_bytes 且不越界。
-    unsafe {
-      let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for chunk in chunks {
-        pack_8_w17_to_w32(
-          bit_width,
-          chunk[0] & mask,
-          chunk[1] & mask,
-          chunk[2] & mask,
-          chunk[3] & mask,
-          chunk[4] & mask,
-          chunk[5] & mask,
-          chunk[6] & mask,
-          chunk[7] & mask,
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-      }
-
-      if !rem.is_empty() {
-        pack_rem(rem.iter().copied(), bit_width, dst_ptr);
-      }
-
-      dst.set_len(old_len + total_bytes);
-    }
-    return;
-  } else if bit_width <= 48 {
-    let stride = bit_width as usize;
-    let mask = bit_mask(bit_width);
-    let (chunks, rem) = values.as_chunks::<CHUNK_8>();
-
-    // SAFETY: dst 已 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，完全覆盖 total_bytes 且不越界。
-    unsafe {
-      let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for chunk in chunks {
-        pack_8_w33_to_w48(
-          bit_width,
-          [
-            chunk[0] & mask,
-            chunk[1] & mask,
-            chunk[2] & mask,
-            chunk[3] & mask,
-            chunk[4] & mask,
-            chunk[5] & mask,
-            chunk[6] & mask,
-            chunk[7] & mask,
-          ],
-          dst_ptr,
-        );
+        pack_chunk_8(bit_width, mask_chunk_8(chunk, mask), dst_ptr);
         dst_ptr = dst_ptr.add(stride);
       }
 
@@ -142,23 +67,9 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
   unsafe {
     let mut dst_ptr = dst.as_mut_ptr().add(old_len);
     for &val in values {
-      acc |= ((val & mask) as u128) << bits;
-      bits += bit_width as u32;
-      if bits >= BITS_U64 as u32 {
-        dst_ptr.cast::<u64>().write_unaligned((acc as u64).to_le());
-        dst_ptr = dst_ptr.add(BYTES_U64);
-        acc >>= BITS_U64;
-        bits -= BITS_U64 as u32;
-      }
+      push_bits_to_stream(&mut acc, &mut bits, val & mask, bit_width, &mut dst_ptr);
     }
-
-    while bits > 0 {
-      *dst_ptr = acc as u8;
-      dst_ptr = dst_ptr.add(1);
-      acc >>= BITS_PER_BYTE;
-      bits = bits.saturating_sub(BITS_PER_BYTE as u32);
-    }
-
+    flush_remaining_bits(acc, bits, dst_ptr);
     dst.set_len(old_len + total_bytes);
   }
 }
@@ -179,7 +90,7 @@ pub fn bitpack_encoded<F: AlpFloat>(
   let old_len = dst.len();
   dst.reserve(total_bytes + 16);
 
-  if bit_width <= 16 {
+  if bit_width <= 48 {
     let stride = bit_width as usize;
     let (chunks, rem) = encoded_ints.as_chunks::<CHUNK_8>();
 
@@ -187,99 +98,11 @@ pub fn bitpack_encoded<F: AlpFloat>(
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
       for chunk in chunks {
-        pack_8_unrolled(
-          bit_width,
-          F::int_diff_to_u64(chunk[0], base),
-          F::int_diff_to_u64(chunk[1], base),
-          F::int_diff_to_u64(chunk[2], base),
-          F::int_diff_to_u64(chunk[3], base),
-          F::int_diff_to_u64(chunk[4], base),
-          F::int_diff_to_u64(chunk[5], base),
-          F::int_diff_to_u64(chunk[6], base),
-          F::int_diff_to_u64(chunk[7], base),
-          dst_ptr,
-        );
+        pack_chunk_8(bit_width, diff_chunk_8::<F>(chunk, base), dst_ptr);
         dst_ptr = dst_ptr.add(stride);
       }
 
-      if !rem.is_empty() {
-        pack_rem(
-          rem.iter().map(|&val| F::int_diff_to_u64(val, base)),
-          bit_width,
-          dst_ptr,
-        );
-      }
-
-      dst.set_len(old_len + total_bytes);
-    }
-    return;
-  } else if bit_width <= 32 {
-    let stride = bit_width as usize;
-    let (chunks, rem) = encoded_ints.as_chunks::<CHUNK_8>();
-
-    // SAFETY: dst 已预先 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，完全覆盖 total_bytes。
-    unsafe {
-      let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for chunk in chunks {
-        pack_8_w17_to_w32(
-          bit_width,
-          F::int_diff_to_u64(chunk[0], base),
-          F::int_diff_to_u64(chunk[1], base),
-          F::int_diff_to_u64(chunk[2], base),
-          F::int_diff_to_u64(chunk[3], base),
-          F::int_diff_to_u64(chunk[4], base),
-          F::int_diff_to_u64(chunk[5], base),
-          F::int_diff_to_u64(chunk[6], base),
-          F::int_diff_to_u64(chunk[7], base),
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-      }
-
-      if !rem.is_empty() {
-        pack_rem(
-          rem.iter().map(|&val| F::int_diff_to_u64(val, base)),
-          bit_width,
-          dst_ptr,
-        );
-      }
-
-      dst.set_len(old_len + total_bytes);
-    }
-    return;
-  } else if bit_width <= 48 {
-    let stride = bit_width as usize;
-    let (chunks, rem) = encoded_ints.as_chunks::<CHUNK_8>();
-
-    // SAFETY: dst 已预先 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，完全覆盖 total_bytes。
-    unsafe {
-      let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      for chunk in chunks {
-        pack_8_w33_to_w48(
-          bit_width,
-          [
-            F::int_diff_to_u64(chunk[0], base),
-            F::int_diff_to_u64(chunk[1], base),
-            F::int_diff_to_u64(chunk[2], base),
-            F::int_diff_to_u64(chunk[3], base),
-            F::int_diff_to_u64(chunk[4], base),
-            F::int_diff_to_u64(chunk[5], base),
-            F::int_diff_to_u64(chunk[6], base),
-            F::int_diff_to_u64(chunk[7], base),
-          ],
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-      }
-
-      if !rem.is_empty() {
-        pack_rem(
-          rem.iter().map(|&val| F::int_diff_to_u64(val, base)),
-          bit_width,
-          dst_ptr,
-        );
-      }
-
+      pack_encoded_rem::<F>(rem, base, bit_width, dst_ptr);
       dst.set_len(old_len + total_bytes);
     }
     return;
@@ -306,23 +129,9 @@ pub fn bitpack_encoded<F: AlpFloat>(
     let mut dst_ptr = dst.as_mut_ptr().add(old_len);
     for &val in encoded_ints {
       let offset = F::int_diff_to_u64(val, base);
-      acc |= (offset as u128) << bits;
-      bits += bit_width as u32;
-      if bits >= BITS_U64 as u32 {
-        dst_ptr.cast::<u64>().write_unaligned((acc as u64).to_le());
-        dst_ptr = dst_ptr.add(BYTES_U64);
-        acc >>= BITS_U64;
-        bits -= BITS_U64 as u32;
-      }
+      push_bits_to_stream(&mut acc, &mut bits, offset, bit_width, &mut dst_ptr);
     }
-
-    while bits > 0 {
-      *dst_ptr = acc as u8;
-      dst_ptr = dst_ptr.add(1);
-      acc >>= BITS_PER_BYTE;
-      bits = bits.saturating_sub(BITS_PER_BYTE as u32);
-    }
-
+    flush_remaining_bits(acc, bits, dst_ptr);
     dst.set_len(old_len + total_bytes);
   }
 }
@@ -347,172 +156,205 @@ pub fn bitpack_fused_delta<F: AlpFloat>(
   let num_chunks = deltas_len / CHUNK_8;
   let rem_start = 1 + num_chunks * CHUNK_8;
 
-  if bit_width <= 16 {
+  if bit_width <= 48 {
     let stride = bit_width as usize;
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
       let mut raw_ptr = raw_ints.as_ptr();
       for _ in 0..num_chunks {
-        let prev = *raw_ptr;
-        let x0 = *raw_ptr.add(1);
-        let x1 = *raw_ptr.add(2);
-        let x2 = *raw_ptr.add(3);
-        let x3 = *raw_ptr.add(4);
-        let x4 = *raw_ptr.add(5);
-        let x5 = *raw_ptr.add(6);
-        let x6 = *raw_ptr.add(7);
-        let x7 = *raw_ptr.add(8);
-
-        pack_8_unrolled(
-          bit_width,
-          F::int_diff_to_u64(F::int_sub(x0, prev), min_delta),
-          F::int_diff_to_u64(F::int_sub(x1, x0), min_delta),
-          F::int_diff_to_u64(F::int_sub(x2, x1), min_delta),
-          F::int_diff_to_u64(F::int_sub(x3, x2), min_delta),
-          F::int_diff_to_u64(F::int_sub(x4, x3), min_delta),
-          F::int_diff_to_u64(F::int_sub(x5, x4), min_delta),
-          F::int_diff_to_u64(F::int_sub(x6, x5), min_delta),
-          F::int_diff_to_u64(F::int_sub(x7, x6), min_delta),
-          dst_ptr,
-        );
+        pack_chunk_8(bit_width, delta_chunk_8::<F>(raw_ptr, min_delta), dst_ptr);
         dst_ptr = dst_ptr.add(stride);
         raw_ptr = raw_ptr.add(CHUNK_8);
       }
 
-      if rem_start < raw_ints.len() {
-        let mut rem_deltas = [0u64; CHUNK_8];
-        let rem_count = raw_ints.len() - rem_start;
-        for (i, dst_val) in rem_deltas[..rem_count].iter_mut().enumerate() {
-          let curr = *raw_ints.get_unchecked(rem_start + i);
-          let p = *raw_ints.get_unchecked(rem_start + i - 1);
-          *dst_val = F::int_diff_to_u64(F::int_sub(curr, p), min_delta);
-        }
-        pack_rem(rem_deltas[..rem_count].iter().copied(), bit_width, dst_ptr);
-      }
-
+      pack_fused_delta_rem::<F>(raw_ints, rem_start, min_delta, bit_width, dst_ptr);
       dst.set_len(old_len + total_bytes);
     }
     return;
-  } else if bit_width <= 32 {
-    let stride = bit_width as usize;
+  } else if bit_width == BITS_64 {
+    // SAFETY: dst 已 reserve(total_bytes + 16)，逐元素写入 8-byte 小端序列。
     unsafe {
       let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      let mut raw_ptr = raw_ints.as_ptr();
-      for _ in 0..num_chunks {
-        let prev = *raw_ptr;
-        let x0 = *raw_ptr.add(1);
-        let x1 = *raw_ptr.add(2);
-        let x2 = *raw_ptr.add(3);
-        let x3 = *raw_ptr.add(4);
-        let x4 = *raw_ptr.add(5);
-        let x5 = *raw_ptr.add(6);
-        let x6 = *raw_ptr.add(7);
-        let x7 = *raw_ptr.add(8);
-
-        pack_8_w17_to_w32(
-          bit_width,
-          F::int_diff_to_u64(F::int_sub(x0, prev), min_delta),
-          F::int_diff_to_u64(F::int_sub(x1, x0), min_delta),
-          F::int_diff_to_u64(F::int_sub(x2, x1), min_delta),
-          F::int_diff_to_u64(F::int_sub(x3, x2), min_delta),
-          F::int_diff_to_u64(F::int_sub(x4, x3), min_delta),
-          F::int_diff_to_u64(F::int_sub(x5, x4), min_delta),
-          F::int_diff_to_u64(F::int_sub(x6, x5), min_delta),
-          F::int_diff_to_u64(F::int_sub(x7, x6), min_delta),
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-        raw_ptr = raw_ptr.add(CHUNK_8);
+      for i in 1..raw_ints.len() {
+        let delta = F::int_sub(*raw_ints.get_unchecked(i), *raw_ints.get_unchecked(i - 1));
+        let offset = F::int_diff_to_u64(delta, min_delta);
+        dst_ptr.cast::<u64>().write_unaligned(offset.to_le());
+        dst_ptr = dst_ptr.add(BYTES_U64);
       }
-
-      if rem_start < raw_ints.len() {
-        let mut rem_deltas = [0u64; CHUNK_8];
-        let rem_count = raw_ints.len() - rem_start;
-        for (i, dst_val) in rem_deltas[..rem_count].iter_mut().enumerate() {
-          let curr = *raw_ints.get_unchecked(rem_start + i);
-          let p = *raw_ints.get_unchecked(rem_start + i - 1);
-          *dst_val = F::int_diff_to_u64(F::int_sub(curr, p), min_delta);
-        }
-        pack_rem(rem_deltas[..rem_count].iter().copied(), bit_width, dst_ptr);
-      }
-
-      dst.set_len(old_len + total_bytes);
-    }
-    return;
-  } else if bit_width <= 48 {
-    let stride = bit_width as usize;
-    unsafe {
-      let mut dst_ptr = dst.as_mut_ptr().add(old_len);
-      let mut raw_ptr = raw_ints.as_ptr();
-      for _ in 0..num_chunks {
-        let prev = *raw_ptr;
-        let x0 = *raw_ptr.add(1);
-        let x1 = *raw_ptr.add(2);
-        let x2 = *raw_ptr.add(3);
-        let x3 = *raw_ptr.add(4);
-        let x4 = *raw_ptr.add(5);
-        let x5 = *raw_ptr.add(6);
-        let x6 = *raw_ptr.add(7);
-        let x7 = *raw_ptr.add(8);
-
-        pack_8_w33_to_w48(
-          bit_width,
-          [
-            F::int_diff_to_u64(F::int_sub(x0, prev), min_delta),
-            F::int_diff_to_u64(F::int_sub(x1, x0), min_delta),
-            F::int_diff_to_u64(F::int_sub(x2, x1), min_delta),
-            F::int_diff_to_u64(F::int_sub(x3, x2), min_delta),
-            F::int_diff_to_u64(F::int_sub(x4, x3), min_delta),
-            F::int_diff_to_u64(F::int_sub(x5, x4), min_delta),
-            F::int_diff_to_u64(F::int_sub(x6, x5), min_delta),
-            F::int_diff_to_u64(F::int_sub(x7, x6), min_delta),
-          ],
-          dst_ptr,
-        );
-        dst_ptr = dst_ptr.add(stride);
-        raw_ptr = raw_ptr.add(CHUNK_8);
-      }
-
-      if rem_start < raw_ints.len() {
-        let mut rem_deltas = [0u64; CHUNK_8];
-        let rem_count = raw_ints.len() - rem_start;
-        for (i, dst_val) in rem_deltas[..rem_count].iter_mut().enumerate() {
-          let curr = *raw_ints.get_unchecked(rem_start + i);
-          let p = *raw_ints.get_unchecked(rem_start + i - 1);
-          *dst_val = F::int_diff_to_u64(F::int_sub(curr, p), min_delta);
-        }
-        pack_rem(rem_deltas[..rem_count].iter().copied(), bit_width, dst_ptr);
-      }
-
       dst.set_len(old_len + total_bytes);
     }
     return;
   }
 
-  // Fallback for > 48 bits
+  // Fallback for > 48 bits (except 64)
   let mut acc: u128 = 0;
   let mut bits: u32 = 0;
   unsafe {
     let mut dst_ptr = dst.as_mut_ptr().add(old_len);
     for i in 1..raw_ints.len() {
-      let delta = F::int_sub(raw_ints[i], raw_ints[i - 1]);
+      let delta = F::int_sub(*raw_ints.get_unchecked(i), *raw_ints.get_unchecked(i - 1));
       let offset = F::int_diff_to_u64(delta, min_delta);
-      acc |= (offset as u128) << bits;
-      bits += bit_width as u32;
-      while bits >= BITS_U64 as u32 {
-        dst_ptr.cast::<u64>().write_unaligned((acc as u64).to_le());
-        dst_ptr = dst_ptr.add(BYTES_U64);
-        acc >>= BITS_U64;
-        bits -= BITS_U64 as u32;
-      }
+      push_bits_to_stream(&mut acc, &mut bits, offset, bit_width, &mut dst_ptr);
     }
+    flush_remaining_bits(acc, bits, dst_ptr);
+    dst.set_len(old_len + total_bytes);
+  }
+}
+
+/// Dispatches packing of an 8-integer chunk across width tiers (1..=16, 17..=32, 33..=48).
+/// 统一分发 8 整数块打包至不同位宽层级（零开销内联函数）
+#[inline(always)]
+unsafe fn pack_chunk_8(bit_width: u8, chunk: [u64; CHUNK_8], dst_ptr: *mut u8) {
+  unsafe {
+    if bit_width <= 16 {
+      pack_8_unrolled(bit_width, chunk, dst_ptr);
+    } else if bit_width <= 32 {
+      pack_8_w17_to_w32(bit_width, chunk, dst_ptr);
+    } else {
+      pack_8_w33_to_w48(bit_width, chunk, dst_ptr);
+    }
+  }
+}
+
+/// Pushes an integer into the 128-bit bitpacking accumulator and flushes complete 64-bit words.
+/// 将单个整数压入 128 位位打包累加器，当满 64 位时以小端字节序写入目标指针
+#[inline(always)]
+unsafe fn push_bits_to_stream(
+  acc: &mut u128,
+  bits: &mut u32,
+  val: u64,
+  bit_width: u8,
+  dst_ptr: &mut *mut u8,
+) {
+  unsafe {
+    *acc |= (val as u128) << *bits;
+    *bits += bit_width as u32;
+    if *bits >= BITS_U64 as u32 {
+      dst_ptr.cast::<u64>().write_unaligned((*acc as u64).to_le());
+      *dst_ptr = dst_ptr.add(BYTES_U64);
+      *acc >>= BITS_U64;
+      *bits -= BITS_U64 as u32;
+    }
+  }
+}
+
+/// Flushes remaining bits from accumulator into byte stream.
+/// 将累加器中剩余未写出的比特逐字节刷出至目标流
+#[inline(always)]
+unsafe fn flush_remaining_bits(mut acc: u128, mut bits: u32, mut dst_ptr: *mut u8) {
+  unsafe {
     while bits > 0 {
       *dst_ptr = acc as u8;
       dst_ptr = dst_ptr.add(1);
       acc >>= BITS_PER_BYTE;
       bits = bits.saturating_sub(BITS_PER_BYTE as u32);
     }
-    dst.set_len(old_len + total_bytes);
+  }
+}
+
+/// Applies bitmask to an 8-element u64 array.
+/// 为 8 元素 u64 数组批量施加位掩码
+#[inline(always)]
+fn mask_chunk_8(chunk: &[u64; CHUNK_8], mask: u64) -> [u64; CHUNK_8] {
+  [
+    chunk[0] & mask,
+    chunk[1] & mask,
+    chunk[2] & mask,
+    chunk[3] & mask,
+    chunk[4] & mask,
+    chunk[5] & mask,
+    chunk[6] & mask,
+    chunk[7] & mask,
+  ]
+}
+
+/// Computes differences between an 8-element integer chunk and base as u64 array.
+/// 计算 8 元素整数块相对于基准值的差值数组
+#[inline(always)]
+fn diff_chunk_8<F: AlpFloat>(chunk: &[F::Int; CHUNK_8], base: F::Int) -> [u64; CHUNK_8] {
+  [
+    F::int_diff_to_u64(chunk[0], base),
+    F::int_diff_to_u64(chunk[1], base),
+    F::int_diff_to_u64(chunk[2], base),
+    F::int_diff_to_u64(chunk[3], base),
+    F::int_diff_to_u64(chunk[4], base),
+    F::int_diff_to_u64(chunk[5], base),
+    F::int_diff_to_u64(chunk[6], base),
+    F::int_diff_to_u64(chunk[7], base),
+  ]
+}
+
+/// Computes fused 8-element delta offsets directly from raw pointer.
+/// 从原始指针就地快速计算 8 个相邻一阶差分偏移量
+#[inline(always)]
+unsafe fn delta_chunk_8<F: AlpFloat>(raw_ptr: *const F::Int, min_delta: F::Int) -> [u64; CHUNK_8] {
+  // SAFETY: 调用方保证 raw_ptr 具有至少 9 个元素的有效读取范围 (prev + 8 values)
+  unsafe {
+    let prev = *raw_ptr;
+    let x0 = *raw_ptr.add(1);
+    let x1 = *raw_ptr.add(2);
+    let x2 = *raw_ptr.add(3);
+    let x3 = *raw_ptr.add(4);
+    let x4 = *raw_ptr.add(5);
+    let x5 = *raw_ptr.add(6);
+    let x6 = *raw_ptr.add(7);
+    let x7 = *raw_ptr.add(8);
+
+    [
+      F::int_diff_to_u64(F::int_sub(x0, prev), min_delta),
+      F::int_diff_to_u64(F::int_sub(x1, x0), min_delta),
+      F::int_diff_to_u64(F::int_sub(x2, x1), min_delta),
+      F::int_diff_to_u64(F::int_sub(x3, x2), min_delta),
+      F::int_diff_to_u64(F::int_sub(x4, x3), min_delta),
+      F::int_diff_to_u64(F::int_sub(x5, x4), min_delta),
+      F::int_diff_to_u64(F::int_sub(x6, x5), min_delta),
+      F::int_diff_to_u64(F::int_sub(x7, x6), min_delta),
+    ]
+  }
+}
+
+/// Packs remainder encoded integers into destination buffer.
+/// 打包剩余的差值编码整数
+#[inline(always)]
+unsafe fn pack_encoded_rem<F: AlpFloat>(
+  rem: &[F::Int],
+  base: F::Int,
+  bit_width: u8,
+  dst_ptr: *mut u8,
+) {
+  if !rem.is_empty() {
+    unsafe {
+      pack_rem(
+        rem.iter().map(|&val| F::int_diff_to_u64(val, base)),
+        bit_width,
+        dst_ptr,
+      );
+    }
+  }
+}
+
+/// Packs remainder fused delta integers into destination buffer.
+/// 打包剩余的一阶差分整数
+#[inline(always)]
+unsafe fn pack_fused_delta_rem<F: AlpFloat>(
+  raw_ints: &[F::Int],
+  rem_start: usize,
+  min_delta: F::Int,
+  bit_width: u8,
+  dst_ptr: *mut u8,
+) {
+  if rem_start < raw_ints.len() {
+    let mut rem_deltas = [0u64; CHUNK_8];
+    let rem_count = raw_ints.len() - rem_start;
+    // SAFETY: rem_start + i < raw_ints.len()
+    unsafe {
+      for (i, dst_val) in rem_deltas[..rem_count].iter_mut().enumerate() {
+        let curr = *raw_ints.get_unchecked(rem_start + i);
+        let p = *raw_ints.get_unchecked(rem_start + i - 1);
+        *dst_val = F::int_diff_to_u64(F::int_sub(curr, p), min_delta);
+      }
+      pack_rem(rem_deltas[..rem_count].iter().copied(), bit_width, dst_ptr);
+    }
   }
 }
 
@@ -546,19 +388,8 @@ unsafe fn pack_rem(rem: impl IntoIterator<Item = u64>, bit_width: u8, mut dst_pt
 /// Unrolls 8 integers into packed bytes for any bit width from 1 to 16.
 /// 针对比特位宽 1~16 的 8 整数向量化就地循环展开打包
 #[inline(always)]
-#[allow(clippy::too_many_arguments)]
-unsafe fn pack_8_unrolled(
-  w: u8,
-  o0: u64,
-  o1: u64,
-  o2: u64,
-  o3: u64,
-  o4: u64,
-  o5: u64,
-  o6: u64,
-  o7: u64,
-  dst_ptr: *mut u8,
-) {
+unsafe fn pack_8_unrolled(w: u8, o: [u64; 8], dst_ptr: *mut u8) {
+  let [o0, o1, o2, o3, o4, o5, o6, o7] = o;
   unsafe {
     match w {
       1 => {
@@ -733,20 +564,10 @@ unsafe fn write_pair(p: u64, w2: u32, b: usize, dst_ptr: *mut u8) {
 /// Packs 8 integers of width 17..=32 into bytes.
 /// 打包位宽在 17~32 之间的 8 个整数
 #[inline(always)]
-#[allow(clippy::too_many_arguments)]
-unsafe fn pack_8_w17_to_w32(
-  w: u8,
-  o0: u64,
-  o1: u64,
-  o2: u64,
-  o3: u64,
-  o4: u64,
-  o5: u64,
-  o6: u64,
-  o7: u64,
-  dst_ptr: *mut u8,
-) {
+unsafe fn pack_8_w17_to_w32(w: u8, o: [u64; 8], dst_ptr: *mut u8) {
+  let [o0, o1, o2, o3, o4, o5, o6, o7] = o;
   let w_u32 = w as u32;
+
   let w2 = w_u32 * 2;
   let p0 = o0 | (o1 << w_u32);
   let p1 = o2 | (o3 << w_u32);

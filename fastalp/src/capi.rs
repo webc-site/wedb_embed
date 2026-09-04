@@ -1,18 +1,16 @@
 use core::{
   ptr::{copy_nonoverlapping, null_mut},
-  slice::from_raw_parts,
+  slice::{from_raw_parts, from_raw_parts_mut},
 };
 use std::{
   cell::RefCell,
   panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use crate::{Encoder, MAX_HEADER_LEN, compress_into, decompress_into};
+use crate::{Encoder, MAX_HEADER_LEN, compress_into, decompress_into_slice};
 
 thread_local! {
   static TLS_COMP_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-  static TLS_DEC_F64: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
-  static TLS_DEC_F32: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
   static TLS_ENCODER_F64: RefCell<Encoder<f64>> = const { RefCell::new(Encoder::new()) };
   static TLS_ENCODER_F32: RefCell<Encoder<f32>> = const { RefCell::new(Encoder::new()) };
 }
@@ -259,23 +257,15 @@ pub unsafe extern "C" fn fastalp_decompress_f64(
   dst: *mut f64,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || src_len == 0 {
+  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 {
     return 0;
   }
+  // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f64 可写空间且互不重叠
   let input = unsafe { from_raw_parts(src, src_len) };
-  catch_unwind(|| {
-    TLS_DEC_F64.with(|buf| {
-      let mut b = buf.borrow_mut();
-      b.clear();
-      if decompress_into::<f64>(input, &mut b).is_err() || b.len() > dst_cap {
-        return 0;
-      }
-      unsafe {
-        copy_nonoverlapping(b.as_ptr(), dst, b.len());
-      }
-      b.len()
-    })
-  })
+  let output = unsafe { from_raw_parts_mut(dst, dst_cap) };
+  catch_unwind(AssertUnwindSafe(|| {
+    decompress_into_slice::<f64>(input, output).unwrap_or(0)
+  }))
   .unwrap_or(0)
 }
 
@@ -445,23 +435,15 @@ pub unsafe extern "C" fn fastalp_decompress_f32(
   dst: *mut f32,
   dst_cap: usize,
 ) -> usize {
-  if src.is_null() || dst.is_null() || src_len == 0 {
+  if src.is_null() || dst.is_null() || src_len == 0 || dst_cap == 0 {
     return 0;
   }
+  // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f32 可写空间且互不重叠
   let input = unsafe { from_raw_parts(src, src_len) };
-  catch_unwind(|| {
-    TLS_DEC_F32.with(|buf| {
-      let mut b = buf.borrow_mut();
-      b.clear();
-      if decompress_into::<f32>(input, &mut b).is_err() || b.len() > dst_cap {
-        return 0;
-      }
-      unsafe {
-        copy_nonoverlapping(b.as_ptr(), dst, b.len());
-      }
-      b.len()
-    })
-  })
+  let output = unsafe { from_raw_parts_mut(dst, dst_cap) };
+  catch_unwind(AssertUnwindSafe(|| {
+    decompress_into_slice::<f32>(input, output).unwrap_or(0)
+  }))
   .unwrap_or(0)
 }
 

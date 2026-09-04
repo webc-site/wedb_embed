@@ -183,7 +183,15 @@ export const loadBenchData = async () => {
     const baseDatasets = content.paper_31?.datasets || [];
     const allDatasets = [...baseDatasets];
 
-    // Compute dynamic scenario metrics from real run datasets
+    // 1. Calculate Comprehensive Geometric Mean strictly across the real benchmark datasets
+    const decs = baseDatasets.map((d) => d.dec_gb_s || 0.1);
+    const encs = baseDatasets.map((d) => d.enc_gb_s || 0.1);
+    const ratios = baseDatasets.map((d) => d.ratio || 1.0);
+    content.paper_31.geomean_dec_gb_s = geomean(decs);
+    content.paper_31.geomean_enc_gb_s = geomean(encs);
+    content.paper_31.geomean_ratio = geomean(ratios);
+
+    // 2. Compute dynamic scenario metrics for Section 2 scenario cards
     for (const scKey of scenarioKeys) {
       if (!allDatasets.some((d) => d.name === scKey)) {
         const m = computeScenarioMetrics(content, scKey);
@@ -196,14 +204,6 @@ export const loadBenchData = async () => {
       }
     }
     content.paper_31.datasets = allDatasets;
-
-    // Calculate Comprehensive Geometric Mean across ALL datasets + ALL scenarios
-    const decs = allDatasets.map((d) => d.dec_gb_s || 0.1);
-    const encs = allDatasets.map((d) => d.enc_gb_s || 0.1);
-    const ratios = allDatasets.map((d) => d.ratio || 1.0);
-    content.paper_31.geomean_dec_gb_s = geomean(decs);
-    content.paper_31.geomean_enc_gb_s = geomean(encs);
-    content.paper_31.geomean_ratio = geomean(ratios);
 
     algorithms.push(content);
   }
