@@ -1,5 +1,14 @@
 ## 更新日志
 
+### v0.1.38
+
+- **清理冗余死代码与位解包内核精简**：<br>
+  从 `bitpack/unpack.rs` 中彻底移除过时的历史兼容函数 `bitunpack_core` 与 `bitunpack_core_div`，将全部解包执行路径统一收敛至泛型调度内核；清理 `bitpack/mod.rs` 中多余的导入项与 `#[allow(unused_imports)]` 属性。
+- **绝对路径规范与 Clippy 零告警对齐**：<br>
+  修复 `capi.rs` 与 `decoder/standard.rs` 中的 `-W clippy::absolute_paths` 路径规范提示，确保所有编译模式及可选特性组合下均维持 0 编译器与 Clippy 告警。
+- **文档徽标与社区链接规范化**：<br>
+  统一 README 语言切换与生态状态徽标高度为 28px；在 Twitter 旁新增官方 Bluesky 社区徽标（`@webc-site`）；同步更新基准测试对比图与 C-API 依赖版本至 v0.1.38。
+
 ### v0.1.37
 
 - **零成本抽象与解码内核统一去重重构**：<br>

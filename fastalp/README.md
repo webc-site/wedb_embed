@@ -15,7 +15,7 @@
 A pure Rust implementation of adaptive lossless floating-point compression, deeply absorbing and extending the theoretical foundation of the ACM SIGMOD 2024 Best Artifact paper [ALP](https://dl.acm.org/doi/10.1145/3626717), providing high-performance unified generic interfaces for both `f64` and `f32` streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@a7/qyVfIPRoSHiPBG3NqS6w.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Jr/n7T1AcQ8XySBEMuQ1XoA.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -55,6 +55,7 @@ A pure Rust implementation of adaptive lossless floating-point compression, deep
   - [Thread-Local Streaming Interface](#thread-local-streaming-interface)
   - [Explicit Instance Handle Interface](#explicit-instance-handle-interface)
 - [Changelog](#changelog)
+  - [v0.1.38](#v0138)
   - [v0.1.37](#v0137)
   - [v0.1.36](#v0136)
   - [v0.1.35](#v0135)
@@ -537,7 +538,7 @@ Enable the feature in `Cargo.toml`:
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.37", features = ["capi"] }
+fastalp = { version = "0.1.38", features = ["capi"] }
 ```
 
 Build standalone static libraries (`libfastalp.a`) or shared libraries (`libfastalp.so` / `libfastalp.dylib`):
@@ -575,6 +576,15 @@ Designed for worker-pool architectures and per-column isolated states:
 
 
 ## Changelog
+
+### v0.1.38
+
+- **Dead Code Elimination & Bitpack Core Cleanup**:
+  Removed deprecated legacy routines `bitunpack_core` and `bitunpack_core_div` from `bitpack/unpack.rs`, consolidating all bit-unpacking pathways on the generic dispatch kernels; cleaned up unused imports and `#[allow(unused_imports)]` attributes in `bitpack/mod.rs`.
+- **Absolute Path Linting & Full Clippy Compliance**:
+  Resolved `-W clippy::absolute_paths` warnings in `capi.rs` and `decoder/standard.rs`, ensuring 100% zero-warning compliance across all compilation profiles and optional feature sets.
+- **Documentation Badges & Social Links**:
+  Unified README badge heights to 28px across language switchers and ecosystem shields; introduced the official Bluesky badge (`@webc-site`) alongside Twitter; updated benchmark visualizations and C-API integration snippets to v0.1.38.
 
 ### v0.1.37
 
@@ -648,7 +658,7 @@ Designed for worker-pool architectures and per-column isolated states:
 纯 Rust 实现的自适应无损浮点数压缩算法库，深度吸收并拓展了 ACM SIGMOD 2024 最佳 Artifact 论文 [ALP](https://dl.acm.org/doi/10.1145/3626717) 的理论体系，通过统一泛型接口提供对 `f64` 与 `f32` 数据流的高性能压缩与解压。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Ii/xyipQrehim9Ibpw0ILWA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Tq/QKOaP1s7tQeonsvhQwRQ.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -688,6 +698,7 @@ Designed for worker-pool architectures and per-column isolated states:
   - [线程局部流式接口](#线程局部流式接口)
   - [独立实例句柄接口](#独立实例句柄接口)
 - [更新日志](#更新日志)
+  - [v0.1.38](#v0138)
   - [v0.1.37](#v0137)
   - [v0.1.36](#v0136)
   - [v0.1.35](#v0135)
@@ -1253,7 +1264,7 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 
 ```toml
 [dependencies]
-fastalp = { version = "0.1.37", features = ["capi"] }
+fastalp = { version = "0.1.38", features = ["capi"] }
 ```
 
 构建独立的静态库（`libfastalp.a`）或动态库（`libfastalp.so` / `libfastalp.dylib`）：
@@ -1291,6 +1302,15 @@ cargo build --release --features capi
 
 
 ## 更新日志
+
+### v0.1.38
+
+- **清理冗余死代码与位解包内核精简**：<br>
+  从 `bitpack/unpack.rs` 中彻底移除过时的历史兼容函数 `bitunpack_core` 与 `bitunpack_core_div`，将全部解包执行路径统一收敛至泛型调度内核；清理 `bitpack/mod.rs` 中多余的导入项与 `#[allow(unused_imports)]` 属性。
+- **绝对路径规范与 Clippy 零告警对齐**：<br>
+  修复 `capi.rs` 与 `decoder/standard.rs` 中的 `-W clippy::absolute_paths` 路径规范提示，确保所有编译模式及可选特性组合下均维持 0 编译器与 Clippy 告警。
+- **文档徽标与社区链接规范化**：<br>
+  统一 README 语言切换与生态状态徽标高度为 28px；在 Twitter 旁新增官方 Bluesky 社区徽标（`@webc-site`）；同步更新基准测试对比图与 C-API 依赖版本至 v0.1.38。
 
 ### v0.1.37
 

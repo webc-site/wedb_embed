@@ -1,5 +1,14 @@
 ## Changelog
 
+### v0.1.38
+
+- **Dead Code Elimination & Bitpack Core Cleanup**:
+  Removed deprecated legacy routines `bitunpack_core` and `bitunpack_core_div` from `bitpack/unpack.rs`, consolidating all bit-unpacking pathways on the generic dispatch kernels; cleaned up unused imports and `#[allow(unused_imports)]` attributes in `bitpack/mod.rs`.
+- **Absolute Path Linting & Full Clippy Compliance**:
+  Resolved `-W clippy::absolute_paths` warnings in `capi.rs` and `decoder/standard.rs`, ensuring 100% zero-warning compliance across all compilation profiles and optional feature sets.
+- **Documentation Badges & Social Links**:
+  Unified README badge heights to 28px across language switchers and ecosystem shields; introduced the official Bluesky badge (`@webc-site`) alongside Twitter; updated benchmark visualizations and C-API integration snippets to v0.1.38.
+
 ### v0.1.37
 
 - **Zero-Cost Decoder Trait & Architectural Deduplication**:
