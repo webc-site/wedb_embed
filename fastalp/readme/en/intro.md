@@ -3,7 +3,7 @@
 A pure Rust implementation of adaptive lossless floating-point compression based on the ALP algorithm, providing generic interfaces for both `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@V0/_GKJTTDJyt-4ptVThrlQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@em/CqukPak3hYNl8GkgfRhQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>

@@ -1,27 +1,23 @@
-use core::slice::from_raw_parts_mut;
-
 use crate::{
-  bitpack::{bitunpack_slice, bitunpack_slice_div, packed_byte_size},
+  bitpack::{bitunpack_core, bitunpack_core_div, packed_byte_size},
   error::{Error, Result},
   float::AlpFloat,
   params::AlpParams,
 };
 
-/// Decodes a standard Frame-of-Reference (FOR) ALP compressed block into `dst` slice.
-/// 解压标准基准值对齐（FOR）ALP 数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
-pub fn decode_standard_slice<F: AlpFloat>(
+/// Decodes a standard Frame-of-Reference (FOR) ALP compressed block directly to raw pointer.
+/// 解压标准基准值对齐（FOR）ALP 数据块至裸指针内存 (src 为头部之后的有效载荷，零堆分配)
+///
+/// # Safety
+///
+/// `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
+#[inline(always)]
+pub unsafe fn decode_standard_raw<F: AlpFloat>(
   src: &[u8],
   count: usize,
   params: AlpParams,
-  dst: &mut [F],
+  dst_ptr: *mut F,
 ) -> Result<()> {
-  if dst.len() < count {
-    return Err(Error::BufferTooSmall {
-      needed: count,
-      available: dst.len(),
-    });
-  }
-  let dst = &mut dst[..count];
   let mut cursor = 0;
 
   if src.len() < cursor + F::BASE_SIZE {
@@ -41,7 +37,11 @@ pub fn decode_standard_slice<F: AlpFloat>(
     } else {
       F::decode_from_int(base, fac_int, frac_flt)
     };
-    dst.fill(val);
+    for i in 0..count {
+      unsafe {
+        *dst_ptr.add(i) = val;
+      }
+    }
   } else {
     let packed_len = packed_byte_size(count, params.bit_width);
     if src.len() < cursor + packed_len {
@@ -52,32 +52,56 @@ pub fn decode_standard_slice<F: AlpFloat>(
     }
 
     if params.use_div {
-      bitunpack_slice_div(
-        &src[cursor..cursor + packed_len],
-        count,
-        params.bit_width,
-        base,
-        exp_factor,
-        dst,
-      )?;
+      unsafe {
+        bitunpack_core_div(
+          &src[cursor..cursor + packed_len],
+          count,
+          params.bit_width,
+          base,
+          exp_factor,
+          dst_ptr,
+        );
+      }
     } else {
-      bitunpack_slice(
-        &src[cursor..cursor + packed_len],
-        count,
-        params.bit_width,
-        base,
-        fac_int,
-        frac_flt,
-        dst,
-      )?;
+      unsafe {
+        bitunpack_core(
+          &src[cursor..cursor + packed_len],
+          count,
+          params.bit_width,
+          base,
+          fac_int,
+          frac_flt,
+          dst_ptr,
+        );
+      }
     }
     cursor += packed_len;
   }
 
   // 恢复异常值（Patch 字典）
-  super::patch_exceptions(&src[cursor..], count, dst)?;
+  unsafe {
+    super::patch_exceptions(&src[cursor..], count, dst_ptr)?;
+  }
 
   Ok(())
+}
+
+/// Decodes a standard Frame-of-Reference (FOR) ALP compressed block into `dst` slice.
+/// 解压标准基准值对齐（FOR）ALP 数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
+#[inline(always)]
+pub fn decode_standard_slice<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  params: AlpParams,
+  dst: &mut [F],
+) -> Result<()> {
+  if dst.len() < count {
+    return Err(Error::BufferTooSmall {
+      needed: count,
+      available: dst.len(),
+    });
+  }
+  unsafe { decode_standard_raw(src, count, params, dst.as_mut_ptr()) }
 }
 
 /// Decodes a standard Frame-of-Reference (FOR) ALP compressed block into `dst`.
@@ -90,11 +114,8 @@ pub fn decode_standard<F: AlpFloat>(
 ) -> Result<()> {
   let old_len = dst.len();
   dst.reserve(count);
-  // SAFETY: dst 已预留 count 个空间，from_raw_parts_mut 构造切片作为输出缓冲区供解码内核写入；
-  // 解码成功后严格安全更新有效长度。
-  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
-  decode_standard_slice(src, count, params, slice)?;
   unsafe {
+    decode_standard_raw(src, count, params, dst.as_mut_ptr().add(old_len))?;
     dst.set_len(old_len + count);
   }
   Ok(())

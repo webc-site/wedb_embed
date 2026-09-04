@@ -12,7 +12,7 @@
 A pure Rust implementation of adaptive lossless floating-point compression based on the ALP algorithm, providing generic interfaces for both `f64` and `f32` data streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@V0/_GKJTTDJyt-4ptVThrlQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@em/CqukPak3hYNl8GkgfRhQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -49,6 +49,7 @@ A pure Rust implementation of adaptive lossless floating-point compression based
   - [Thread-Local Streaming Interface](#thread-local-streaming-interface)
   - [Explicit Instance Handle Interface](#explicit-instance-handle-interface)
 - [Changelog](#changelog)
+  - [v0.1.35](#v0135)
   - [v0.1.34](#v0134)
   - [v0.1.33](#v0133)
   - [v0.1.32](#v0132)
@@ -531,6 +532,15 @@ Designed for worker-pool architectures and per-column isolated states:
 
 ## Changelog
 
+### v0.1.35
+
+- **Raw Pointer Decompression Kernel & Soundness Guarantee**:
+  Introduced `decompress_into_raw`, `decode_standard_raw`, and `decode_delta_raw` to write directly into target raw pointers, avoiding constructing slice references over uninitialized memory; seamlessly supports uninitialized buffers from C callers via C-API.
+- **Single-Pass Exception Patching**:
+  Refactored `patch_exceptions` using `chunks_exact` to eliminate repeated slice recalculation and bounds checks in the inner loop.
+- **Dead Code Elimination & Hardware-Accelerated Rounding**:
+  Removed legacy `MAGIC_NUMBER` simulation constants, adopting `round_ties_even()` with direct mapping to SSE4.1/AVX and ARM64 instructions, ensuring 100% bit-exact lossless roundtrip.
+
 ### v0.1.34
 
 - **Strict Code Standards & Zero Compiler Warnings**:
@@ -574,7 +584,7 @@ Designed for worker-pool architectures and per-column isolated states:
 纯 Rust 实现的自适应无损浮点数压缩 ALP 算法库，通过统一泛型接口支持 `f64` 与 `f32` 数据流。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@JJ/pZoDTMGyZI2sG5DQ-HbA.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@39/OgtPxlbZQuKZOEabn_rg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -611,6 +621,7 @@ Designed for worker-pool architectures and per-column isolated states:
   - [线程局部流式接口](#线程局部流式接口)
   - [独立实例句柄接口](#独立实例句柄接口)
 - [更新日志](#更新日志)
+  - [v0.1.35](#v0135)
   - [v0.1.34](#v0134)
   - [v0.1.33](#v0133)
   - [v0.1.32](#v0132)
@@ -1176,6 +1187,15 @@ cargo build --release --features capi
 
 
 ## 更新日志
+
+### v0.1.35
+
+- **解码裸指针内核与内存 Soundness 彻底保障**：
+  引入 `decompress_into_raw`、`decode_standard_raw` 与 `decode_delta_raw`，解码时直接向目标裸指针写出还原浮点数据，并在元素完全写入后安全更新长度，彻底杜绝在未初始化内存上构造切片引用的未定义行为隐患；C API 解码接口无缝对接 C 语言调用方分配的未初始化缓冲区。
+- **异常值补丁单遍流式迭代**：
+  重构 `patch_exceptions`，改用 `chunks_exact` 替代循环内多次切片重算与隐式越界检查，直接通过裸指针更新异常槽位。
+- **清理冗余死代码与硬件舍入指令对齐**：
+  移除过时的模拟舍入魔数 `MAGIC_NUMBER`，全面基于标准库 `round_ties_even()`（硬件级 SSE4.1/AVX 与 ARM64 指令加速），保障 100% 浮点无损往返精度与极致吞吐。
 
 ### v0.1.34
 

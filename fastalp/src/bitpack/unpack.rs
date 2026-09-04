@@ -1490,7 +1490,7 @@ pub fn bitunpack_slice<F: AlpFloat>(
 }
 
 /// Generic zero-copy direct bit unpacking and floating-point reconstruction into `dst`.
-/// 通用直接解包并重构浮点数据至 `dst`（委托切片内核，消除冗余校验）
+/// 通用直接解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
 pub fn bitunpack_into<F: AlpFloat>(
   src: &[u8],
@@ -1504,12 +1504,31 @@ pub fn bitunpack_into<F: AlpFloat>(
   if count == 0 {
     return Ok(());
   }
+  let required_bytes = packed_byte_size(count, bit_width);
+  if src.len() < required_bytes {
+    return Err(Error::UnexpectedEof {
+      needed: required_bytes,
+      available: src.len(),
+    });
+  }
   let old_len = dst.len();
+  if bit_width == 0 {
+    let val = F::decode_from_offset(0, base, fac_int, frac_flt);
+    dst.resize(old_len + count, val);
+    return Ok(());
+  }
   dst.reserve(count);
-  // SAFETY: dst 已预分配 count 空间，通过切片零堆分配安全解包
-  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
-  bitunpack_slice(src, count, bit_width, base, fac_int, frac_flt, slice)?;
+  // SAFETY: 上方已校验可用字节充足，直接写入连续裸指针并在完成后更新长度
   unsafe {
+    bitunpack_core(
+      src,
+      count,
+      bit_width,
+      base,
+      fac_int,
+      frac_flt,
+      dst.as_mut_ptr().add(old_len),
+    );
     dst.set_len(old_len + count);
   }
   Ok(())
@@ -1953,7 +1972,7 @@ pub fn bitunpack_slice_div<F: AlpFloat>(
 }
 
 /// Generic zero-copy direct bit unpacking and decimal division floating-point reconstruction into `dst`.
-/// 通用直接解包并采用十进制除法重构浮点数据至 `dst`（委托切片内核，消除冗余校验）
+/// 通用直接解包并采用十进制除法重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
 pub fn bitunpack_into_div<F: AlpFloat>(
   src: &[u8],
@@ -1966,12 +1985,30 @@ pub fn bitunpack_into_div<F: AlpFloat>(
   if count == 0 {
     return Ok(());
   }
+  let required_bytes = packed_byte_size(count, bit_width);
+  if src.len() < required_bytes {
+    return Err(Error::UnexpectedEof {
+      needed: required_bytes,
+      available: src.len(),
+    });
+  }
   let old_len = dst.len();
+  if bit_width == 0 {
+    let val = F::decode_from_offset_div(0, base, exp_factor);
+    dst.resize(old_len + count, val);
+    return Ok(());
+  }
   dst.reserve(count);
-  // SAFETY: dst 已预分配 count 空间，通过切片零堆分配安全解包
-  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
-  bitunpack_slice_div(src, count, bit_width, base, exp_factor, slice)?;
+  // SAFETY: 上方已校验可用字节充足，直接写入连续裸指针并在完成后更新长度
   unsafe {
+    bitunpack_core_div(
+      src,
+      count,
+      bit_width,
+      base,
+      exp_factor,
+      dst.as_mut_ptr().add(old_len),
+    );
     dst.set_len(old_len + count);
   }
   Ok(())

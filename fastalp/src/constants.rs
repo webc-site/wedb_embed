@@ -8,14 +8,6 @@ pub const BITS_PER_BYTE: usize = 8;
 /// u64 比特数常量
 pub const BITS_U64: usize = 64;
 
-/// Byte size of u16.
-/// u16 字节大小
-pub const BYTES_U16: usize = size_of::<u16>();
-
-/// Byte size of u32.
-/// u32 字节大小
-pub const BYTES_U32: usize = size_of::<u32>();
-
 /// Byte size of u64.
 /// u64 字节大小
 pub const BYTES_U64: usize = size_of::<u64>();
@@ -75,14 +67,6 @@ pub const MAX_FAC_F64: u8 = 8;
 /// Maximum factor exponent for f32.
 /// f32 最大因子指数
 pub const MAX_FAC_F32: u8 = 4;
-
-/// Magic rounding number for fast double precision float-to-int conversion (1.5 * 2^52).
-/// f64 快速舍入整型魔数 (1.5 * 2^52)
-pub const MAGIC_NUMBER_F64: f64 = 6755399441055744.0;
-
-/// Magic rounding number for fast single precision float-to-int conversion (1.5 * 2^23).
-/// f32 快速舍入整型魔数 (1.5 * 2^23)
-pub const MAGIC_NUMBER_F32: f32 = 12582912.0;
 
 /// Maximum encodable finite threshold for f64.
 /// f64 编码上限阈值

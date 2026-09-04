@@ -1,13 +1,13 @@
 use core::{
   ptr::{copy_nonoverlapping, null_mut},
-  slice::{from_raw_parts, from_raw_parts_mut},
+  slice::from_raw_parts,
 };
 use std::{
   cell::RefCell,
   panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use crate::{Encoder, MAX_HEADER_LEN, compress_into, decompress_into_slice};
+use crate::{Encoder, MAX_HEADER_LEN, compress_into, decompress_into_raw};
 
 thread_local! {
   static TLS_COMP_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -262,9 +262,8 @@ pub unsafe extern "C" fn fastalp_decompress_f64(
   }
   // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f64 可写空间且互不重叠
   let input = unsafe { from_raw_parts(src, src_len) };
-  let output = unsafe { from_raw_parts_mut(dst, dst_cap) };
-  catch_unwind(AssertUnwindSafe(|| {
-    decompress_into_slice::<f64>(input, output).unwrap_or(0)
+  catch_unwind(AssertUnwindSafe(|| unsafe {
+    decompress_into_raw::<f64>(input, dst, dst_cap).unwrap_or(0)
   }))
   .unwrap_or(0)
 }
@@ -440,9 +439,8 @@ pub unsafe extern "C" fn fastalp_decompress_f32(
   }
   // SAFETY: 调用方保证 src 具备至少 src_len 字节可读内存，dst 具备至少 dst_cap 个 f32 可写空间且互不重叠
   let input = unsafe { from_raw_parts(src, src_len) };
-  let output = unsafe { from_raw_parts_mut(dst, dst_cap) };
-  catch_unwind(AssertUnwindSafe(|| {
-    decompress_into_slice::<f32>(input, output).unwrap_or(0)
+  catch_unwind(AssertUnwindSafe(|| unsafe {
+    decompress_into_raw::<f32>(input, dst, dst_cap).unwrap_or(0)
   }))
   .unwrap_or(0)
 }

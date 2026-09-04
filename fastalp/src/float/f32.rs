@@ -3,8 +3,8 @@ use std::{mem::size_of, ptr::read_unaligned};
 use super::AlpFloat;
 use crate::constants::{
   BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F32, EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F32, FACT_ARR_F32,
-  FRAC_ARR_F32, MAGIC_NUMBER_F32, MAX_EXPONENT_F32, MAX_FAC_F32, TYPE_F32, TYPE_F32_DEC,
-  TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F32_RAW,
+  FRAC_ARR_F32, MAX_EXPONENT_F32, MAX_FAC_F32, TYPE_F32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA,
+  TYPE_F32_DELTA, TYPE_F32_RAW,
 };
 
 impl AlpFloat for f32 {
@@ -19,7 +19,6 @@ impl AlpFloat for f32 {
   const MAX_EXPONENT: u8 = MAX_EXPONENT_F32;
   const MAX_FAC: u8 = MAX_FAC_F32;
   const MAX_BIT_WIDTH: u8 = u32::BITS as u8;
-  const MAGIC_NUMBER: Self = MAGIC_NUMBER_F32;
   const ENCODING_UPPER_LIMIT: Self = ENCODING_UPPER_LIMIT_F32;
   const EXC_ENTRY_SIZE: usize = EXC_POS_LEN + size_of::<Self::RawBits>();
   const EXC_ENTRY_SIZE_U32: usize = EXC_POS_LEN_U32 + size_of::<Self::RawBits>();

@@ -1,5 +1,14 @@
 ## Changelog
 
+### v0.1.35
+
+- **Raw Pointer Decompression Kernel & Soundness Guarantee**:
+  Introduced `decompress_into_raw`, `decode_standard_raw`, and `decode_delta_raw` to write directly into target raw pointers, avoiding constructing slice references over uninitialized memory; seamlessly supports uninitialized buffers from C callers via C-API.
+- **Single-Pass Exception Patching**:
+  Refactored `patch_exceptions` using `chunks_exact` to eliminate repeated slice recalculation and bounds checks in the inner loop.
+- **Dead Code Elimination & Hardware-Accelerated Rounding**:
+  Removed legacy `MAGIC_NUMBER` simulation constants, adopting `round_ties_even()` with direct mapping to SSE4.1/AVX and ARM64 instructions, ensuring 100% bit-exact lossless roundtrip.
+
 ### v0.1.34
 
 - **Strict Code Standards & Zero Compiler Warnings**:

@@ -1,5 +1,3 @@
-use core::slice::from_raw_parts_mut;
-
 use crate::{
   bitpack::{bitunpack_u64_slice, packed_byte_size},
   error::{Error, Result},
@@ -7,21 +5,19 @@ use crate::{
   params::AlpParams,
 };
 
-/// Decodes an ALP Delta differential compressed block into `dst` slice.
-/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
-pub fn decode_delta_slice<F: AlpFloat>(
+/// Decodes an ALP Delta differential compressed block directly to raw pointer.
+/// 解压 ALP Delta 一阶差分压缩数据块至裸指针内存 (src 为头部之后的有效载荷，零堆分配)
+///
+/// # Safety
+///
+/// `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
+#[inline(always)]
+pub unsafe fn decode_delta_raw<F: AlpFloat>(
   src: &[u8],
   count: usize,
   params: AlpParams,
-  dst: &mut [F],
+  dst_ptr: *mut F,
 ) -> Result<()> {
-  if dst.len() < count {
-    return Err(Error::BufferTooSmall {
-      needed: count,
-      available: dst.len(),
-    });
-  }
-  let dst = &mut dst[..count];
   let mut cursor = 0;
 
   if src.len() < cursor + F::BASE_SIZE * 2 {
@@ -47,11 +43,13 @@ pub fn decode_delta_slice<F: AlpFloat>(
     } else {
       F::decode_from_int(first, fac_int, frac_flt)
     };
-    dst[0] = val;
+    unsafe {
+      *dst_ptr = val;
+    }
   } else if params.bit_width == 0 {
     // SAFETY: dst 已具备 count 个空间，使用底层指针单遍写入，消除双重写零开销
     unsafe {
-      let ptr = dst.as_mut_ptr();
+      let ptr = dst_ptr;
       let mut curr = first;
       macro_rules! reconstruct_unrolled {
         ($dec_expr:expr) => {{
@@ -99,7 +97,7 @@ pub fn decode_delta_slice<F: AlpFloat>(
 
     // SAFETY: dst 已具备 count 个空间，按 1024 分批流式解包写入 ptr
     unsafe {
-      let ptr = dst.as_mut_ptr();
+      let ptr = dst_ptr;
       let mut curr = first;
       let packed_slice = &src[cursor..cursor + packed_len];
 
@@ -142,9 +140,29 @@ pub fn decode_delta_slice<F: AlpFloat>(
   }
 
   // 恢复异常值（Patch 字典）
-  super::patch_exceptions(&src[cursor..], count, dst)?;
+  unsafe {
+    super::patch_exceptions(&src[cursor..], count, dst_ptr)?;
+  }
 
   Ok(())
+}
+
+/// Decodes an ALP Delta differential compressed block into `dst` slice.
+/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
+#[inline(always)]
+pub fn decode_delta_slice<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  params: AlpParams,
+  dst: &mut [F],
+) -> Result<()> {
+  if dst.len() < count {
+    return Err(Error::BufferTooSmall {
+      needed: count,
+      available: dst.len(),
+    });
+  }
+  unsafe { decode_delta_raw(src, count, params, dst.as_mut_ptr()) }
 }
 
 /// Decodes an ALP Delta differential compressed block into `dst`.
@@ -157,11 +175,8 @@ pub fn decode_delta<F: AlpFloat>(
 ) -> Result<()> {
   let old_len = dst.len();
   dst.reserve(count);
-  // SAFETY: dst 已预留 count 个空间，from_raw_parts_mut 构造切片作为输出缓冲区供解码内核写入；
-  // 解码成功后严格安全更新有效长度。
-  let slice = unsafe { from_raw_parts_mut(dst.as_mut_ptr().add(old_len), count) };
-  decode_delta_slice(src, count, params, slice)?;
   unsafe {
+    decode_delta_raw(src, count, params, dst.as_mut_ptr().add(old_len))?;
     dst.set_len(old_len + count);
   }
   Ok(())
