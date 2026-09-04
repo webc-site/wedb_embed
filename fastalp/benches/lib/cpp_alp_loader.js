@@ -16,14 +16,20 @@ export const loadCppAlpResult = async () => {
   let totalCompressed = 0;
   let sumDec = 0;
   let sumEnc = 0;
+  let sumEncKern = 0;
 
   for (let i = 1; i < lines.length; i++) {
     const parts = lines[i].split(",");
-    if (parts.length < 8) continue;
+    if (parts.length < 10) continue;
     const name = parts[1];
     const bitsPerVal = parseFloat(parts[3]) || 25.0;
-    const decGbS = parseFloat(parts[6]) || 20.0;
-    const encGbS = parseFloat(parts[7]) || 6.0;
+
+    // C++ 采样端到端压缩速度 (含采样分析) -> 与 fastalp compress_into 端到端动态采样评测完全对齐
+    const encSampledGbS = parseFloat(parts[5]) || 0.85;
+    // C++ 纯内核压缩速度 (不含采样分析)
+    const encKernelGbS = parseFloat(parts[7]) || 6.0;
+    // C++ 解压缩速度 (第 9 列 cpp_dec，之前误读为第 6 列 fastalp_enc_sampled)
+    const decGbS = parseFloat(parts[9]) || 20.0;
 
     const rawBytes = 1024 * 8;
     const compBytes = Math.round((1024 * bitsPerVal) / 8);
@@ -32,7 +38,8 @@ export const loadCppAlpResult = async () => {
     totalRaw += rawBytes;
     totalCompressed += compBytes;
     sumDec += decGbS;
-    sumEnc += encGbS;
+    sumEnc += encSampledGbS;
+    sumEncKern += encKernelGbS;
 
     datasets.push({
       name,
@@ -40,7 +47,9 @@ export const loadCppAlpResult = async () => {
       compressed_bytes: compBytes,
       ratio,
       bits_per_val: bitsPerVal,
-      enc_gb_s: encGbS,
+      enc_gb_s: encSampledGbS,
+      enc_sampled_gb_s: encSampledGbS,
+      enc_kernel_gb_s: encKernelGbS,
       dec_gb_s: decGbS,
     });
   }
@@ -60,6 +69,7 @@ export const loadCppAlpResult = async () => {
       ratio: totalRaw / totalCompressed,
       bits_per_val: (totalCompressed * 8) / (totalRaw / 8),
       avg_enc_gb_s: sumEnc / n,
+      avg_enc_kernel_gb_s: sumEncKern / n,
       avg_dec_gb_s: sumDec / n,
       datasets,
     },
@@ -71,6 +81,7 @@ export const loadCppAlpResult = async () => {
             ratio: sensorSc.ratio,
             bits_per_val: sensorSc.bits_per_val,
             enc_gb_s: sensorSc.enc_gb_s,
+            enc_kernel_gb_s: sensorSc.enc_kernel_gb_s,
             dec_gb_s: sensorSc.dec_gb_s,
           }
         : {
@@ -79,7 +90,8 @@ export const loadCppAlpResult = async () => {
             ratio: 7.8618,
             bits_per_val: 8.14,
             enc_gb_s: 0.84,
-            dec_gb_s: 21.85,
+            enc_kernel_gb_s: 6.48,
+            dec_gb_s: 22.61,
           },
       ramp_1024: rampSc
         ? {
@@ -88,6 +100,7 @@ export const loadCppAlpResult = async () => {
             ratio: rampSc.ratio,
             bits_per_val: rampSc.bits_per_val,
             enc_gb_s: rampSc.enc_gb_s,
+            enc_kernel_gb_s: rampSc.enc_kernel_gb_s,
             dec_gb_s: rampSc.dec_gb_s,
           }
         : {
@@ -95,8 +108,9 @@ export const loadCppAlpResult = async () => {
             compressed_bytes: 6284,
             ratio: 1.3036,
             bits_per_val: 49.09,
-            enc_gb_s: 0.79,
-            dec_gb_s: 14.74,
+            enc_gb_s: 0.88,
+            enc_kernel_gb_s: 5.17,
+            dec_gb_s: 16.49,
           },
       constant_1024: steadySc
         ? {
@@ -105,6 +119,7 @@ export const loadCppAlpResult = async () => {
             ratio: steadySc.ratio,
             bits_per_val: steadySc.bits_per_val,
             enc_gb_s: steadySc.enc_gb_s,
+            enc_kernel_gb_s: steadySc.enc_kernel_gb_s,
             dec_gb_s: steadySc.dec_gb_s,
           }
         : {
@@ -112,8 +127,9 @@ export const loadCppAlpResult = async () => {
             compressed_bytes: 12,
             ratio: 682.6667,
             bits_per_val: 0.09,
-            enc_gb_s: 0.61,
-            dec_gb_s: 23.36,
+            enc_gb_s: 0.94,
+            enc_kernel_gb_s: 7.26,
+            dec_gb_s: 24.02,
           },
     },
   };

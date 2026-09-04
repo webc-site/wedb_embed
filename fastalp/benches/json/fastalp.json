@@ -4,20 +4,20 @@
   "category": "specialized_float",
   "paper_31": {
     "total_raw_bytes": 303104,
-    "total_compressed_bytes": 104953,
-    "ratio": 2.8880,
-    "bits_per_val": 22.16,
-    "avg_enc_gb_s": 4.81,
-    "avg_dec_gb_s": 27.80,
+    "total_compressed_bytes": 104465,
+    "ratio": 2.9015,
+    "bits_per_val": 22.06,
+    "avg_enc_gb_s": 4.67,
+    "avg_dec_gb_s": 29.11,
     "datasets": [
       {
         "name": "air_sensor_f",
         "raw_bytes": 8192,
-        "compressed_bytes": 8193,
-        "ratio": 0.9999,
-        "bits_per_val": 64.01,
-        "enc_gb_s": 3.59,
-        "dec_gb_s": 42.73
+        "compressed_bytes": 7705,
+        "ratio": 1.0632,
+        "bits_per_val": 60.20,
+        "enc_gb_s": 2.15,
+        "dec_gb_s": 12.76
       },
       {
         "name": "arade4",
@@ -25,8 +25,8 @@
         "compressed_bytes": 3083,
         "ratio": 2.6572,
         "bits_per_val": 24.09,
-        "enc_gb_s": 2.82,
-        "dec_gb_s": 18.13
+        "enc_gb_s": 2.87,
+        "dec_gb_s": 20.77
       },
       {
         "name": "basel_temp_f",
@@ -34,8 +34,8 @@
         "compressed_bytes": 3968,
         "ratio": 2.0645,
         "bits_per_val": 31.00,
-        "enc_gb_s": 0.89,
-        "dec_gb_s": 10.76
+        "enc_gb_s": 1.26,
+        "dec_gb_s": 13.24
       },
       {
         "name": "basel_wind_f",
@@ -43,8 +43,8 @@
         "compressed_bytes": 3494,
         "ratio": 2.3446,
         "bits_per_val": 27.30,
-        "enc_gb_s": 2.43,
-        "dec_gb_s": 9.81
+        "enc_gb_s": 2.37,
+        "dec_gb_s": 13.08
       },
       {
         "name": "bird_migration_f",
@@ -52,8 +52,8 @@
         "compressed_bytes": 2071,
         "ratio": 3.9556,
         "bits_per_val": 16.18,
-        "enc_gb_s": 2.03,
-        "dec_gb_s": 24.99
+        "enc_gb_s": 2.13,
+        "dec_gb_s": 47.97
       },
       {
         "name": "bitcoin_f",
@@ -61,8 +61,8 @@
         "compressed_bytes": 7819,
         "ratio": 1.0477,
         "bits_per_val": 61.09,
-        "enc_gb_s": 2.22,
-        "dec_gb_s": 14.20
+        "enc_gb_s": 2.19,
+        "dec_gb_s": 12.57
       },
       {
         "name": "bitcoin_transactions_f",
@@ -70,8 +70,8 @@
         "compressed_bytes": 4235,
         "ratio": 1.9344,
         "bits_per_val": 33.09,
-        "enc_gb_s": 2.60,
-        "dec_gb_s": 19.43
+        "enc_gb_s": 2.61,
+        "dec_gb_s": 21.17
       },
       {
         "name": "city_temperature_f",
@@ -79,8 +79,8 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 5.85,
-        "dec_gb_s": 17.48
+        "enc_gb_s": 6.34,
+        "dec_gb_s": 19.38
       },
       {
         "name": "cms1",
@@ -88,8 +88,8 @@
         "compressed_bytes": 8193,
         "ratio": 0.9999,
         "bits_per_val": 64.01,
-        "enc_gb_s": 1.18,
-        "dec_gb_s": 59.61
+        "enc_gb_s": 1.17,
+        "dec_gb_s": 42.81
       },
       {
         "name": "cms25",
@@ -97,8 +97,8 @@
         "compressed_bytes": 5387,
         "ratio": 1.5207,
         "bits_per_val": 42.09,
-        "enc_gb_s": 2.73,
-        "dec_gb_s": 18.39
+        "enc_gb_s": 2.71,
+        "dec_gb_s": 20.82
       },
       {
         "name": "cms9",
@@ -106,8 +106,8 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 2.96,
-        "dec_gb_s": 16.27
+        "enc_gb_s": 3.02,
+        "dec_gb_s": 17.17
       },
       {
         "name": "food_prices",
@@ -115,8 +115,8 @@
         "compressed_bytes": 2955,
         "ratio": 2.7723,
         "bits_per_val": 23.09,
-        "enc_gb_s": 2.36,
-        "dec_gb_s": 18.19
+        "enc_gb_s": 2.45,
+        "dec_gb_s": 20.59
       },
       {
         "name": "gov10",
@@ -124,8 +124,8 @@
         "compressed_bytes": 3851,
         "ratio": 2.1272,
         "bits_per_val": 30.09,
-        "enc_gb_s": 2.40,
-        "dec_gb_s": 18.89
+        "enc_gb_s": 2.34,
+        "dec_gb_s": 20.58
       },
       {
         "name": "gov26",
@@ -133,8 +133,8 @@
         "compressed_bytes": 11,
         "ratio": 744.7273,
         "bits_per_val": 0.09,
-        "enc_gb_s": 23.92,
-        "dec_gb_s": 60.38
+        "enc_gb_s": 24.09,
+        "dec_gb_s": 57.09
       },
       {
         "name": "gov30",
@@ -142,8 +142,8 @@
         "compressed_bytes": 53,
         "ratio": 154.5660,
         "bits_per_val": 0.41,
-        "enc_gb_s": 2.77,
-        "dec_gb_s": 57.47
+        "enc_gb_s": 2.67,
+        "dec_gb_s": 51.90
       },
       {
         "name": "gov31",
@@ -151,8 +151,8 @@
         "compressed_bytes": 23,
         "ratio": 356.1739,
         "bits_per_val": 0.18,
-        "enc_gb_s": 7.38,
-        "dec_gb_s": 57.96
+        "enc_gb_s": 7.05,
+        "dec_gb_s": 52.82
       },
       {
         "name": "gov40",
@@ -161,7 +161,7 @@
         "ratio": 190.5116,
         "bits_per_val": 0.34,
         "enc_gb_s": 2.75,
-        "dec_gb_s": 43.96
+        "dec_gb_s": 45.73
       },
       {
         "name": "medicare1",
@@ -169,8 +169,8 @@
         "compressed_bytes": 8193,
         "ratio": 0.9999,
         "bits_per_val": 64.01,
-        "enc_gb_s": 1.43,
-        "dec_gb_s": 59.78
+        "enc_gb_s": 1.49,
+        "dec_gb_s": 59.01
       },
       {
         "name": "medicare9",
@@ -178,8 +178,8 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 2.63,
-        "dec_gb_s": 16.25
+        "enc_gb_s": 2.64,
+        "dec_gb_s": 15.99
       },
       {
         "name": "neon_air_pressure",
@@ -187,8 +187,8 @@
         "compressed_bytes": 1298,
         "ratio": 6.3112,
         "bits_per_val": 10.14,
-        "enc_gb_s": 2.65,
-        "dec_gb_s": 10.29
+        "enc_gb_s": 2.69,
+        "dec_gb_s": 13.23
       },
       {
         "name": "neon_bio_temp_c",
@@ -196,8 +196,8 @@
         "compressed_bytes": 1291,
         "ratio": 6.3455,
         "bits_per_val": 10.09,
-        "enc_gb_s": 6.38,
-        "dec_gb_s": 18.09
+        "enc_gb_s": 7.04,
+        "dec_gb_s": 20.06
       },
       {
         "name": "neon_dew_point_temp",
@@ -205,8 +205,8 @@
         "compressed_bytes": 1170,
         "ratio": 7.0017,
         "bits_per_val": 9.14,
-        "enc_gb_s": 4.93,
-        "dec_gb_s": 10.03
+        "enc_gb_s": 5.40,
+        "dec_gb_s": 14.34
       },
       {
         "name": "neon_pm10_dust",
@@ -214,8 +214,8 @@
         "compressed_bytes": 1035,
         "ratio": 7.9150,
         "bits_per_val": 8.09,
-        "enc_gb_s": 6.09,
-        "dec_gb_s": 24.19
+        "enc_gb_s": 6.71,
+        "dec_gb_s": 27.85
       },
       {
         "name": "neon_wind_dir",
@@ -223,8 +223,8 @@
         "compressed_bytes": 2059,
         "ratio": 3.9786,
         "bits_per_val": 16.09,
-        "enc_gb_s": 2.52,
-        "dec_gb_s": 24.97
+        "enc_gb_s": 2.69,
+        "dec_gb_s": 47.23
       },
       {
         "name": "nyc29",
@@ -232,8 +232,8 @@
         "compressed_bytes": 5387,
         "ratio": 1.5207,
         "bits_per_val": 42.09,
-        "enc_gb_s": 3.04,
-        "dec_gb_s": 18.94
+        "enc_gb_s": 3.11,
+        "dec_gb_s": 20.19
       },
       {
         "name": "poi_lat",
@@ -241,8 +241,8 @@
         "compressed_bytes": 8193,
         "ratio": 0.9999,
         "bits_per_val": 64.01,
-        "enc_gb_s": 3.51,
-        "dec_gb_s": 58.19
+        "enc_gb_s": 3.49,
+        "dec_gb_s": 58.76
       },
       {
         "name": "poi_lon",
@@ -250,8 +250,8 @@
         "compressed_bytes": 8193,
         "ratio": 0.9999,
         "bits_per_val": 64.01,
-        "enc_gb_s": 3.73,
-        "dec_gb_s": 45.12
+        "enc_gb_s": 3.71,
+        "dec_gb_s": 57.71
       },
       {
         "name": "scene_finance",
@@ -259,8 +259,8 @@
         "compressed_bytes": 1163,
         "ratio": 7.0439,
         "bits_per_val": 9.09,
-        "enc_gb_s": 5.68,
-        "dec_gb_s": 16.96
+        "enc_gb_s": 6.64,
+        "dec_gb_s": 19.71
       },
       {
         "name": "scene_geo",
@@ -268,8 +268,8 @@
         "compressed_bytes": 1291,
         "ratio": 6.3455,
         "bits_per_val": 10.09,
-        "enc_gb_s": 5.12,
-        "dec_gb_s": 17.41
+        "enc_gb_s": 5.71,
+        "dec_gb_s": 19.69
       },
       {
         "name": "scene_macro",
@@ -277,8 +277,8 @@
         "compressed_bytes": 1547,
         "ratio": 5.2954,
         "bits_per_val": 12.09,
-        "enc_gb_s": 2.96,
-        "dec_gb_s": 16.39
+        "enc_gb_s": 3.08,
+        "dec_gb_s": 16.34
       },
       {
         "name": "scene_ramp",
@@ -286,8 +286,8 @@
         "compressed_bytes": 19,
         "ratio": 431.1579,
         "bits_per_val": 0.15,
-        "enc_gb_s": 5.99,
-        "dec_gb_s": 33.51
+        "enc_gb_s": 6.59,
+        "dec_gb_s": 33.27
       },
       {
         "name": "scene_sensor",
@@ -295,8 +295,8 @@
         "compressed_bytes": 1035,
         "ratio": 7.9150,
         "bits_per_val": 8.09,
-        "enc_gb_s": 5.85,
-        "dec_gb_s": 24.53
+        "enc_gb_s": 6.32,
+        "dec_gb_s": 26.66
       },
       {
         "name": "scene_steady",
@@ -304,8 +304,8 @@
         "compressed_bytes": 11,
         "ratio": 744.7273,
         "bits_per_val": 0.09,
-        "enc_gb_s": 23.37,
-        "dec_gb_s": 45.48
+        "enc_gb_s": 14.04,
+        "dec_gb_s": 34.71
       },
       {
         "name": "ssd_hdd_benchmarks_f",
@@ -313,8 +313,8 @@
         "compressed_bytes": 2071,
         "ratio": 3.9556,
         "bits_per_val": 16.18,
-        "enc_gb_s": 2.10,
-        "dec_gb_s": 24.77
+        "enc_gb_s": 2.12,
+        "dec_gb_s": 46.96
       },
       {
         "name": "stocks_de",
@@ -322,8 +322,8 @@
         "compressed_bytes": 1291,
         "ratio": 6.3455,
         "bits_per_val": 10.09,
-        "enc_gb_s": 6.12,
-        "dec_gb_s": 17.40
+        "enc_gb_s": 6.62,
+        "dec_gb_s": 19.83
       },
       {
         "name": "stocks_uk",
@@ -331,8 +331,8 @@
         "compressed_bytes": 1163,
         "ratio": 7.0439,
         "bits_per_val": 9.09,
-        "enc_gb_s": 6.04,
-        "dec_gb_s": 18.32
+        "enc_gb_s": 5.89,
+        "dec_gb_s": 15.88
       },
       {
         "name": "stocks_usa_c",
@@ -340,8 +340,8 @@
         "compressed_bytes": 907,
         "ratio": 9.0320,
         "bits_per_val": 7.09,
-        "enc_gb_s": 6.87,
-        "dec_gb_s": 19.35
+        "enc_gb_s": 6.79,
+        "dec_gb_s": 19.31
       }
     ]
   }

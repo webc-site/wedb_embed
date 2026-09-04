@@ -67,8 +67,7 @@ impl AlpFloat for f64 {
     if scaled.is_impossible() {
       return None;
     }
-    let rounded = (scaled + Self::MAGIC_NUMBER) - Self::MAGIC_NUMBER;
-    let encoded = rounded as i64;
+    let encoded = scaled.round_ties_even() as i64;
 
     let int_with_fac = if fac_int == 1 {
       encoded
@@ -92,8 +91,7 @@ impl AlpFloat for f64 {
     if scaled.is_impossible() {
       return None;
     }
-    let rounded = (scaled + Self::MAGIC_NUMBER) - Self::MAGIC_NUMBER;
-    let encoded = rounded as i64;
+    let encoded = scaled.round_ties_even() as i64;
     let decoded = (encoded as f64) / exp_factor;
     if decoded.to_bits() == self.to_bits() {
       Some(encoded)
@@ -104,9 +102,7 @@ impl AlpFloat for f64 {
 
   #[inline(always)]
   fn fast_round_to_int(self, exp_factor: Self) -> Self::Int {
-    let scaled = self * exp_factor;
-    let rounded = (scaled + Self::MAGIC_NUMBER) - Self::MAGIC_NUMBER;
-    rounded as i64
+    (self * exp_factor).round_ties_even() as i64
   }
 
   #[inline(always)]

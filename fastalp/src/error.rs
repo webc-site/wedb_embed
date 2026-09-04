@@ -10,6 +10,8 @@ pub enum Error {
   InvalidHeader,
   #[error("Unexpected end of buffer (needed {needed} bytes, had {available})")]
   UnexpectedEof { needed: usize, available: usize },
+  #[error("Destination buffer too small (needed {needed} elements, had {available})")]
+  BufferTooSmall { needed: usize, available: usize },
   #[error("Corrupted ALP bitstream or exception out of bounds: index {index} >= count {count}")]
   CorruptedData { index: usize, count: usize },
   #[error("Unsupported exponent or bit width: exp={exp}, fac={fac}, bit_width={bit_width}")]

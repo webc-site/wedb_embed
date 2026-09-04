@@ -7,10 +7,34 @@
 
 <a name="en"></a>
 
-<+ ./readme/en.md >
+<+ ./readme/en/intro.md >
+
+<+ ./readme/en/usage.md >
+
+<+ ./readme/en/architecture.md >
+
+<+ ./readme/en/bench.md >
+
+<+ ./readme/en/evolution.md >
+
+<+ ./readme/en/capi.md >
+
+<+ ./readme/en/log.md >
 
 ---
 
 <a name="zh"></a>
 
-<+ ./readme/zh.md >
+<+ ./readme/zh/intro.md >
+
+<+ ./readme/zh/usage.md >
+
+<+ ./readme/zh/architecture.md >
+
+<+ ./readme/zh/bench.md >
+
+<+ ./readme/zh/evolution.md >
+
+<+ ./readme/zh/capi.md >
+
+<+ ./readme/zh/log.md >

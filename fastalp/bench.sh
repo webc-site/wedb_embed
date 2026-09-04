@@ -10,9 +10,12 @@ ALP_DIR="$(cd "${DIR}/../../" && pwd)/ALP"
 export ALP_DIR
 
 if [ ! -d "$ALP_DIR" ]; then
-  echo "=== 1. Cloning C++ ALP repo (depth=1) ==="
-  git clone --depth 1 https://github.com/x-at-01/ALP.git "$ALP_DIR"
+  echo "=== 1. Cloning C++ ALP repo (depth=1, branch bench/self-eval) ==="
+  git clone --depth 1 -b bench/self-eval https://github.com/x-at-01/ALP.git "$ALP_DIR"
 fi
+
+# 确保在自用评测分支上运行，绝不污染 PR 提交分支
+(cd "$ALP_DIR" && git checkout bench/self-eval)
 
 echo "=== 1. Building and Running C++ ALP Benchmark (All 37 Datasets) ==="
 if [ ! -d "$ALP_DIR/build" ]; then

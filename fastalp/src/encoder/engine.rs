@@ -1,4 +1,7 @@
-use core::mem::size_of_val;
+use core::{
+  mem::{MaybeUninit, size_of_val},
+  slice::from_raw_parts_mut,
+};
 use std::slice::from_raw_parts;
 
 use crate::{
@@ -14,7 +17,7 @@ use crate::{
   },
   float::AlpFloat,
   header::{header_len, raw_header_len, write_header},
-  params::pack_params,
+  params::AlpParams,
   sampler::{BestParams, find_best_params, find_identical_base},
 };
 
@@ -104,16 +107,12 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
 
   // 全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
   let first = slice[0];
-  let is_all_identical = match count {
-    0 => false,
-    1 => true,
-    _ => slice[1].is_exact_same(first) && slice[2..].iter().all(|&v| v.is_exact_same(first)),
-  };
+  let is_all_identical = slice[1..].iter().all(|&v| v.is_exact_same(first));
   if is_all_identical && let Some((exp, base)) = find_identical_base(first) {
     let total_needed = header_len(count) + F::BASE_SIZE;
     dst.reserve(total_needed);
-    let packed_params = pack_params(exp, 0, 0);
-    write_header(F::TYPE_BYTE, count, Some(packed_params), dst);
+    let params = AlpParams::new(exp, 0, 0, false);
+    write_header(F::TYPE_BYTE, count, Some(params.pack()), dst);
     F::write_base(base, dst);
     return Some(BestParams {
       exp,
@@ -128,13 +127,13 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     _ => find_best_params(slice),
   };
 
-  // 准备内部工作缓冲区
-  let mut stack_encoded = [F::ZERO_INT; 1024];
+  // 准备内部工作缓冲区（采用 MaybeUninit 避免 8KB 栈内存重复清零开销）
+  let mut stack_encoded = MaybeUninit::<[F::Int; 1024]>::uninit();
   exceptions.clear();
 
   let use_stack = count <= 1024 && encoded_buf.capacity() < count;
   let enc_ptr: *mut F::Int = if use_stack {
-    stack_encoded.as_mut_ptr()
+    stack_encoded.as_mut_ptr().cast::<F::Int>()
   } else {
     if encoded_buf.capacity() < count {
       encoded_buf.reserve(count.saturating_sub(encoded_buf.len()));
@@ -166,7 +165,8 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   }
 
   let encoded_ints: &mut [F::Int] = if use_stack {
-    &mut stack_encoded[..count]
+    // SAFETY: encode_pass 已在 0..count 范围内完整写入有效整数
+    unsafe { from_raw_parts_mut(stack_encoded.as_mut_ptr().cast::<F::Int>(), count) }
   } else {
     // SAFETY: encode_slice 已在 0..count 范围内完整写入有效整数
     unsafe { encoded_buf.set_len(count) };
@@ -257,29 +257,11 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   // 9. 最终输出写入
   dst.reserve(total_needed);
   if use_delta {
-    encode_delta::<F>(
-      count,
-      best_params.exp,
-      best_params.fac,
-      best_params.use_div,
-      encoded_ints,
-      min_delta,
-      delta_bit_width,
-      exceptions,
-      dst,
-    );
+    let params = AlpParams::from_best_params(best_params, delta_bit_width);
+    encode_delta::<F>(params, encoded_ints, min_delta, exceptions, dst);
   } else {
-    encode_standard::<F>(
-      count,
-      best_params.exp,
-      best_params.fac,
-      best_params.use_div,
-      encoded_ints,
-      base,
-      for_bit_width,
-      exceptions,
-      dst,
-    );
+    let params = AlpParams::from_best_params(best_params, for_bit_width);
+    encode_standard::<F>(params, encoded_ints, base, exceptions, dst);
   }
 
   Some(best_params)
