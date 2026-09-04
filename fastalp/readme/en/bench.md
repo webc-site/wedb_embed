@@ -17,10 +17,10 @@ Tested against standard floating-point and time-series codecs across all 37 data
 
 | Codec | Category | Decomp Throughput | vs C++ Decomp | End-to-End Comp (w/ Sampling) | Pure Kernel (w/o Sampling) | vs C++ Pure Kernel | GeoMean Ratio |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **fastalp (Rust)** | Specialized Float | **27.0 GB/s** | **1.35x vs C++** | **3.7 GB/s (4.6x faster)** | **6.0 GB/s** | **1.10x vs C++** | **6.99x** |
-| **C++ ALP** (Paper Reference) | Specialized Float | **20.0 GB/s** | Baseline (1.0x) | **0.80 GB/s** | **5.5 GB/s** | Baseline (1.0x) | **5.93x** |
-| **Pcodec (pco 1.0.3)** | Specialized Float | **1.8 GB/s** | 0.09x (14.9x slower) | **0.2 GB/s** | — | — | **6.16x** |
-| **Zstandard (zstd lvl 3)** | General Stream | **1.2 GB/s** | 0.06x (22.4x slower) | **0.5 GB/s** | — | — | **4.83x** |
+| **fastalp (Rust)** | Specialized Float | **28.1 GB/s** | **1.41x vs C++** | **2.9 GB/s (3.6x faster)** | **8.9 GB/s** | **1.54x vs C++** | **6.99x** |
+| **C++ ALP** (Paper Reference) | Specialized Float | **20.0 GB/s** | Baseline (1.0x) | **0.80 GB/s** | **5.8 GB/s** | Baseline (1.0x) | **5.93x** |
+| **Pcodec (pco 1.0.3)** | Specialized Float | **1.8 GB/s** | 0.09x (15.6x slower) | **0.2 GB/s** | — | — | **6.16x** |
+| **Zstandard (zstd lvl 3)** | General Stream | **1.2 GB/s** | 0.06x (23.4x slower) | **0.5 GB/s** | — | — | **4.83x** |
 | **LZ4 (lz4_flex 0.14)** | General Byte | **4.4 GB/s** | 0.22x | **1.7 GB/s** | — | — | **3.26x** |
 | **Snappy (snap 1.1)** | General Byte | **4.1 GB/s** | 0.21x | **2.2 GB/s** | — | — | **2.72x** |
 | **Chimp128** (VLDB 2022) | Specialized Float | **0.5 GB/s** | 0.02x | **0.6 GB/s** | — | — | **2.47x** |
@@ -38,7 +38,7 @@ Comprehensive 37-dataset side-by-side evaluation on identical hardware:
 
 | Benchmark Metric / Operational Mode | fastalp (Rust) | C++ ALP (Reference) | Speedup vs C++ | Measurement Methodology & Scope |
 | :--- | :---: | :---: | :---: | :--- |
-| **Pure Encoding Throughput (No Sampling)** | **6.0 GB/s** | **5.5 GB/s** | **1.10x vs C++** | Bypasses parameter sampling; tests pure float-to-int transform and dense bitpacking (Paper benchmark scope) |
+| **Pure Encoding Throughput (No Sampling)** | **8.94 GB/s** | **5.81 GB/s** | **1.54x vs C++** | Bypasses parameter sampling; tests pure float-to-int transform and dense bitpacking (Paper benchmark scope) |
 | **Stateful Streaming Cache (Parameter Reuse)** | **15 ~ 24+ GB/s** | — | **Steady-State Stream** | Caches derived `(exp, fac)` models across consecutive 1024-element blocks via `Encoder` |
 | **Geometric Mean Compression Ratio** | **6.99x** | **5.93x** | **18% higher ratio** | Evaluated across all 37 datasets; Delta-ALP and division reconstruction significantly reduce dynamic bit-widths |
 

@@ -15,7 +15,7 @@
 A pure Rust implementation of adaptive lossless floating-point compression, deeply absorbing and extending the theoretical foundation of the ACM SIGMOD 2024 Best Artifact paper [ALP](https://dl.acm.org/doi/10.1145/3626717), providing high-performance unified generic interfaces for both `f64` and `f32` streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@_-/YG2ep3aLyQzlmQ1LUPlQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Ml/FOkD6c6NbxkNy4ISUk0w.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -430,10 +430,10 @@ Tested against standard floating-point and time-series codecs across all 37 data
 
 | Codec | Category | Decomp Throughput | vs C++ Decomp | End-to-End Comp (w/ Sampling) | Pure Kernel (w/o Sampling) | vs C++ Pure Kernel | GeoMean Ratio |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **fastalp (Rust)** | Specialized Float | **27.0 GB/s** | **1.35x vs C++** | **3.7 GB/s (4.6x faster)** | **6.0 GB/s** | **1.10x vs C++** | **6.99x** |
-| **C++ ALP** (Paper Reference) | Specialized Float | **20.0 GB/s** | Baseline (1.0x) | **0.80 GB/s** | **5.5 GB/s** | Baseline (1.0x) | **5.93x** |
-| **Pcodec (pco 1.0.3)** | Specialized Float | **1.8 GB/s** | 0.09x (14.9x slower) | **0.2 GB/s** | — | — | **6.16x** |
-| **Zstandard (zstd lvl 3)** | General Stream | **1.2 GB/s** | 0.06x (22.4x slower) | **0.5 GB/s** | — | — | **4.83x** |
+| **fastalp (Rust)** | Specialized Float | **28.1 GB/s** | **1.41x vs C++** | **2.9 GB/s (3.6x faster)** | **8.9 GB/s** | **1.54x vs C++** | **6.99x** |
+| **C++ ALP** (Paper Reference) | Specialized Float | **20.0 GB/s** | Baseline (1.0x) | **0.80 GB/s** | **5.8 GB/s** | Baseline (1.0x) | **5.93x** |
+| **Pcodec (pco 1.0.3)** | Specialized Float | **1.8 GB/s** | 0.09x (15.6x slower) | **0.2 GB/s** | — | — | **6.16x** |
+| **Zstandard (zstd lvl 3)** | General Stream | **1.2 GB/s** | 0.06x (23.4x slower) | **0.5 GB/s** | — | — | **4.83x** |
 | **LZ4 (lz4_flex 0.14)** | General Byte | **4.4 GB/s** | 0.22x | **1.7 GB/s** | — | — | **3.26x** |
 | **Snappy (snap 1.1)** | General Byte | **4.1 GB/s** | 0.21x | **2.2 GB/s** | — | — | **2.72x** |
 | **Chimp128** (VLDB 2022) | Specialized Float | **0.5 GB/s** | 0.02x | **0.6 GB/s** | — | — | **2.47x** |
@@ -451,7 +451,7 @@ Comprehensive 37-dataset side-by-side evaluation on identical hardware:
 
 | Benchmark Metric / Operational Mode | fastalp (Rust) | C++ ALP (Reference) | Speedup vs C++ | Measurement Methodology & Scope |
 | :--- | :---: | :---: | :---: | :--- |
-| **Pure Encoding Throughput (No Sampling)** | **6.0 GB/s** | **5.5 GB/s** | **1.10x vs C++** | Bypasses parameter sampling; tests pure float-to-int transform and dense bitpacking (Paper benchmark scope) |
+| **Pure Encoding Throughput (No Sampling)** | **8.94 GB/s** | **5.81 GB/s** | **1.54x vs C++** | Bypasses parameter sampling; tests pure float-to-int transform and dense bitpacking (Paper benchmark scope) |
 | **Stateful Streaming Cache (Parameter Reuse)** | **15 ~ 24+ GB/s** | — | **Steady-State Stream** | Caches derived `(exp, fac)` models across consecutive 1024-element blocks via `Encoder` |
 | **Geometric Mean Compression Ratio** | **6.99x** | **5.93x** | **18% higher ratio** | Evaluated across all 37 datasets; Delta-ALP and division reconstruction significantly reduce dynamic bit-widths |
 
@@ -560,6 +560,18 @@ Evaluated on all 31 public datasets from the original ALP paper plus 6 represent
 
 - **Zero-Cost Generic Trait Abstraction**:
   Unifies `f64` and `f32` operations under `AlpFloat` with precomputed static power tables and compile-time inlining.
+
+- **Compile-Time Const-Generic 64-Way 8-Element Periodic Bit-Unpacking**:
+  Eliminates 128-bit variable-shift instruction bloat and register spills. Based on the mathematical invariant: for any $BW \in [1, 64]$, every 8 elements span exactly $BW$ bytes ($8 \times BW / 8 = BW$). Monomorphized across all 64 bit-widths: small widths (1, 2, 4) unroll via L1D tables; regular widths (8, 16, 32, 64) read native integers directly; and widths $BW \le 56$ fold all shifts into compile-time immediate constants within single 64-bit integer loads. Boosts decompression to **28.1+ GB/s**, reaching **47 ~ 91 GB/s** on smooth/regular sequences.
+
+- **Zero-Copy 1024-Block Streaming ALP-RD Real Doubles Decoder**:
+  Eliminates micro-batch chunking and double intermediate buffering in Real Doubles mode. Stream-unpacks `right_parts` (high-entropy mantissa) directly into raw destination pointer memory, unpacks 1-3 bit dictionary indices into an 8KB stack buffer, and fuses them via in-place bitwise OR (`dst[i] |= shifted_dict[...]`). Supercharges RD decompression from 3.7 GB/s by nearly 3x to **11.6+ GB/s**.
+
+- **Branch-Free Word- and Byte-Level Run-Length Expansion (`expand_repeats`)**:
+  Replaces branch-heavy 64-bit word scanning and variable `trailing_ones` loops with a two-tier unrolled state machine. Pure-zero and pure-one words trigger full 64-element SIMD copies or broadcasts. Mixed words expand byte-by-byte with branchless 8-element unrolled stores, accelerating repeat-heavy datasets (`food_prices`, `nyc29`) by 50% ~ 70%.
+
+- **Zero-Overhead Strongly Typed `ChunkType` Enum**:
+  Refactors wire format type byte into `#[repr(u8)] pub enum ChunkType`, eliminating string comparisons and redundant branches while ensuring compile-time exhaustive match verification.
 
 
 ## C-Compatible API & Cross-Language Integration
@@ -692,7 +704,7 @@ Designed for worker-pool architectures and per-column isolated states:
 纯 Rust 实现的自适应无损浮点数压缩算法库，深度吸收并拓展了 ACM SIGMOD 2024 最佳 Artifact 论文 [ALP](https://dl.acm.org/doi/10.1145/3626717) 的理论体系，通过统一泛型接口提供对 `f64` 与 `f32` 数据流的高性能压缩与解压。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@k5/RftVCHGArWnHxWDsFOXg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@IE/kwkIj2uubtoe_XUUxahQ.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
@@ -1121,10 +1133,10 @@ fastalp/
 
 | 算法名称 | 算法分类 | 解压吞吐 | 相对 C++ 解压 | 端到端压缩 (含采样) | 压缩纯编码吞吐（不含采样） | 相对 C++ 纯编码 | 几何平均压缩比 |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **fastalp (Rust)** | 浮点专用 | **27.0 GB/s** | **较 C++ 快 1.35x** | **3.7 GB/s (快 4.6x)** | **6.0 GB/s** | **较 C++ 快 1.10x** | **6.99x** |
-| **C++ ALP** (原版实现) | 浮点专用 | **20.0 GB/s** | 基准 (1.0x) | **0.80 GB/s** | **5.5 GB/s** | 基准 (1.0x) | **5.93x** |
-| **Pcodec (pco 1.0.3)** | 浮点专用 | **1.8 GB/s** | 0.09x (慢 14.9x) | **0.2 GB/s** | — | — | **6.16x** |
-| **Zstandard (zstd lvl 3)** | 通用流式 | **1.2 GB/s** | 0.06x (慢 22.4x) | **0.5 GB/s** | — | — | **4.83x** |
+| **fastalp (Rust)** | 浮点专用 | **28.1 GB/s** | **较 C++ 快 1.41x** | **2.9 GB/s (快 3.6x)** | **8.9 GB/s** | **较 C++ 快 1.54x** | **6.99x** |
+| **C++ ALP** (原版实现) | 浮点专用 | **20.0 GB/s** | 基准 (1.0x) | **0.80 GB/s** | **5.8 GB/s** | 基准 (1.0x) | **5.93x** |
+| **Pcodec (pco 1.0.3)** | 浮点专用 | **1.8 GB/s** | 0.09x (慢 15.6x) | **0.2 GB/s** | — | — | **6.16x** |
+| **Zstandard (zstd lvl 3)** | 通用流式 | **1.2 GB/s** | 0.06x (慢 23.4x) | **0.5 GB/s** | — | — | **4.83x** |
 | **LZ4 (lz4_flex 0.14)** | 通用字节 | **4.4 GB/s** | 0.22x | **1.7 GB/s** | — | — | **3.26x** |
 | **Snappy (snap 1.1)** | 通用字节 | **4.1 GB/s** | 0.21x | **2.2 GB/s** | — | — | **2.72x** |
 | **Chimp128** (VLDB 2022) | 浮点时序 | **0.5 GB/s** | 0.02x | **0.6 GB/s** | — | — | **2.47x** |
@@ -1142,7 +1154,7 @@ fastalp/
 
 | 评测维度 / 运行模式 | fastalp (Rust) | C++ ALP (官方原版) | 相对 C++ 提升幅度 | 评测机制与工业场景说明 |
 | :--- | :---: | :---: | :---: | :--- |
-| **压缩纯编码吞吐（不含采样）** | **6.0 GB/s** | **5.5 GB/s** | **较 C++ 快 1.10x** | 预置/缓存模型参数，跳过采样探测，纯浮点整型变换与位打包内核（原论文测试代码口径） |
+| **压缩纯编码吞吐（不含采样）** | **8.94 GB/s** | **5.81 GB/s** | **较 C++ 快 1.54x** | 预置/缓存模型参数，跳过采样探测，纯浮点整型变换与位打包内核（原论文测试代码口径） |
 | **状态化连续流式吞吐 (参数缓存)** | **15 ~ 24+ GB/s** | — | **平稳流式写入** | 跨 1024 满块复用已推导的 `(exp, fac)` 模型，平稳时序跳过采样直接推导 |
 | **综合几何平均压缩比** | **6.99x** | **5.93x** | **压缩率领先 18%** | 37 项公开/工业基准全量几何均值，Delta 差分与除法重构有效收窄动态位宽 |
 
@@ -1320,6 +1332,22 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
 - **统一泛型零成本抽象与预计算常数表**：<br>
   用于一套代码兼顾 `f64` 与 `f32`，避免代码膨胀与运行时分支开销。<br>
   通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的高效内联。
+
+- **编译期常量级 64 路 8 元周期位解包与浮点重构内核**：<br>
+  用于彻底消除通用位解包中 128 位变量移位指令膨胀与寄存器堆溢出。<br>
+  基于数学定理：任意位宽 $BW \in [1, 64]$ 下，每 8 个元素正好严格占据 $BW$ 个整字节（$8 \times BW / 8 = BW$）。fastalp 实现了覆盖 1~64 全位宽的编译期 const generics 单态化分发体系：小位宽（1, 2, 4）直通 L1D 预查表展开；规整位宽（8, 16, 32, 64）直通原生对齐/非对齐加载；$BW \le 56$ 的任意位宽全量在单次 64 位无符号读取内利用编译期折叠立即数完成解包与浮点缩放。解压吞吐跃升至 **28.1+ GB/s**，部分规整与单调数据集突破 **47 ~ 91 GB/s**。
+
+- **ALP-RD 真实双精度 1024 块级直通流式解码（零中间缓冲拷贝）**：<br>
+  用于消除高低位解耦数据块微小分批切片与双重内存回写造成的性能断崖。<br>
+  针对真实双精度科学数据（如高精 GPS、物理仿真），淘汰旧版 64 元素切片与双重切片循环机制，重构为 1024 元素块级直通解码流水线：高位宽尾数（`right_parts`）直接单次解包流式写入目标裸指针内存，1-3 位高位字典索引一次性解包至 8KB 栈缓冲，随后利用硬件超标量并行单次原地原位合并 `dst[i] |= shifted_dict[...]`。极端高位宽数据集（如 `cms1`, `poi_lat`, `poi_lon`）解压吞吐从 3.7 GB/s 暴增近 3 倍至 **11.6+ GB/s**。
+
+- **时序行程重复展开（expand_repeats）字级与字节级分支预测消除**：<br>
+  用于消除密集交替重复时序高频分支预测失败惩罚。<br>
+  原版依赖 64 位扫描与可变 `trailing_ones` / `bits >> run` 动态循环，在交替时序上引发大量 CPU 流水线冲刷。fastalp 重构为双层无分支架构：全零字与全壹字直接触发 64 元素原生 SIMD 拷贝或填充；混合字按字节展开（`0x00` 走 8 元素直通拷贝，`0xFF` 走 8 元素连写，其余按 8 步展开单周期条件递推），剔除全部动态移位与 `min` 边界计算，使重复密集型数据集（`food_prices`, `nyc29` 等）解压速度大幅提升 50% ~ 70%。
+
+- **强类型紧凑枚举 ChunkType 零开销重构**：<br>
+  用于消除元数据解析阶段的字符串匹配与冗余类型分支。<br>
+  将压缩块自描述标识重构为底层严格紧凑的 `#[repr(u8)] pub enum ChunkType`，与二进制线缆协议实现 1:1 零成本无缝映射，保证编译期类型穷尽检查与完全内联的分支跳转。
 
 
 ## C 兼容接口与跨语言集成

@@ -64,3 +64,15 @@
 
 - **Zero-Cost Generic Trait Abstraction**:
   Unifies `f64` and `f32` operations under `AlpFloat` with precomputed static power tables and compile-time inlining.
+
+- **Compile-Time Const-Generic 64-Way 8-Element Periodic Bit-Unpacking**:
+  Eliminates 128-bit variable-shift instruction bloat and register spills. Based on the mathematical invariant: for any $BW \in [1, 64]$, every 8 elements span exactly $BW$ bytes ($8 \times BW / 8 = BW$). Monomorphized across all 64 bit-widths: small widths (1, 2, 4) unroll via L1D tables; regular widths (8, 16, 32, 64) read native integers directly; and widths $BW \le 56$ fold all shifts into compile-time immediate constants within single 64-bit integer loads. Boosts decompression to **28.1+ GB/s**, reaching **47 ~ 91 GB/s** on smooth/regular sequences.
+
+- **Zero-Copy 1024-Block Streaming ALP-RD Real Doubles Decoder**:
+  Eliminates micro-batch chunking and double intermediate buffering in Real Doubles mode. Stream-unpacks `right_parts` (high-entropy mantissa) directly into raw destination pointer memory, unpacks 1-3 bit dictionary indices into an 8KB stack buffer, and fuses them via in-place bitwise OR (`dst[i] |= shifted_dict[...]`). Supercharges RD decompression from 3.7 GB/s by nearly 3x to **11.6+ GB/s**.
+
+- **Branch-Free Word- and Byte-Level Run-Length Expansion (`expand_repeats`)**:
+  Replaces branch-heavy 64-bit word scanning and variable `trailing_ones` loops with a two-tier unrolled state machine. Pure-zero and pure-one words trigger full 64-element SIMD copies or broadcasts. Mixed words expand byte-by-byte with branchless 8-element unrolled stores, accelerating repeat-heavy datasets (`food_prices`, `nyc29`) by 50% ~ 70%.
+
+- **Zero-Overhead Strongly Typed `ChunkType` Enum**:
+  Refactors wire format type byte into `#[repr(u8)] pub enum ChunkType`, eliminating string comparisons and redundant branches while ensuring compile-time exhaustive match verification.

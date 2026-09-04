@@ -13,7 +13,7 @@ const HASH_MASK: usize = HASH_TABLE_SIZE - 1;
 
 /// Low-cardinality dictionary compression candidate metadata.
 /// 低基数紧凑字典压缩候选元数据
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct DictCandidate<F: AlpFloat> {
   pub dict: [F; MAX_DICT_ENTRIES],
   pub dict_len: usize,

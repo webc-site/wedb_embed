@@ -32,6 +32,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(docsrs)"] }
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+fearless_simd = "0.7.0"
 thiserror = "2.0.20"
 
 [dev-dependencies]

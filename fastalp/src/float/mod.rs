@@ -1,7 +1,7 @@
 mod f32;
 mod f64;
 
-use crate::params::bits_needed;
+use crate::{encoder::Exception, params::bits_needed};
 
 /// ALP floating-point abstraction trait (unifies zero-cost f32 and f64 compression).
 /// ALP 浮点数抽象特征（统一 f32 与 f64 零成本编解码）
@@ -90,6 +90,23 @@ pub trait AlpFloat: Copy + Default + PartialEq + PartialOrd + Send + Sync + 'sta
 
   fn write_exception_u32(pos: u32, bits: Self::RawBits, dst: &mut Vec<u8>);
   fn read_exception_u32(chunk: &[u8]) -> (usize, Self);
+
+  /// Fast SIMD/vectorized encoding kernel for float slices.
+  /// 浮点切片高速 SIMD 向量化编码内核
+  ///
+  /// # Safety
+  ///
+  /// Caller must ensure `enc_ptr` has valid, writable memory for at least `slice.len()` elements.
+  /// 调用方必须确保 `enc_ptr` 具备至少容纳 `slice.len()` 个元素的有效可写内存。
+  unsafe fn encode_simd(
+    slice: &[Self],
+    enc_ptr: *mut Self::Int,
+    exp_factor: Self,
+    fac_int: i64,
+    frac_exp: Self,
+    use_div: bool,
+    exceptions: &mut Vec<Exception<Self::RawBits>>,
+  ) -> (Self::Int, Self::Int);
 
   /// Decodes a floating-point value from offset and base when factor is 1 (scale = 10^-exp).
   /// 当因子为 1 时根据基准值与逆缩放因子快速解码浮点数

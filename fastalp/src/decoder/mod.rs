@@ -33,7 +33,6 @@ use core::{
   mem::{MaybeUninit, size_of},
   ptr::copy_nonoverlapping,
 };
-use std::ptr::read_unaligned;
 
 use delta::decode_delta_raw;
 use standard::decode_standard_raw;
@@ -49,7 +48,8 @@ use crate::{
 
 #[inline(always)]
 fn count_bitmap_ones(bitmap: &[u8], count: usize) -> usize {
-  let full_words = count / 64;
+  let full_bytes = count / 8;
+  let full_words = full_bytes / 8;
   let mut ones = 0usize;
   let ptr = bitmap.as_ptr().cast::<u64>();
   for i in 0..full_words {
@@ -57,16 +57,44 @@ fn count_bitmap_ones(bitmap: &[u8], count: usize) -> usize {
     let word = unsafe { ptr.add(i).read_unaligned() };
     ones += word.count_ones() as usize;
   }
-  let rem = count % 64;
-  if rem > 0 {
-    for i in (full_words * 64)..count {
-      let b = bitmap[i / 8];
-      if (b & (1 << (i % 8))) != 0 {
-        ones += 1;
+  for &b in &bitmap[full_words * 8..full_bytes] {
+    ones += b.count_ones() as usize;
+  }
+  let rem_bits = count % 8;
+  if rem_bits > 0 {
+    let mask = (1u8 << rem_bits) - 1;
+    ones += (bitmap[full_bytes] & mask).count_ones() as usize;
+  }
+  ones
+}
+
+#[inline(always)]
+unsafe fn expand_byte<F: AlpFloat>(
+  byte: u8,
+  out_pos: usize,
+  src_idx: &mut usize,
+  prev: &mut F,
+  non_repeats: *const F,
+  dst_ptr: *mut F,
+) {
+  unsafe {
+    if byte == 0x00 {
+      copy_nonoverlapping(non_repeats.add(*src_idx + 1), dst_ptr.add(out_pos), 8);
+      *src_idx += 8;
+      *prev = *dst_ptr.add(out_pos + 7);
+    } else if byte == 0xFF {
+      let p = *prev;
+      core::slice::from_raw_parts_mut(dst_ptr.add(out_pos), 8).fill(p);
+    } else {
+      for k in 0..8 {
+        if (byte & (1 << k)) == 0 {
+          *src_idx += 1;
+          *prev = *non_repeats.add(*src_idx);
+        }
+        *dst_ptr.add(out_pos + k) = *prev;
       }
     }
   }
-  ones
 }
 
 /// Expands repeat run-length bitmap into output buffer.
@@ -97,36 +125,46 @@ pub(crate) unsafe fn expand_repeats<F: AlpFloat>(
     let ptr_u64 = bitmap.as_ptr().cast::<u64>();
 
     for w in 0..full_words {
-      let word = ptr_u64.add(w).read_unaligned();
+      let word = u64::from_le(ptr_u64.add(w).read_unaligned());
       let base_out = w * 64;
 
       if w == 0 {
-        for j in 1..64 {
-          if (word & (1u64 << j)) != 0 {
-            *dst_ptr.add(j) = prev;
-          } else {
+        // Word 0: bit 0 is already stored as element 0
+        for k in 1..8 {
+          if (bitmap[0] & (1 << k)) == 0 {
             src_idx += 1;
             prev = *non_repeats.add(src_idx);
-            *dst_ptr.add(j) = prev;
           }
+          *dst_ptr.add(k) = prev;
+        }
+        #[allow(clippy::needless_range_loop)]
+        for b in 1..8 {
+          expand_byte(
+            bitmap[b],
+            b * 8,
+            &mut src_idx,
+            &mut prev,
+            non_repeats,
+            dst_ptr,
+          );
         }
       } else if word == 0 {
         copy_nonoverlapping(non_repeats.add(src_idx + 1), dst_ptr.add(base_out), 64);
         src_idx += 64;
         prev = *dst_ptr.add(base_out + 63);
       } else if word == u64::MAX {
-        for j in 0..64 {
-          *dst_ptr.add(base_out + j) = prev;
-        }
+        core::slice::from_raw_parts_mut(dst_ptr.add(base_out), 64).fill(prev);
       } else {
-        for j in 0..64 {
-          if (word & (1u64 << j)) != 0 {
-            *dst_ptr.add(base_out + j) = prev;
-          } else {
-            src_idx += 1;
-            prev = *non_repeats.add(src_idx);
-            *dst_ptr.add(base_out + j) = prev;
-          }
+        let bytes_ptr = bitmap.as_ptr().add(base_out / 8);
+        for b in 0..8 {
+          expand_byte(
+            *bytes_ptr.add(b),
+            base_out + b * 8,
+            &mut src_idx,
+            &mut prev,
+            non_repeats,
+            dst_ptr,
+          );
         }
       }
     }
@@ -187,14 +225,18 @@ unsafe fn decode_dict_raw<F: AlpFloat>(
   for (entry, chunk) in dict.iter_mut().zip(dict_slice.chunks_exact(elem_size)) {
     *entry = F::read_raw(chunk);
   }
+  if dict_len > 0 {
+    let pad = dict[0];
+    for entry in &mut dict[dict_len..MAX_DICT_ENTRIES] {
+      *entry = pad;
+    }
+  }
 
   if bit_width == 0 {
     let single_val = dict[0];
     // SAFETY: 调用方保证 dst_ptr 具有至少 count 个连续有效可写槽位
     unsafe {
-      for i in 0..count {
-        *dst_ptr.add(i) = single_val;
-      }
+      core::slice::from_raw_parts_mut(dst_ptr, count).fill(single_val);
     }
     return Ok(());
   }
@@ -208,35 +250,16 @@ unsafe fn decode_dict_raw<F: AlpFloat>(
     });
   }
 
-  const CHUNK: usize = 1024;
-  let mut idx_buf = [0u64; CHUNK];
-  let mut out_offset = 0;
-  let mut in_offset = indices_offset;
-
-  while out_offset < count {
-    let cur_count = (count - out_offset).min(CHUNK);
-    let cur_bytes = packed_byte_size(cur_count, bit_width);
-    bitunpack_u64_slice(
-      &payload[in_offset..in_offset + cur_bytes],
-      cur_count,
+  let decoder = crate::bitpack::AlpDictDecoder { dict: &dict };
+  // SAFETY: 上方已校验 payload.len() >= indices_offset + packed_bytes，dst_ptr 具备 count 个有效槽位
+  unsafe {
+    crate::bitpack::bitunpack_core_generic(
+      &payload[indices_offset..indices_offset + packed_bytes],
+      count,
       bit_width,
-      &mut idx_buf[..cur_count],
-    )?;
-
-    // SAFETY: cur_count <= CHUNK，i < cur_count，查表前校验 idx < dict_len <= MAX_DICT_ENTRIES，
-    // out_offset + i < count 且 dst_ptr 严格在有效范围内。
-    unsafe {
-      for i in 0..cur_count {
-        let idx = *idx_buf.get_unchecked(i) as usize;
-        if idx >= dict_len {
-          return Err(Error::InvalidHeader);
-        }
-        *dst_ptr.add(out_offset + i) = *dict.get_unchecked(idx);
-      }
-    }
-
-    out_offset += cur_count;
-    in_offset += cur_bytes;
+      decoder,
+      dst_ptr,
+    );
   }
 
   Ok(())
@@ -264,9 +287,7 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
     return Err(Error::InvalidHeader);
   }
 
-  // SAFETY: 上方已校验 payload.len() >= 5，add(3) 安全读取小端 u16 异常数
-  let exc_count =
-    unsafe { u16::from_le(read_unaligned(payload.as_ptr().add(3).cast::<u16>())) } as usize;
+  let exc_count = u16::from_le_bytes([payload[3], payload[4]]) as usize;
 
   let dict_bytes = actual_dict_size * 2;
   let mut cursor = 5;
@@ -282,7 +303,7 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
   unsafe {
     let dict_ptr = payload.as_ptr().add(cursor).cast::<u16>();
     for (i, entry) in dict.iter_mut().take(actual_dict_size).enumerate() {
-      *entry = u16::from_le(read_unaligned(dict_ptr.add(i)));
+      *entry = u16::from_le(dict_ptr.add(i).read_unaligned());
     }
   }
   cursor += dict_bytes;
@@ -302,69 +323,96 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
     });
   }
 
-  const CHUNK: usize = 1024;
-  let mut left_idx_buf = [0u64; CHUNK];
-  let mut right_val_buf = [0u64; CHUNK];
-
-  let mut left_cursor = cursor;
-  let mut right_cursor = cursor + left_bytes;
-  let exc_cursor = right_cursor + right_bytes;
-
-  let mut out_offset = 0;
   let shift = right_bw as u64;
-
   let mut shifted_dict = [0u64; 8];
   for (i, &entry) in dict.iter().take(actual_dict_size).enumerate() {
     shifted_dict[i] = (entry as u64) << shift;
   }
 
-  while out_offset < count {
-    let cur_count = (count - out_offset).min(CHUNK);
-    let cur_left_bytes = if left_bw > 0 {
-      packed_byte_size(cur_count, left_bw)
-    } else {
-      0
-    };
-    let cur_right_bytes = packed_byte_size(cur_count, right_bw);
+  let right_cursor = cursor + left_bytes;
+  let exc_cursor = right_cursor + right_bytes;
 
-    if left_bw > 0 {
+  if left_bw == 0 {
+    let decoder = crate::bitpack::AlpRdConstantDecoder {
+      high_bits: shifted_dict[0],
+      _phantom: core::marker::PhantomData,
+    };
+    // SAFETY: 上方已前置校验 payload.len() >= right_cursor + right_bytes，dst_ptr 具备 count 个有效 F 槽位
+    unsafe {
+      crate::bitpack::bitunpack_core_generic(
+        &payload[right_cursor..right_cursor + right_bytes],
+        count,
+        right_bw,
+        decoder,
+        dst_ptr,
+      );
+    }
+  } else {
+    let mut block_offset = 0;
+    let mut cur_left_cursor = cursor;
+    let mut cur_right_cursor = right_cursor;
+    let mut left_buf = [0u64; 1024];
+    let mut right_buf = [0u64; 1024];
+    while block_offset < count {
+      let cur_count = (count - block_offset).min(1024);
+      let cur_left_bytes = packed_byte_size(cur_count, left_bw);
+      let cur_right_bytes = packed_byte_size(cur_count, right_bw);
+
       bitunpack_u64_slice(
-        &payload[left_cursor..left_cursor + cur_left_bytes],
+        &payload[cur_left_cursor..cur_left_cursor + cur_left_bytes],
         cur_count,
         left_bw,
-        &mut left_idx_buf[..cur_count],
+        &mut left_buf[..cur_count],
       )?;
-      left_cursor += cur_left_bytes;
-    }
+      cur_left_cursor += cur_left_bytes;
 
-    bitunpack_u64_slice(
-      &payload[right_cursor..right_cursor + cur_right_bytes],
-      cur_count,
-      right_bw,
-      &mut right_val_buf[..cur_count],
-    )?;
-    right_cursor += cur_right_bytes;
+      if size_of::<F>() == 8 {
+        // SAFETY: dst_ptr + block_offset has cur_count elements, for size_of 8, u64 layout is identical
+        let dst_u64 = unsafe {
+          core::slice::from_raw_parts_mut(dst_ptr.add(block_offset).cast::<u64>(), cur_count)
+        };
+        bitunpack_u64_slice(
+          &payload[cur_right_cursor..cur_right_cursor + cur_right_bytes],
+          cur_count,
+          right_bw,
+          dst_u64,
+        )?;
+        cur_right_cursor += cur_right_bytes;
 
-    // SAFETY: cur_count <= CHUNK，i < cur_count，out_offset + i < count，
-    // left_idx & 7 < 8 索引受控于 shifted_dict 容量，dst_ptr 具有充足连续空间。
-    unsafe {
-      if left_bw == 0 {
-        let left = shifted_dict[0];
-        for i in 0..cur_count {
-          let right = *right_val_buf.get_unchecked(i);
-          *dst_ptr.add(out_offset + i) = F::from_u64_raw(left | right);
+        let (dst_chunks, dst_rem) = dst_u64.as_chunks_mut::<8>();
+        let (left_chunks, left_rem) = left_buf[..cur_count].as_chunks::<8>();
+        for (dc, lc) in dst_chunks.iter_mut().zip(left_chunks.iter()) {
+          dc[0] |= shifted_dict[lc[0] as usize & 7];
+          dc[1] |= shifted_dict[lc[1] as usize & 7];
+          dc[2] |= shifted_dict[lc[2] as usize & 7];
+          dc[3] |= shifted_dict[lc[3] as usize & 7];
+          dc[4] |= shifted_dict[lc[4] as usize & 7];
+          dc[5] |= shifted_dict[lc[5] as usize & 7];
+          dc[6] |= shifted_dict[lc[6] as usize & 7];
+          dc[7] |= shifted_dict[lc[7] as usize & 7];
+        }
+        for (d, l) in dst_rem.iter_mut().zip(left_rem.iter()) {
+          *d |= shifted_dict[*l as usize & 7];
         }
       } else {
-        for i in 0..cur_count {
-          let left_idx = *left_idx_buf.get_unchecked(i) as usize;
-          let left = *shifted_dict.get_unchecked(left_idx & 7);
-          let right = *right_val_buf.get_unchecked(i);
-          *dst_ptr.add(out_offset + i) = F::from_u64_raw(left | right);
+        bitunpack_u64_slice(
+          &payload[cur_right_cursor..cur_right_cursor + cur_right_bytes],
+          cur_count,
+          right_bw,
+          &mut right_buf[..cur_count],
+        )?;
+        cur_right_cursor += cur_right_bytes;
+
+        unsafe {
+          for i in 0..cur_count {
+            *dst_ptr.add(block_offset + i) =
+              F::from_u64_raw(shifted_dict[left_buf[i] as usize & 7] | right_buf[i]);
+          }
         }
       }
-    }
 
-    out_offset += cur_count;
+      block_offset += cur_count;
+    }
   }
 
   // SAFETY: 已校验 payload 长度覆盖至 exc_cursor + exc_bytes，read_unaligned 安全读取，
@@ -372,8 +420,8 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
   unsafe {
     let exc_ptr = payload.as_ptr().add(exc_cursor);
     for i in 0..exc_count {
-      let pos = u16::from_le(read_unaligned(exc_ptr.add(i * 4).cast::<u16>())) as usize;
-      let left_val = u16::from_le(read_unaligned(exc_ptr.add(i * 4 + 2).cast::<u16>())) as u64;
+      let pos = u16::from_le(exc_ptr.add(i * 4).cast::<u16>().read_unaligned()) as usize;
+      let left_val = u16::from_le(exc_ptr.add(i * 4 + 2).cast::<u16>().read_unaligned()) as u64;
       if pos >= count {
         return Err(Error::CorruptedData { index: pos, count });
       }
@@ -609,10 +657,11 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
         available: src.len(),
       });
     }
-    // SAFETY: Verified src.len() >= cursor + 4 above, read_unaligned safely reads little-endian u32
-    // SAFETY: 上方已校验 src.len() >= cursor + 4，read_unaligned 安全读取小端 u32
-    let c =
-      unsafe { u32::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u32>())) } as usize;
+    let c = u32::from_le_bytes(
+      src[cursor..cursor + 4]
+        .try_into()
+        .map_err(|_| Error::InvalidHeader)?,
+    ) as usize;
     (c, EXC_COUNT_LEN_U32)
   } else {
     if src.len() < cursor + EXC_COUNT_LEN {
@@ -621,10 +670,7 @@ pub(crate) unsafe fn patch_exceptions<F: AlpFloat>(
         available: src.len(),
       });
     }
-    // SAFETY: Verified src.len() >= cursor + 2 above, read_unaligned safely reads little-endian u16
-    // SAFETY: 上方已校验 src.len() >= cursor + 2，read_unaligned 安全读取小端 u16
-    let c =
-      unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) } as usize;
+    let c = u16::from_le_bytes([src[cursor], src[cursor + 1]]) as usize;
     (c, EXC_COUNT_LEN)
   };
   cursor += exc_count_len;

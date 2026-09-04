@@ -8,8 +8,6 @@ use crate::{
 /// 尝试剪枝门限：仅在位宽 > 4 且已有异常数 < 16 时尝试
 const MIN_PRUNE_BIT_WIDTH: u8 = 4;
 const MAX_PRUNE_EXCEPTIONS: usize = 16;
-const PRE_CHECK_LEN: usize = 16;
-const PRE_CHECK_MAX_OUTLIERS: usize = 4;
 const CANDIDATE_WIDTHS: [u8; 9] = [48, 32, 28, 24, 20, 16, 12, 8, 0];
 
 /// FOR mode only: outlier pruning to exceptions with descending bit-width search:
@@ -28,8 +26,52 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
     return for_bit_width;
   }
 
-  let current_packed_len = packed_byte_size(slice.len(), for_bit_width);
+  // 1. 数学单调性极速短路：取小于当前位宽的最大候选位宽 c_max。
+  // 若其离群点已超过容限，由单调性知更小候选位宽必然包含更多离群点，直接短路退出（通常在 20~40 元素内终止，耗时 < 10ns）
+  let c_max = match CANDIDATE_WIDTHS
+    .iter()
+    .copied()
+    .find(|&w| w < for_bit_width)
+  {
+    Some(w) => w,
+    None => return for_bit_width,
+  };
+  let max_allowed_c = if c_max == 0 {
+    0u64
+  } else {
+    (1u64 << c_max) - 1
+  };
+  let budget = MAX_PRUNE_EXCEPTIONS.saturating_sub(exceptions.len());
+  let mut excess = 0usize;
+
+  for &val in encoded_ints.iter() {
+    let diff = F::int_diff_to_u64(val, base);
+    if diff > max_allowed_c {
+      excess += 1;
+      if excess > budget {
+        return for_bit_width;
+      }
+    }
+  }
+
+  let count = slice.len();
+  let current_packed_len = packed_byte_size(count, for_bit_width);
   let current_cost = current_packed_len + exceptions_byte_size::<F>(exceptions.len(), is_large);
+
+  // 仅当通过单调性筛选后（证明离群点确在容限内），才执行直方图与全局最优候选位宽评估
+  let mut hist = [0u16; 65];
+  for &val in encoded_ints.iter() {
+    let diff = F::int_diff_to_u64(val, base);
+    let bw = F::bits_needed(diff) as usize;
+    hist[bw] += 1;
+  }
+
+  let mut exc_count = [0usize; 65];
+  let mut running = 0usize;
+  for w in (0..=64).rev() {
+    exc_count[w] = running;
+    running += hist[w] as usize;
+  }
 
   let mut best_target_bw = for_bit_width;
   let mut min_cost = current_cost;
@@ -38,46 +80,14 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
     if target_bw >= for_bit_width {
       continue;
     }
-    let max_allowed = if target_bw == 0 {
-      0u64
-    } else {
-      (1u64 << target_bw) - 1
-    };
-
-    // Pre-check 16 elements: abort early if > 4 outliers observed in initial sample
-    // 前置 16 采样快筛：若在前 16 个元素中已出现超过 4 个离群点，直接短路跳出候选循环
-    let pre_check_n = encoded_ints.len().min(PRE_CHECK_LEN);
-    let mut pre_outliers = 0;
-    for &val in &encoded_ints[..pre_check_n] {
-      if F::int_diff_to_u64(val, base) > max_allowed {
-        pre_outliers += 1;
-        if pre_outliers > PRE_CHECK_MAX_OUTLIERS {
-          break;
-        }
-      }
-    }
-    if pre_outliers > PRE_CHECK_MAX_OUTLIERS {
-      break;
-    }
-
-    let mut extra_exceptions = pre_outliers;
-    for &val in &encoded_ints[pre_check_n..] {
-      let diff = F::int_diff_to_u64(val, base);
-      if diff > max_allowed {
-        extra_exceptions += 1;
-        if extra_exceptions > MAX_PRUNE_EXCEPTIONS {
-          break;
-        }
-      }
-    }
-
+    let extra_exceptions = exc_count[target_bw as usize];
     if extra_exceptions > MAX_PRUNE_EXCEPTIONS {
-      break;
+      continue;
     }
 
     let new_total_exc = exceptions.len() + extra_exceptions;
     let new_cost =
-      packed_byte_size(slice.len(), target_bw) + exceptions_byte_size::<F>(new_total_exc, is_large);
+      packed_byte_size(count, target_bw) + exceptions_byte_size::<F>(new_total_exc, is_large);
     if new_cost < min_cost {
       min_cost = new_cost;
       best_target_bw = target_bw;
@@ -102,11 +112,9 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
     exceptions.sort_unstable_by_key(|e| e.pos);
     exceptions.dedup_by_key(|e| e.pos);
 
-    // Backfill base value for outliers to ensure no bit-width overflow during bitpacking
     // 为离群点回填基准值，确保打包时不溢出目标位宽
     for exc in &*exceptions {
       // SAFETY: exc.pos is strictly less than encoded_ints.len()
-      // SAFETY: exc.pos 严格小于 encoded_ints.len()
       unsafe {
         *encoded_ints.get_unchecked_mut(exc.pos) = base;
       }

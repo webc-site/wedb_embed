@@ -1,8 +1,7 @@
 use core::{
   mem::{MaybeUninit, size_of_val},
-  slice::from_raw_parts_mut,
+  slice::{from_raw_parts, from_raw_parts_mut},
 };
-use std::slice::from_raw_parts;
 
 use crate::{
   bitpack::packed_byte_size,
@@ -14,6 +13,7 @@ use crate::{
     kernel::encode_slice,
     outlier::try_prune_outliers,
     standard::encode_standard,
+    state::CachedTargetBw,
   },
   float::AlpFloat,
   header::{header_len, raw_header_len, write_header},
@@ -107,13 +107,48 @@ unsafe fn encode_pass<F: AlpFloat>(
   }
 }
 
+/// Applies outlier pruning for a specific target bit-width (DRY helper).
+/// 根据指定目标位宽应用离群值剪枝并更新异常字典
+#[inline(always)]
+fn apply_target_bw<F: AlpFloat>(
+  slice: &[F],
+  encoded_ints: &mut [F::Int],
+  base: F::Int,
+  target_bw: u8,
+  exceptions: &mut Vec<Exception<F::RawBits>>,
+) {
+  let max_allowed = if target_bw == 0 {
+    0u64
+  } else {
+    (1u64 << target_bw) - 1
+  };
+  let had_prev = !exceptions.is_empty();
+  for (pos, (&v, val_mut)) in slice.iter().zip(encoded_ints.iter_mut()).enumerate() {
+    let diff = F::int_diff_to_u64(*val_mut, base);
+    if diff > max_allowed {
+      exceptions.push(Exception {
+        pos,
+        bits: v.to_raw_bits(),
+      });
+      *val_mut = base;
+    }
+  }
+  if had_prev && exceptions.len() > 1 {
+    exceptions.sort_unstable_by_key(|e| e.pos);
+    exceptions.dedup_by_key(|e| e.pos);
+  }
+}
+
 /// Core compression engine: parameter probing, unrolled encoding, outlier pruning, FOR/Delta scheduling, and RAW fallback.
 /// 核心压缩引擎：执行参数快筛、编码展开、离群值剪枝、FOR/Delta 调度与 RAW 回退保底
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compress_into_engine<F: AlpFloat>(
   slice: &[F],
   dst: &mut Vec<u8>,
   force_delta: bool,
   cached_params: Option<BestParams>,
+  cached_target_bw: &mut CachedTargetBw,
+  cached_use_delta: &mut Option<bool>,
   encoded_buf: &mut Vec<F::Int>,
   exceptions: &mut Vec<Exception<F::RawBits>>,
 ) -> Option<BestParams> {
@@ -212,20 +247,34 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
 
   let is_large = count > u16::MAX as usize;
   let mut for_bit_width = F::bits_needed(max_offset);
+  let mut did_pre_prune = false;
 
   // 5. Outlier pre-pruning: narrow bit-width and eliminate isolated spikes
   // 5. 离群值预剪枝：若位宽较高先尝试剪枝收窄位宽并消除尖峰
   if for_bit_width >= HIGH_BW_PRUNE_THRESHOLD && exceptions.len() < MAX_EXCEPTIONS {
-    let pruned_bw = try_prune_outliers::<F>(
-      slice,
-      encoded_ints,
-      base,
-      for_bit_width,
-      exceptions,
-      is_large,
-    );
-    if pruned_bw < for_bit_width {
-      for_bit_width = pruned_bw;
+    did_pre_prune = true;
+    match *cached_target_bw {
+      CachedTargetBw::Pruned(target_bw) if target_bw < for_bit_width => {
+        apply_target_bw(slice, encoded_ints, base, target_bw, exceptions);
+        for_bit_width = target_bw;
+      }
+      CachedTargetBw::Disabled | CachedTargetBw::Pruned(_) => {}
+      CachedTargetBw::Uninit => {
+        let pruned_bw = try_prune_outliers::<F>(
+          slice,
+          encoded_ints,
+          base,
+          for_bit_width,
+          exceptions,
+          is_large,
+        );
+        if pruned_bw < for_bit_width {
+          *cached_target_bw = CachedTargetBw::Pruned(pruned_bw);
+          for_bit_width = pruned_bw;
+        } else {
+          *cached_target_bw = CachedTargetBw::Disabled;
+        }
+      }
     }
   }
 
@@ -255,13 +304,29 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
 
   // 6. Evaluate Delta benefit (threshold relaxed to >= DELTA_EVAL_MIN_BW for smooth sequences)
   // 6. 评估 Delta 差分收益 (门限放宽至 >= DELTA_EVAL_MIN_BW，平滑数据和线性斜坡可压缩至 0~3 位)
-  let delta_decision = if count > 1 && (force_delta || for_bit_width >= DELTA_EVAL_MIN_BW) {
-    let first = encoded_ints[0];
-    let rest = &encoded_ints[1..];
+  let delta_decision = if count > 1 {
     if force_delta {
+      let first = encoded_ints[0];
+      let rest = &encoded_ints[1..];
       Some(delta_range::<F>(first, rest))
     } else {
-      eval_delta_benefit::<F>(first, rest, for_bit_width)
+      match *cached_use_delta {
+        Some(false) => None,
+        Some(true) => {
+          let first = encoded_ints[0];
+          let rest = &encoded_ints[1..];
+          Some(delta_range::<F>(first, rest))
+        }
+        None => {
+          if for_bit_width >= DELTA_EVAL_MIN_BW {
+            let first = encoded_ints[0];
+            let rest = &encoded_ints[1..];
+            eval_delta_benefit::<F>(first, rest, for_bit_width)
+          } else {
+            None
+          }
+        }
+      }
     }
   } else {
     None
@@ -280,23 +345,46 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     None => (false, F::ZERO_INT, 0, for_total),
   };
 
+  if !force_delta && cached_use_delta.is_none() {
+    *cached_use_delta = Some(use_delta);
+  }
+
   // 7. Low bit-width outlier pruning for FOR mode (when Delta was not selected)
   // 7. FOR 模式低位宽离群值剪枝 (针对未进前置剪枝且未进 Delta 的情况，如 8/12 位剪枝)
-  if !use_delta && for_bit_width > LOW_BW_PRUNE_MIN && for_bit_width < HIGH_BW_PRUNE_THRESHOLD {
-    let new_bw = try_prune_outliers::<F>(
-      slice,
-      encoded_ints,
-      base,
-      for_bit_width,
-      exceptions,
-      is_large,
-    );
-    if new_bw < for_bit_width {
-      for_bit_width = new_bw;
-      for_packed_len = packed_byte_size(count, for_bit_width);
-      exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
+  if !did_pre_prune
+    && !use_delta
+    && for_bit_width > LOW_BW_PRUNE_MIN
+    && for_bit_width < HIGH_BW_PRUNE_THRESHOLD
+  {
+    match *cached_target_bw {
+      CachedTargetBw::Pruned(target_bw) if target_bw < for_bit_width => {
+        apply_target_bw(slice, encoded_ints, base, target_bw, exceptions);
+        for_bit_width = target_bw;
+        for_packed_len = packed_byte_size(count, for_bit_width);
+        exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
+        total_needed = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
+      }
+      CachedTargetBw::Disabled | CachedTargetBw::Pruned(_) => {}
+      CachedTargetBw::Uninit => {
+        let new_bw = try_prune_outliers::<F>(
+          slice,
+          encoded_ints,
+          base,
+          for_bit_width,
+          exceptions,
+          is_large,
+        );
+        if new_bw < for_bit_width {
+          *cached_target_bw = CachedTargetBw::Pruned(new_bw);
+          for_bit_width = new_bw;
+          for_packed_len = packed_byte_size(count, for_bit_width);
+          exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
+        } else {
+          *cached_target_bw = CachedTargetBw::Disabled;
+        }
+        total_needed = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
+      }
     }
-    total_needed = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
   }
 
   // 8. Fallback to RAW mode if compressed size exceeds raw data
@@ -320,4 +408,80 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   }
 
   Some(best_params)
+}
+
+#[doc(hidden)]
+pub fn profile_compress_breakdown<F: AlpFloat>(slice: &[F]) {
+  use std::time::Instant;
+  let count = slice.len();
+  let best_params = find_best_params(slice);
+  let mut encoded_buf = vec![F::Int::default(); count];
+  let enc_ptr = encoded_buf.as_mut_ptr();
+  let mut exceptions = Vec::new();
+
+  let iters = 10000;
+
+  // 1. encode_pass
+  let start = Instant::now();
+  let mut min_val = F::MAX_INT;
+  let mut max_val = F::MIN_INT;
+  for _ in 0..iters {
+    exceptions.clear();
+    let (mn, mx) = unsafe { encode_pass(slice, enc_ptr, best_params, &mut exceptions) };
+    min_val = mn;
+    max_val = mx;
+  }
+  let t_enc = start.elapsed().as_nanos() as f64 / iters as f64;
+
+  let (base, max_offset) = if min_val <= max_val {
+    (min_val, F::calc_range(min_val, max_val))
+  } else {
+    (F::ZERO_INT, 0)
+  };
+  let is_large = count > u16::MAX as usize;
+  let for_bit_width = F::bits_needed(max_offset);
+
+  // 2. try_prune_outliers
+  let start = Instant::now();
+  for _ in 0..iters {
+    let mut exc_copy = exceptions.clone();
+    let _ = try_prune_outliers::<F>(
+      slice,
+      &mut encoded_buf,
+      base,
+      for_bit_width,
+      &mut exc_copy,
+      is_large,
+    );
+  }
+  let t_prune = start.elapsed().as_nanos() as f64 / iters as f64;
+
+  // 3. eval_delta_benefit
+  let start = Instant::now();
+  let first = encoded_buf[0];
+  let rest = &encoded_buf[1..];
+  for _ in 0..iters {
+    let _ = eval_delta_benefit::<F>(first, rest, for_bit_width);
+  }
+  let t_delta = start.elapsed().as_nanos() as f64 / iters as f64;
+
+  // 4. encode_standard (bitpack)
+  let mut dst = Vec::with_capacity(count * 8 + 64);
+  let params = AlpParams::from_best_params(best_params, for_bit_width);
+  let start = Instant::now();
+  for _ in 0..iters {
+    dst.clear();
+    encode_standard::<F>(params, &encoded_buf, base, &exceptions, &mut dst);
+  }
+  let t_pack = start.elapsed().as_nanos() as f64 / iters as f64;
+
+  println!(
+    "  Breakdown: enc={:5.1} ns | prune={:5.1} ns | delta={:5.1} ns | pack={:5.1} ns (bw={}, exc={})",
+    t_enc,
+    t_prune,
+    t_delta,
+    t_pack,
+    for_bit_width,
+    exceptions.len()
+  );
 }

@@ -1,5 +1,5 @@
 use core::hint::unreachable_unchecked;
-use std::{mem::size_of, ptr::read_unaligned};
+use core::mem::size_of;
 
 use crate::error::{Error, Result};
 pub use crate::{
@@ -24,6 +24,68 @@ const PARAMS_LEN: usize = size_of::<u16>();
 /// 自描述头部最大字节长度 (1B 描述符 + 4B u32 长度 + 2B 参数)
 pub const MAX_HEADER_LEN: usize = DESC_LEN + MAX_COUNT_LEN + PARAMS_LEN;
 
+/// Strongly typed compression chunk format identifier.
+/// 强类型压缩数据块格式枚举标识 (以 u8 紧凑编码，零内存与抽象开销)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum ChunkType {
+  F64 = TYPE_F64,
+  F32 = TYPE_F32,
+  F64Raw = TYPE_F64_RAW,
+  F32Raw = TYPE_F32_RAW,
+  F64Delta = TYPE_F64_DELTA,
+  F32Delta = TYPE_F32_DELTA,
+  F64Dec = TYPE_F64_DEC,
+  F32Dec = TYPE_F32_DEC,
+  F64DecDelta = TYPE_F64_DEC_DELTA,
+  F32DecDelta = TYPE_F32_DEC_DELTA,
+  F64Dict = TYPE_F64_DICT,
+  F32Dict = TYPE_F32_DICT,
+  F64Rd = TYPE_F64_RD,
+  F32Rd = TYPE_F32_RD,
+}
+
+impl ChunkType {
+  /// Parses raw byte into strongly typed `ChunkType`.
+  /// 从原始字节解析为强类型 `ChunkType`
+  #[inline(always)]
+  pub const fn from_u8(val: u8) -> Option<Self> {
+    match val {
+      TYPE_F64 => Some(Self::F64),
+      TYPE_F32 => Some(Self::F32),
+      TYPE_F64_RAW => Some(Self::F64Raw),
+      TYPE_F32_RAW => Some(Self::F32Raw),
+      TYPE_F64_DELTA => Some(Self::F64Delta),
+      TYPE_F32_DELTA => Some(Self::F32Delta),
+      TYPE_F64_DEC => Some(Self::F64Dec),
+      TYPE_F32_DEC => Some(Self::F32Dec),
+      TYPE_F64_DEC_DELTA => Some(Self::F64DecDelta),
+      TYPE_F32_DEC_DELTA => Some(Self::F32DecDelta),
+      TYPE_F64_DICT => Some(Self::F64Dict),
+      TYPE_F32_DICT => Some(Self::F32Dict),
+      TYPE_F64_RD => Some(Self::F64Rd),
+      TYPE_F32_RD => Some(Self::F32Rd),
+      _ => None,
+    }
+  }
+
+  /// Returns underlying byte identifier.
+  /// 获取底层原始字节标识
+  #[inline(always)]
+  pub const fn as_u8(self) -> u8 {
+    self as u8
+  }
+}
+
+impl TryFrom<u8> for ChunkType {
+  type Error = Error;
+
+  #[inline(always)]
+  fn try_from(val: u8) -> Result<Self> {
+    Self::from_u8(val).ok_or(Error::InvalidHeader)
+  }
+}
+
 /// Parsed header components from self-describing byte sequence.
 /// 自描述字节序列解析得到的头部信息
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +96,15 @@ pub struct ParsedHeader {
   pub params: Option<AlpParams>,
   pub cursor: usize,
   pub has_repeat: bool,
+}
+
+impl ParsedHeader {
+  /// Returns strongly typed `ChunkType` if known.
+  /// 获取强类型 `ChunkType` 枚举标识
+  #[inline(always)]
+  pub const fn chunk_type(&self) -> Option<ChunkType> {
+    ChunkType::from_u8(self.type_byte)
+  }
 }
 
 /// Calculates byte size needed to encode `count` in the compact header.
@@ -135,9 +206,7 @@ pub fn read_count(src: &[u8]) -> Result<usize> {
           available: src.len(),
         });
       }
-      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u16
-      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u16
-      let c = unsafe { u16::from_le(read_unaligned(src.as_ptr().add(1).cast::<u16>())) } as usize;
+      let c = u16::from_le_bytes([src[1], src[2]]) as usize;
       Ok(c)
     }
     LEN_TAG_U32 => {
@@ -147,9 +216,11 @@ pub fn read_count(src: &[u8]) -> Result<usize> {
           available: src.len(),
         });
       }
-      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u32
-      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u32
-      let c = unsafe { u32::from_le(read_unaligned(src.as_ptr().add(1).cast::<u32>())) } as usize;
+      let c = u32::from_le_bytes(
+        src[1..5]
+          .try_into()
+          .map_err(|_| Error::InvalidHeader)?,
+      ) as usize;
       Ok(c)
     }
     // SAFETY: len_tag is 2 bits masked with 0x03, 0..=3 fully covered above
@@ -199,10 +270,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
           available: src.len(),
         });
       }
-      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u16
-      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u16
-      let c =
-        unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) } as usize;
+      let c = u16::from_le_bytes([src[cursor], src[cursor + 1]]) as usize;
       cursor += 2;
       c
     }
@@ -213,10 +281,11 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
           available: src.len(),
         });
       }
-      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u32
-      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u32
-      let c =
-        unsafe { u32::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u32>())) } as usize;
+      let c = u32::from_le_bytes(
+        src[cursor..cursor + 4]
+          .try_into()
+          .map_err(|_| Error::InvalidHeader)?,
+      ) as usize;
       cursor += 4;
       c
     }
@@ -246,9 +315,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
     });
   }
 
-  // SAFETY: Available bytes verified above, read_unaligned safely reads 2-byte packed params
-  // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取 2 字节 packed params
-  let raw_params = unsafe { u16::from_le(read_unaligned(src.as_ptr().add(cursor).cast::<u16>())) };
+  let raw_params = u16::from_le_bytes([src[cursor], src[cursor + 1]]);
   cursor += 2;
   let is_dec = type_byte == TYPE_F64_DEC
     || type_byte == TYPE_F32_DEC

@@ -65,38 +65,47 @@ fn main() {
       let _ = decompress_into::<f64>(&comp_buf, &mut dec_buf);
     }
 
-    // Measure End-to-End Compression with Dynamic Sampling (1000 iters)
+    // Measure End-to-End Compression with Dynamic Sampling (min of 3 rounds of 1000 iters)
     let comp_iters = 1000;
-    let start_enc = Instant::now();
-    for _ in 0..comp_iters {
-      comp_buf.clear();
-      compress_into(&data, &mut comp_buf);
+    let mut best_enc_dur = std::time::Duration::MAX;
+    for _ in 0..3 {
+      let start_enc = Instant::now();
+      for _ in 0..comp_iters {
+        comp_buf.clear();
+        compress_into(&data, &mut comp_buf);
+      }
+      best_enc_dur = best_enc_dur.min(start_enc.elapsed());
     }
-    let enc_dur = start_enc.elapsed();
-    let enc_gb_s = (raw_bytes as f64 * comp_iters as f64) / (enc_dur.as_secs_f64() * 1e9);
+    let enc_gb_s = (raw_bytes as f64 * comp_iters as f64) / (best_enc_dur.as_secs_f64() * 1e9);
 
-    // Measure Pure Encoding Kernel Without Sampling (Reusing Cached Parameters, 1000 iters)
+    // Measure Pure Encoding Kernel Without Sampling (Reusing Cached Parameters, min of 3 rounds of 1000 iters)
     encoder.reset();
     comp_buf.clear();
     encoder.compress_into(&data, &mut comp_buf); // First pass establishes cached parameters
-    let start_enc_kern = Instant::now();
-    for _ in 0..comp_iters {
-      comp_buf.clear();
-      encoder.compress_into(&data, &mut comp_buf);
+    let mut best_enc_kern_dur = std::time::Duration::MAX;
+    for _ in 0..3 {
+      let start_enc_kern = Instant::now();
+      for _ in 0..comp_iters {
+        comp_buf.clear();
+        encoder.compress_into(&data, &mut comp_buf);
+      }
+      best_enc_kern_dur = best_enc_kern_dur.min(start_enc_kern.elapsed());
     }
-    let enc_kern_dur = start_enc_kern.elapsed();
     let enc_kernel_gb_s =
-      (raw_bytes as f64 * comp_iters as f64) / (enc_kern_dur.as_secs_f64() * 1e9);
+      (raw_bytes as f64 * comp_iters as f64) / (best_enc_kern_dur.as_secs_f64() * 1e9);
 
-    // Measure Decompression (1000 iters - exact match with C++ ALP benchmark)
+    // Measure Decompression (min of 3 rounds of 1000 iters - exact match with C++ ALP benchmark)
     let dec_iters = 1000;
-    let start_dec = Instant::now();
-    for _ in 0..dec_iters {
-      dec_buf.clear();
-      let _ = decompress_into::<f64>(&comp_buf, &mut dec_buf);
+    let mut best_dec_dur = std::time::Duration::MAX;
+    for _ in 0..3 {
+      let start_dec = Instant::now();
+      for _ in 0..dec_iters {
+        dec_buf.clear();
+        let _ = decompress_into::<f64>(&comp_buf, &mut dec_buf);
+      }
+      best_dec_dur = best_dec_dur.min(start_dec.elapsed());
     }
-    let dec_dur = start_dec.elapsed();
-    let dec_gb_s = (raw_bytes as f64 * dec_iters as f64) / (dec_dur.as_secs_f64() * 1e9);
+    let dec_gb_s = (raw_bytes as f64 * dec_iters as f64) / (best_dec_dur.as_secs_f64() * 1e9);
 
     let comp_bytes = comp_buf.len();
     total_comp_bytes += comp_bytes;
@@ -107,9 +116,12 @@ fn main() {
     sum_enc_kern += enc_kernel_gb_s;
     sum_dec += dec_gb_s;
 
+    let header = fastalp::read_header(&comp_buf).unwrap();
+    let chunk_type = header.chunk_type().unwrap_or(fastalp::ChunkType::F64);
+    let bw = header.params.map(|p| p.bit_width).unwrap_or(0);
     println!(
-      "{:<24} | Ratio: {:>6.2}x | Enc(samp): {:>5.2} GB/s | Enc(kern): {:>5.2} GB/s | Dec: {:>5.2} GB/s",
-      name, ratio, enc_gb_s, enc_kernel_gb_s, dec_gb_s
+      "{:<24} | {:<12?} (bw={:>2}, rep={}) | Ratio: {:>6.2}x | Enc(samp): {:>5.2} GB/s | Enc(kern): {:>5.2} GB/s | Dec: {:>5.2} GB/s",
+      name, chunk_type, bw, header.has_repeat, ratio, enc_gb_s, enc_kernel_gb_s, dec_gb_s
     );
 
     datasets_json.push(format!(

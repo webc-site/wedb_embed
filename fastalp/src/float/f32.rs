@@ -112,6 +112,24 @@ impl AlpFloat for f32 {
   }
 
   #[inline(always)]
+  unsafe fn encode_simd(
+    slice: &[Self],
+    enc_ptr: *mut Self::Int,
+    exp_factor: Self,
+    fac_int: i64,
+    frac_exp: Self,
+    use_div: bool,
+    exceptions: &mut Vec<crate::encoder::Exception<Self::RawBits>>,
+  ) -> (Self::Int, Self::Int) {
+    // SAFETY: caller guarantees slice is valid and enc_ptr has space for slice.len()
+    unsafe {
+      crate::encoder::kernel::encode_simd_f32(
+        slice, enc_ptr, exp_factor, fac_int, frac_exp, use_div, exceptions,
+      )
+    }
+  }
+
+  #[inline(always)]
   fn decode_from_int(encoded: Self::Int, fac_int: i64, frac_exp: Self) -> Self {
     let int_with_fac = if fac_int == 1 {
       encoded as i64

@@ -86,11 +86,6 @@ pub(crate) fn try_encode_rd<F: AlpFloat>(
 
   // 2. 使用确定的最佳 cut 宽度对完整切片建立字典与提取高低位
   let right_bw = total_bits - best_cut;
-  let right_mask = if right_bw == 64 {
-    u64::MAX
-  } else {
-    (1u64 << right_bw) - 1
-  };
 
   // 栈上 256 项开放寻址哈希表统计频次，零堆内存分配
   let mut table_keys = [0u16; HASH_TABLE_SIZE];
@@ -155,6 +150,34 @@ pub(crate) fn try_encode_rd<F: AlpFloat>(
     }
   }
 
+  encode_rd_fast(
+    slice,
+    right_bw,
+    actual_dict_size,
+    dict,
+    left_indices,
+    right_parts,
+    exceptions,
+  )
+}
+
+/// Fast encoding using pre-determined cut width and dictionary (zero parameter search overhead).
+/// 使用已确定截断位宽与字典直接编码（零参数采样与探测开销）
+pub(crate) fn encode_rd_fast<F: AlpFloat>(
+  slice: &[F],
+  right_bw: u8,
+  actual_dict_size: usize,
+  dict: [u16; MAX_RD_DICT_SIZE],
+  left_indices: &mut Vec<u64>,
+  right_parts: &mut Vec<u64>,
+  exceptions: &mut Vec<(u16, u16)>,
+) -> Option<RdCandidate> {
+  let count = slice.len();
+  let right_mask = if right_bw == 64 {
+    u64::MAX
+  } else {
+    (1u64 << right_bw) - 1
+  };
   let left_bw = if actual_dict_size <= 1 {
     0
   } else {
@@ -162,22 +185,72 @@ pub(crate) fn try_encode_rd<F: AlpFloat>(
   };
 
   left_indices.clear();
-  left_indices.reserve(count);
+  if left_bw > 0 {
+    if left_indices.capacity() < count {
+      left_indices.reserve(count);
+    }
+    // SAFETY: every element in 0..count will be fully initialized below
+    unsafe { left_indices.set_len(count) };
+  }
   right_parts.clear();
-  right_parts.reserve(count);
+  if right_parts.capacity() < count {
+    right_parts.reserve(count);
+  }
+  // SAFETY: every element in 0..count will be fully initialized below
+  unsafe { right_parts.set_len(count) };
   exceptions.clear();
 
-  for (pos, &v) in slice.iter().enumerate() {
-    let raw = v.to_u64_key();
-    let left = (raw >> right_bw) as u16;
-    let right = raw & right_mask;
-    right_parts.push(right);
+  let left_ptr = left_indices.as_mut_ptr();
+  let right_ptr = right_parts.as_mut_ptr();
 
-    if let Some(idx) = dict[..actual_dict_size].iter().position(|&entry| entry == left) {
-      left_indices.push(idx as u64);
+  // SAFETY: left_indices and right_parts have length count, pos < count
+  unsafe {
+    if actual_dict_size == 1 {
+      let d0 = dict[0];
+      for (pos, &v) in slice.iter().enumerate() {
+        let raw = v.to_u64_key();
+        let left = (raw >> right_bw) as u16;
+        let right = raw & right_mask;
+        *right_ptr.add(pos) = right;
+        if left != d0 {
+          exceptions.push((pos as u16, left));
+        }
+      }
+    } else if actual_dict_size == 2 {
+      let d0 = dict[0];
+      let d1 = dict[1];
+      for (pos, &v) in slice.iter().enumerate() {
+        let raw = v.to_u64_key();
+        let left = (raw >> right_bw) as u16;
+        let right = raw & right_mask;
+        *right_ptr.add(pos) = right;
+        if left == d0 {
+          *left_ptr.add(pos) = 0;
+        } else if left == d1 {
+          *left_ptr.add(pos) = 1;
+        } else {
+          exceptions.push((pos as u16, left));
+        }
+      }
     } else {
-      left_indices.push(0);
-      exceptions.push((pos as u16, left));
+      for (pos, &v) in slice.iter().enumerate() {
+        let raw = v.to_u64_key();
+        let left = (raw >> right_bw) as u16;
+        let right = raw & right_mask;
+        *right_ptr.add(pos) = right;
+
+        let mut matched = false;
+        for (idx, &entry) in dict[..actual_dict_size].iter().enumerate() {
+          if entry == left {
+            *left_ptr.add(pos) = idx as u64;
+            matched = true;
+            break;
+          }
+        }
+        if !matched {
+          exceptions.push((pos as u16, left));
+        }
+      }
     }
   }
 

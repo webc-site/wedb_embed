@@ -2,12 +2,13 @@ mod delta;
 mod dict;
 mod engine;
 mod exception;
-mod kernel;
+pub(crate) mod kernel;
 mod outlier;
 mod rd;
 mod standard;
 mod state;
 
+pub use engine::profile_compress_breakdown;
 pub(crate) use exception::Exception;
 pub use state::Encoder;
 

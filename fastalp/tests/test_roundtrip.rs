@@ -800,7 +800,10 @@ fn test_rd_mode_roundtrip() -> fastalp::Result<()> {
 
   let compressed = compress(&data);
   let hdr = read_header(&compressed)?;
-  assert_eq!(hdr.type_byte, TYPE_F64_RD, "高位聚集浮点数据应触发 ALP-RD 压缩");
+  assert_eq!(
+    hdr.type_byte, TYPE_F64_RD,
+    "高位聚集浮点数据应触发 ALP-RD 压缩"
+  );
   assert!(
     compressed.len() < data.len() * 8,
     "ALP-RD 压缩体积应小于未压缩原始体积"
@@ -825,16 +828,16 @@ fn test_rd_mode_f32_roundtrip() -> fastalp::Result<()> {
   let mut data = Vec::with_capacity(1024);
   for i in 0..1024 {
     let exp_bias = ((i % 2) as u32 + 127) << 23;
-    let mantissa = (i as u32)
-      .wrapping_mul(1103515245)
-      .wrapping_add(12345)
-      & 0x007F_FFFF;
+    let mantissa = (i as u32).wrapping_mul(1103515245).wrapping_add(12345) & 0x007F_FFFF;
     data.push(f32::from_bits(exp_bias | mantissa));
   }
 
   let compressed = compress(&data);
   let hdr = read_header(&compressed)?;
-  assert_eq!(hdr.type_byte, TYPE_F32_RD, "f32 高位聚集浮点数据应触发 ALP-RD 压缩");
+  assert_eq!(
+    hdr.type_byte, TYPE_F32_RD,
+    "f32 高位聚集浮点数据应触发 ALP-RD 压缩"
+  );
   assert!(
     compressed.len() < data.len() * 4,
     "f32 ALP-RD 压缩体积应小于原始体积"

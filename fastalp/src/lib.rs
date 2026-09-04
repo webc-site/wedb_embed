@@ -21,10 +21,12 @@ mod sampler;
 pub use capi::*;
 pub use constants::{CHUNK_SIZE, CHUNK_SIZE_1024};
 pub use decoder::{decompress, decompress_into, decompress_into_raw, decompress_into_slice};
-pub use encoder::{Encoder, compress, compress_delta, compress_delta_into, compress_into};
+pub use encoder::{
+  Encoder, compress, compress_delta, compress_delta_into, compress_into, profile_compress_breakdown,
+};
 pub use error::{Error, Result};
 pub use float::AlpFloat;
-pub use header::{MAX_HEADER_LEN, ParsedHeader, read_count, read_header};
+pub use header::{ChunkType, MAX_HEADER_LEN, ParsedHeader, read_count, read_header};
 pub use params::AlpParams;
 pub use sampler::BestParams;
 
