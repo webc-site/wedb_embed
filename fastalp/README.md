@@ -19,6 +19,31 @@ Pure Rust implementation of the ALP (Adaptive Lossless Floating-Point Compressio
 
 ---
 
+- [Overview](#overview)
+- [Usage](#usage)
+  - [Installation](#installation)
+  - [Basic Compression and Decompression](#basic-compression-and-decompression)
+  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
+  - [Stateful Encoding with Parameter Caching](#stateful-encoding-with-parameter-caching)
+  - [Single-Precision Floating-Point Data](#single-precision-floating-point-data)
+- [Features](#features)
+- [Architecture & Design](#architecture-design)
+  - [Compression Pipeline](#compression-pipeline)
+  - [Decompression Pipeline](#decompression-pipeline)
+- [Tech Stack](#tech-stack)
+- [Directory Structure](#directory-structure)
+- [Benchmarks & Cross-Algorithm Comparison](#benchmarks-cross-algorithm-comparison)
+  - [Benchmark Environment & Toolchain](#benchmark-environment-toolchain)
+  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
+  - [C++ ALP Benchmark Methodology & Criteria Unification](#c-alp-benchmark-methodology-criteria-unification)
+  - [Evaluation Datasets & Authoritative Data Sources (All 37 Benchmarks)](#evaluation-datasets-authoritative-data-sources-all-37-benchmarks)
+- [Architecture Evolution & Optimization Breakdown](#architecture-evolution-optimization-breakdown)
+  - [Architecture Patterns Adopted & Refined from Reference ALP](#architecture-patterns-adopted-refined-from-reference-alp)
+  - [Algorithmic and Performance Optimizations in fastalp](#algorithmic-and-performance-optimizations-in-fastalp)
+- [C API & Foreign Function Interface (FFI)](#c-api-foreign-function-interface-ffi)
+  - [Buffer Capacity Estimation](#buffer-capacity-estimation)
+  - [Thread-Local Streaming API](#thread-local-streaming-api)
+  - [Stateful Handle-Based API](#stateful-handle-based-api)
 
 ## Overview
 
@@ -552,6 +577,7 @@ For multi-threaded environments or distinct column instances requiring independe
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`: Compresses `f64` floats using the specified encoder instance.<br>
 - Symmetrical handle APIs are provided for single-precision: `FastAlpEncoderF32`, `fastalp_encoder_f32_new`, `fastalp_encoder_f32_free`, `fastalp_encoder_f32_reset`, and `fastalp_encoder_f32_compress`.
 
+
 ---
 
 <a name="zh"></a>
@@ -568,6 +594,31 @@ For multi-threaded environments or distinct column instances requiring independe
 
 ---
 
+- [功能特性](#功能特性)
+- [使用示例](#使用示例)
+  - [添加依赖](#添加依赖)
+  - [基础压缩与解压](#基础压缩与解压)
+  - [内存缓冲区复用](#内存缓冲区复用)
+  - [状态化编码与参数缓存](#状态化编码与参数缓存)
+  - [单精度浮点数据处理](#单精度浮点数据处理)
+- [核心特性](#核心特性)
+- [架构设计](#架构设计)
+  - [压缩流程](#压缩流程)
+  - [解压流程](#解压流程)
+- [技术栈](#技术栈)
+- [目录结构](#目录结构)
+- [性能评测与多算法对比](#性能评测与多算法对比)
+  - [测试环境与编译配置](#测试环境与编译配置)
+  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
+  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
+  - [评测数据集全景与公开数据源](#评测数据集全景与公开数据源)
+- [架构演进与优化全景](#架构演进与优化全景)
+  - [参考与借鉴原版 ALP 的架构设计](#参考与借鉴原版-alp-的架构设计)
+  - [自主研发的算法与性能优化](#自主研发的算法与性能优化)
+- [C 兼容接口与跨语言集成](#c-兼容接口与跨语言集成)
+  - [缓冲区容量预估](#缓冲区容量预估)
+  - [线程局部流式接口](#线程局部流式接口)
+  - [独立实例句柄接口](#独立实例句柄接口)
 
 ## 功能特性
 
@@ -1100,3 +1151,4 @@ cargo build --release --features capi
 - `fastalp_encoder_f64_reset(enc)`：重置指定编码器句柄中的已缓存模型参数。<br>
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`：使用指定编码器句柄压缩 `f64` 浮点数组。<br>
 - 单精度浮点对应句柄接口：`FastAlpEncoderF32`、`fastalp_encoder_f32_new`、`fastalp_encoder_f32_free`、`fastalp_encoder_f32_reset` 以及 `fastalp_encoder_f32_compress`。
+
