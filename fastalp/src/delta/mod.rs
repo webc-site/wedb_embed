@@ -35,7 +35,7 @@ fn scan_deltas<F: AlpFloat>(
 /// Calculates the min delta and required bit width for adjacent first-order differences.
 /// 计算相邻一阶差分的极小值与所需比特位宽（4路展开流水线计算）
 #[inline(always)]
-pub fn delta_range<F: AlpFloat>(first: F::Int, rest: &[F::Int]) -> (F::Int, u8) {
+pub(crate) fn delta_range<F: AlpFloat>(first: F::Int, rest: &[F::Int]) -> (F::Int, u8) {
   let mut min_delta = F::MAX_INT;
   let mut max_delta = F::MIN_INT;
   let mut prev = first;
@@ -47,7 +47,7 @@ pub fn delta_range<F: AlpFloat>(first: F::Int, rest: &[F::Int]) -> (F::Int, u8) 
 /// Evaluates whether delta encoding yields a smaller bit width than standard Frame-of-Reference (FOR).
 /// 评估一阶差分编码相比直接 FOR 基准值对齐是否具有更窄的比特位宽优势（前置 16 采样快筛，无缝续扫零冗余内存访问）
 #[inline(always)]
-pub fn eval_delta_benefit<F: AlpFloat>(
+pub(crate) fn eval_delta_benefit<F: AlpFloat>(
   first: F::Int,
   rest: &[F::Int],
   for_bit_width: u8,

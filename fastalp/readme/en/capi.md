@@ -16,10 +16,11 @@ Build standalone static libraries (`libfastalp.a`) or shared libraries (`libfast
 cargo build --release --features capi
 ```
 
-### Buffer Capacity Estimation
+### Buffer Capacity Estimation & Element Extraction
 
-Callers can calculate worst-case buffer bounds:
+Callers can calculate worst-case buffer bounds or extract contained element counts:
 
+- `fastalp_count(src, src_len)`: Reads the element count from the compressed byte stream in O(1) time without decompressing the payload, enabling optimal destination buffer preallocation.<br>
 - `fastalp_max_compressed_size_f64(len)`: Computes maximum compressed byte bound for `len` `f64` floats.<br>
 - `fastalp_max_compressed_size_f32(len)`: Computes maximum compressed byte bound for `len` `f32` floats.
 

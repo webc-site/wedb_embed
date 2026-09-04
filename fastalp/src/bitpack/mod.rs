@@ -1,8 +1,9 @@
 mod pack;
 mod unpack;
 
-pub use pack::{bitpack_encoded, bitpack_fused_delta, bitpack_u64, packed_byte_size};
-pub use unpack::{
-  AlpDecoder, AlpDivDecoder, AlpFac1Decoder, AlpMulDecoder, bitunpack_core_generic, bitunpack_into,
-  bitunpack_into_div, bitunpack_slice, bitunpack_slice_div, bitunpack_u64, bitunpack_u64_slice,
+pub(crate) use pack::{bitpack_encoded, bitpack_fused_delta};
+pub use pack::{bitpack_u64, packed_byte_size};
+pub(crate) use unpack::{
+  AlpDecoder, AlpDivDecoder, AlpFac1Decoder, AlpMulDecoder, bitunpack_core_generic,
 };
+pub use unpack::{bitunpack_u64, bitunpack_u64_slice};

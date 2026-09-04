@@ -47,42 +47,10 @@ pub struct BestParams {
   pub use_div: bool,
 }
 
-/// Checks if a float is an unencodable special value (NaN, Inf, -0.0, out of bounds).
-/// 检查浮点数是否为不可编码的特殊值（NaN, Inf, -0.0, 超出范围）
-#[inline(always)]
-pub fn is_impossible<F: AlpFloat>(n: F) -> bool {
-  n.is_impossible()
-}
-
-/// Fast single-value float encoding probe with pre-extracted exponent factors.
-/// 高性能单值浮点数编码探测（已预提取幂表因子）
-#[inline(always)]
-pub fn try_encode_fast<F: AlpFloat>(
-  val: F,
-  exp_factor: F,
-  fac_int: i64,
-  frac_exp: F,
-) -> Option<F::Int> {
-  val.try_encode_fast(exp_factor, fac_int, frac_exp)
-}
-
-/// Tries to encode a single float into integer and verifies 100% bit-exact lossless roundtrip.
-/// 尝试将单个浮点数编码为整型，并验证反解是否 100% 精确无损
-#[inline(always)]
-pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int> {
-  if exp > F::MAX_EXPONENT || fac > exp || fac > F::MAX_FAC {
-    return None;
-  }
-  let exp_factor = F::exp_factor(exp, fac);
-  let fac_int = F::fac_int(fac);
-  let frac_exp = F::frac_exp(exp);
-  val.try_encode_fast(exp_factor, fac_int, frac_exp)
-}
-
 /// Fast exponent and base probe for identical/constant float sequences (zero-heap allocation, O(1) complexity).
 /// 全等与常数浮点数序列的快速指数与基准值探测（零堆分配、O(1) 复杂度）
 #[inline]
-pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
+pub(crate) fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
   const FAC_INT: i64 = 1;
   (0..=F::MAX_EXPONENT).find_map(|exp| {
     let frac_exp = F::frac_exp(exp);
@@ -93,7 +61,7 @@ pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
 
 /// Evaluates sample cost to find optimal exponent (exp), factor (fac), and division mode (use_div).
 /// 通过对采样样本进行代价评估，找出最优的指数 (exp)、因子 (fac) 与除法重构模式 (use_div)
-pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
+pub(crate) fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
   if samples.is_empty() {
     return BestParams {
       exp: 0,

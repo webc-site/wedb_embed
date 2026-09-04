@@ -84,6 +84,7 @@ path = "../../wedb/resp"
 default = [ "fjall" ]
 fjall = [ "dep:fjall" ]
 bench = [ "dep:mimalloc", "fjall" ]
+sync = [ "wedb_embed_engine/sync" ]
 
 [dev-dependencies]
 anyhow = "1.0.104"

@@ -13,6 +13,8 @@ pub use fjall::{
   },
 };
 use wedb_embed_engine::{Batch, Engine, KvEntry, Partition};
+#[cfg(feature = "sync")]
+use wedb_embed_engine::{SeqNo, Snapshot, SyncEngine};
 
 use crate::{
   error::{Error, Result},
@@ -57,6 +59,11 @@ impl Iterator for FjallIter {
         .into_inner()
         .map(|(key, value)| FjallEntry { key, value })
     })
+  }
+
+  #[inline]
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    self.iter.size_hint()
   }
 }
 
@@ -115,26 +122,6 @@ impl Partition for FjallPartition {
   }
 
   #[inline]
-  fn insert(&self, key: &[u8], value: &[u8]) -> StdResult<(), Self::Error> {
-    self.ks.insert(key, value)
-  }
-
-  #[inline]
-  fn rm(&self, key: &[u8]) -> StdResult<(), Self::Error> {
-    self.ks.remove(key)
-  }
-
-  #[inline]
-  fn rm_weak(&self, key: &[u8]) -> StdResult<(), Self::Error> {
-    self.ks.remove_weak(key)
-  }
-
-  #[inline]
-  fn clear(&self) -> StdResult<(), Self::Error> {
-    self.ks.clear()
-  }
-
-  #[inline]
   fn iter(&self) -> Self::Iter<'_> {
     FjallIter {
       iter: self.ks.iter(),
@@ -179,6 +166,31 @@ impl Partition for FjallPartition {
           .map(|(key, value)| FjallEntry { key, value })
       })
       .transpose()
+  }
+
+  #[inline]
+  fn insert(&self, key: &[u8], value: &[u8]) -> StdResult<(), Self::Error> {
+    self.ks.insert(key, value)
+  }
+
+  #[inline]
+  fn rm(&self, key: &[u8]) -> StdResult<(), Self::Error> {
+    self.ks.remove(key)
+  }
+
+  #[inline]
+  fn rm_weak(&self, key: &[u8]) -> StdResult<(), Self::Error> {
+    self.ks.remove_weak(key)
+  }
+
+  #[inline]
+  fn clear(&self) -> StdResult<(), Self::Error> {
+    self.ks.clear()
+  }
+
+  #[inline]
+  fn flush(&self) -> StdResult<(), Self::Error> {
+    self.ks.rotate_memtable_and_wait()
   }
 
   #[inline]
@@ -235,9 +247,9 @@ impl Batch for FjallBatch {
     V: AsRef<[u8]>,
   {
     let ks = &partition.ks;
-    for (k, v) in entries {
-      self.batch.insert(ks, k.as_ref(), v.as_ref());
-    }
+    entries
+      .into_iter()
+      .for_each(|(k, v)| self.batch.insert(ks, k.as_ref(), v.as_ref()));
   }
 
   #[inline]
@@ -252,9 +264,9 @@ impl Batch for FjallBatch {
     K: AsRef<[u8]>,
   {
     let ks = &partition.ks;
-    for k in keys {
-      self.batch.remove(ks, k.as_ref());
-    }
+    keys
+      .into_iter()
+      .for_each(|k| self.batch.remove(ks, k.as_ref()));
   }
 
   #[inline]
@@ -474,9 +486,140 @@ impl Engine for Fjall {
 
   #[inline]
   fn compact(&self) -> StdResult<(), Self::Error> {
-    for name in self.db.list_keyspace_names() {
-      self.partition(&name)?.compact()?;
+    self
+      .db
+      .list_keyspace_names()
+      .into_iter()
+      .try_for_each(|name| self.partition(&name)?.compact())
+  }
+}
+
+#[cfg(feature = "sync")]
+use fjall::Readable;
+
+#[cfg(feature = "sync")]
+/// Cross-keyspace point-in-time snapshot wrapper for Fjall.
+/// Fjall 跨 Keyspace 瞬时全局一致性快照封装。
+#[derive(Clone)]
+pub struct FjallSnapshot {
+  pub inner: fjall::Snapshot,
+}
+
+#[cfg(feature = "sync")]
+impl Snapshot for FjallSnapshot {
+  type Error = fjall::Error;
+  type Partition = FjallPartition;
+  type Value = fjall::Slice;
+  type Entry<'a> = FjallEntry;
+  type Iter<'a> = FjallIter;
+
+  #[inline]
+  fn seqno(&self) -> SeqNo {
+    self.inner.seqno()
+  }
+
+  #[inline]
+  fn get(
+    &self,
+    partition: &Self::Partition,
+    key: &[u8],
+  ) -> StdResult<Option<Self::Value>, Self::Error> {
+    self.inner.get(&partition.ks, key)
+  }
+
+  #[inline]
+  fn size_of(
+    &self,
+    partition: &Self::Partition,
+    key: &[u8],
+  ) -> StdResult<Option<usize>, Self::Error> {
+    self
+      .inner
+      .size_of(&partition.ks, key)
+      .map(|opt| opt.map(|s| s as usize))
+  }
+
+  #[inline]
+  fn contains_key(&self, partition: &Self::Partition, key: &[u8]) -> StdResult<bool, Self::Error> {
+    self.inner.contains_key(&partition.ks, key)
+  }
+
+  #[inline]
+  fn iter<'a>(&'a self, partition: &'a Self::Partition) -> Self::Iter<'a> {
+    FjallIter {
+      iter: self.inner.iter(&partition.ks),
     }
-    Ok(())
+  }
+
+  #[inline]
+  fn prefix<'a>(&'a self, partition: &'a Self::Partition, prefix: &[u8]) -> Self::Iter<'a> {
+    FjallIter {
+      iter: self.inner.prefix(&partition.ks, prefix),
+    }
+  }
+
+  #[inline]
+  fn range<'a>(
+    &'a self,
+    partition: &'a Self::Partition,
+    range: (Bound<&[u8]>, Bound<&[u8]>),
+  ) -> Self::Iter<'a> {
+    FjallIter {
+      iter: self.inner.range::<&[u8], _>(&partition.ks, range),
+    }
+  }
+
+  #[inline]
+  fn first_entry<'a>(
+    &'a self,
+    partition: &'a Self::Partition,
+  ) -> StdResult<Option<Self::Entry<'a>>, Self::Error> {
+    self
+      .inner
+      .first_key_value(&partition.ks)
+      .map(|guard| {
+        guard
+          .into_inner()
+          .map(|(key, value)| FjallEntry { key, value })
+      })
+      .transpose()
+  }
+
+  #[inline]
+  fn last_entry<'a>(
+    &'a self,
+    partition: &'a Self::Partition,
+  ) -> StdResult<Option<Self::Entry<'a>>, Self::Error> {
+    self
+      .inner
+      .last_key_value(&partition.ks)
+      .map(|guard| {
+        guard
+          .into_inner()
+          .map(|(key, value)| FjallEntry { key, value })
+      })
+      .transpose()
+  }
+}
+
+#[cfg(feature = "sync")]
+impl SyncEngine for Fjall {
+  type Snapshot = FjallSnapshot;
+
+  #[inline]
+  fn snapshot(&self) -> Self::Snapshot {
+    FjallSnapshot {
+      inner: self.db.snapshot(),
+    }
+  }
+
+  #[inline]
+  fn visible_seqno(&self) -> SeqNo {
+    self.db.visible_seqno()
+  }
+
+  #[inline]
+  fn next_seqno(&self) -> SeqNo {
+    self.db.seqno()
   }
 }

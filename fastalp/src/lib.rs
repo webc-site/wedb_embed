@@ -1,51 +1,47 @@
-mod bitpack;
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+use core::mem::size_of;
+
+pub mod bitpack;
+pub mod header;
+
 #[cfg(feature = "capi")]
 pub mod capi;
+
 mod constants;
 mod decoder;
 mod delta;
 mod encoder;
 mod error;
 mod float;
-mod header;
 mod params;
 mod sampler;
 
-pub use bitpack::{
-  bitpack_encoded, bitpack_u64, bitunpack_into, bitunpack_into_div, bitunpack_slice,
-  bitunpack_slice_div, bitunpack_u64, bitunpack_u64_slice, packed_byte_size,
-};
 #[cfg(feature = "capi")]
 pub use capi::*;
-pub use constants::{
-  BITS_PER_BYTE, BITS_U64, BYTES_U64, CHUNK_SIZE_1024, EARLY_EXIT_BIT_WIDTH,
-  ENCODING_UPPER_LIMIT_F32, ENCODING_UPPER_LIMIT_F64, EXC_COUNT_LEN, EXC_COUNT_LEN_U32,
-  EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F32, EXP_ARR_F64, FACT_ARR_F32, FACT_ARR_F64, FRAC_ARR_F32,
-  FRAC_ARR_F64, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT, LEN_TAG_U8, LEN_TAG_U16, LEN_TAG_U32,
-  LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT, LUT_SIZE_8BIT, MAX_EXCEPTIONS, MAX_EXPONENT_F32,
-  MAX_EXPONENT_F64, MAX_FAC_F32, MAX_FAC_F64, SAMPLES_COUNT, TYPE_F32, TYPE_F32_DEC,
-  TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F32_RAW, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
-  TYPE_F64_DELTA, TYPE_F64_RAW, TYPE_MASK,
-};
-pub use decoder::{
-  decode_delta, decode_delta_raw, decode_delta_slice, decode_standard, decode_standard_raw,
-  decode_standard_slice, decompress, decompress_into, decompress_into_raw, decompress_into_slice,
-};
-pub use delta::eval_delta_benefit;
-pub use encoder::{
-  Encoder, Exception, compress, compress_delta, compress_delta_into, compress_into, encode_delta,
-  encode_standard,
-};
+pub use constants::{CHUNK_SIZE, CHUNK_SIZE_1024};
+pub use decoder::{decompress, decompress_into, decompress_into_raw, decompress_into_slice};
+pub use encoder::{Encoder, compress, compress_delta, compress_delta_into, compress_into};
 pub use error::{Error, Result};
 pub use float::AlpFloat;
-pub use header::{
-  MAX_HEADER_LEN, ParsedHeader, count_bytes, header_len, raw_header_len, read_header, write_header,
-};
-pub use params::{
-  AlpParams, BIT_WIDTH_MASK, BIT_WIDTH_SHIFT, EXP_MASK, FAC_MASK, FAC_SHIFT, bit_mask, bits_needed,
-  pack_params, unpack_params,
-};
-pub use sampler::{
-  BestParams, find_best_params, find_identical_base, is_impossible, try_encode_fast,
-  try_encode_value,
-};
+pub use header::{MAX_HEADER_LEN, ParsedHeader, read_count, read_header};
+pub use params::AlpParams;
+pub use sampler::BestParams;
+
+/// Reads the element count from the compressed data header in O(1) time without decompressing the payload.
+///
+/// 从压缩数据头部快速读取元素总数（O(1) 复杂度，零内存分配，无需解压任何有效载荷数据）。
+#[inline(always)]
+pub fn count(src: &[u8]) -> Result<usize> {
+  header::read_count(src)
+}
+
+/// Computes the maximum possible compressed buffer size in bytes for `count` values of type `F`.
+/// Guaranteed to never overflow even in the worst-case uncompressible fallback.
+///
+/// 计算 `count` 个 `F` 类型浮点数值在最差情况下所需的最大压缩缓冲区字节大小。
+/// 确保预分配该大小的目标缓冲区绝不发生溢出。
+#[inline(always)]
+pub const fn max_compressed_size<F: AlpFloat>(count: usize) -> usize {
+  MAX_HEADER_LEN.saturating_add(count.saturating_mul(size_of::<F>()))
+}

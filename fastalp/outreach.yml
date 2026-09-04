@@ -404,5 +404,13 @@ records:
     pr_number: 364
     url: https://github.com/cnosdb/docs/pull/364
     title: "docs: add ALP and fastalp floating-point compression to concept design"
+    status: closed
+    date: 2026-09-04
+
+  - type: pull_request
+    repo: cnosdb/cnosdb
+    pr_number: 2438
+    url: https://github.com/cnosdb/cnosdb/pull/2438
+    title: "feat(codec): add fastalp floating-point compression codec"
     status: submitted
     date: 2026-09-04

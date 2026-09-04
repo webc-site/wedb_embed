@@ -5,6 +5,8 @@ use log::info;
 use parking_lot::RwLock;
 use rapidhash::RapidHashMap as HashMap;
 use wedb_embed_engine::{Batch, Engine, KvEntry, Partition};
+#[cfg(feature = "sync")]
+use wedb_embed_engine::{Snapshot, SyncEngine};
 
 #[ctor::ctor(unsafe)]
 fn _log_init() {
@@ -351,5 +353,91 @@ fn test_engine_batch() -> Void {
   assert_eq!(part_b.get(b"b1")?.as_deref(), Some(&b"val_b1"[..]));
 
   info!("test_engine_batch passed");
+  OK
+}
+
+#[cfg(feature = "sync")]
+#[derive(Clone)]
+struct MemSnapshot {
+  _data: HashMap<String, BTreeMap<Vec<u8>, Vec<u8>>>,
+  seqno: u64,
+}
+
+#[cfg(feature = "sync")]
+impl Snapshot for MemSnapshot {
+  type Error = io::Error;
+  type Partition = MemPartition;
+  type Value = Vec<u8>;
+  type Entry<'a> = MemEntry;
+  type Iter<'a> = MemIter;
+
+  fn seqno(&self) -> u64 {
+    self.seqno
+  }
+
+  fn get(
+    &self,
+    partition: &Self::Partition,
+    key: &[u8],
+  ) -> Result<Option<Self::Value>, Self::Error> {
+    let map = partition.data.read();
+    Ok(map.get(key).cloned())
+  }
+
+  fn iter<'a>(&'a self, partition: &'a Self::Partition) -> Self::Iter<'a> {
+    partition.iter()
+  }
+
+  fn prefix<'a>(&'a self, partition: &'a Self::Partition, prefix: &[u8]) -> Self::Iter<'a> {
+    partition.prefix(prefix)
+  }
+
+  fn range<'a>(
+    &'a self,
+    partition: &'a Self::Partition,
+    range: (Bound<&[u8]>, Bound<&[u8]>),
+  ) -> Self::Iter<'a> {
+    partition.range(range)
+  }
+}
+
+#[cfg(feature = "sync")]
+impl SyncEngine for MemEngine {
+  type Snapshot = MemSnapshot;
+
+  fn snapshot(&self) -> Self::Snapshot {
+    let parts = self.partitions.read();
+    let mut snap_data = HashMap::default();
+    for (name, part) in parts.iter() {
+      snap_data.insert(name.clone(), part.data.read().clone());
+    }
+    MemSnapshot {
+      _data: snap_data,
+      seqno: 42,
+    }
+  }
+
+  fn visible_seqno(&self) -> u64 {
+    42
+  }
+}
+
+#[cfg(feature = "sync")]
+#[test]
+fn test_engine_sync() -> Void {
+  let engine = MemEngine::default();
+  let part = engine.partition("sync_part")?;
+  part.insert(b"k1", b"v1")?;
+  part.insert(b"k2", b"v2")?;
+
+  assert_eq!(engine.visible_seqno(), 42);
+  assert_eq!(engine.next_seqno(), 42);
+
+  let snap = engine.snapshot();
+  assert_eq!(snap.seqno(), 42);
+  assert_eq!(snap.get(&part, b"k1")?.as_deref(), Some(&b"v1"[..]));
+  assert!(snap.contains_key(&part, b"k2")?);
+
+  info!("test_engine_sync passed");
   OK
 }

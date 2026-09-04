@@ -44,6 +44,37 @@ fn main() -> Result<()> {
 }
 ```
 
+### Zero-Allocation Slice Decompression & O(1) Count
+
+For mission-critical low-latency scenarios such as database query engines, embedded systems, or object-pool architectures, `fastalp` provides O(1) header element counting and in-place slice decompression without any heap allocation:
+
+```rust
+use fastalp::{
+  compress, count, decompress_into_slice, max_compressed_size, Result,
+};
+
+fn main() -> Result<()> {
+  let sensor_data = [20.5, 20.6, 20.8, 21.0, 20.9, 21.2];
+  let compressed = compress(&sensor_data);
+
+  // 1. O(1) zero-heap extraction of element count from compact header
+  let num_items = count(&compressed)?;
+  assert_eq!(num_items, 6);
+
+  // 2. Compute maximum possible compressed buffer size in bytes for preallocation
+  let max_cap = max_compressed_size::<f64>(num_items);
+  assert!(compressed.len() <= max_cap);
+
+  // 3. Decompress directly into a stack array or existing slice with zero heap allocations
+  let mut dst = [0.0f64; 6];
+  let written = decompress_into_slice(&compressed, &mut dst)?;
+  assert_eq!(written, 6);
+  assert_eq!(&dst[..], &sensor_data[..]);
+
+  Ok(())
+}
+```
+
 ### Stateful Encoder & Parameter Caching
 
 For streaming time-series pipelines, use `Encoder` to cache model parameters across consecutive chunks and reuse buffers:

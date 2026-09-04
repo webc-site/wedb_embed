@@ -1,4 +1,9 @@
-use fastalp::{compress, compress_into, decompress, decompress_into};
+use fastalp::{
+  CHUNK_SIZE, CHUNK_SIZE_1024, Error, compress, compress_into, count, decompress, decompress_into,
+  decompress_into_raw, decompress_into_slice,
+  header::{LEN_TAG_1024, LEN_TAG_U32, TYPE_F32_RAW, TYPE_F64_RAW, raw_header_len, read_count},
+  max_compressed_size, read_header,
+};
 
 #[ctor::ctor(unsafe)]
 fn _log_init() {
@@ -47,7 +52,7 @@ fn test_header_and_trailer_elimination() -> aok::Result<()> {
 
 #[test]
 fn test_bitpack_u64_all_widths() -> aok::Result<()> {
-  use fastalp::{bitpack_u64, bitunpack_u64};
+  use fastalp::bitpack::{bitpack_u64, bitunpack_u64};
 
   for bit_width in 1..=64 {
     let mask = if bit_width == 64 {
@@ -261,14 +266,14 @@ fn test_raw_fallback_incompressible_data() -> aok::Result<()> {
     .collect();
   let compressed = compress(&random_bits_data);
   // 断言触发 RAW 模式：首字节类型为 TYPE_F64_RAW (3)，长度档位为 1024 预设块
-  let hdr = fastalp::read_header(&compressed)?;
-  assert_eq!(hdr.type_byte, fastalp::TYPE_F64_RAW);
-  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_1024);
+  let hdr = read_header(&compressed)?;
+  assert_eq!(hdr.type_byte, TYPE_F64_RAW);
+  assert_eq!(hdr.len_tag, LEN_TAG_1024);
   assert_eq!(
     compressed.len(),
-    fastalp::raw_header_len(1024) + random_bits_data.len() * 8
+    raw_header_len(1024) + random_bits_data.len() * 8
   );
-  assert_eq!(fastalp::raw_header_len(1024), 1);
+  assert_eq!(raw_header_len(1024), 1);
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), random_bits_data.len());
   for (a, b) in decompressed.iter().zip(random_bits_data.iter()) {
@@ -279,14 +284,14 @@ fn test_raw_fallback_incompressible_data() -> aok::Result<()> {
     .map(|_| f32::from_bits(fastrand::u32(..)))
     .collect();
   let compressed_f32 = compress(&random_bits_f32);
-  let hdr_f32 = fastalp::read_header(&compressed_f32)?;
-  assert_eq!(hdr_f32.type_byte, fastalp::TYPE_F32_RAW);
-  assert_eq!(hdr_f32.len_tag, fastalp::LEN_TAG_1024);
+  let hdr_f32 = read_header(&compressed_f32)?;
+  assert_eq!(hdr_f32.type_byte, TYPE_F32_RAW);
+  assert_eq!(hdr_f32.len_tag, LEN_TAG_1024);
   assert_eq!(
     compressed_f32.len(),
-    fastalp::raw_header_len(1024) + random_bits_f32.len() * 4
+    raw_header_len(1024) + random_bits_f32.len() * 4
   );
-  assert_eq!(fastalp::raw_header_len(1024), 1);
+  assert_eq!(raw_header_len(1024), 1);
   let decompressed_f32: Vec<f32> = decompress(&compressed_f32)?;
   assert_eq!(decompressed_f32.len(), random_bits_f32.len());
   for (a, b) in decompressed_f32.iter().zip(random_bits_f32.iter()) {
@@ -305,9 +310,9 @@ fn test_large_array_u32_roundtrip() -> aok::Result<()> {
   data[66_000] = 99999999.12345;
 
   let compressed = compress(&data);
-  let hdr = fastalp::read_header(&compressed)?;
+  let hdr = read_header(&compressed)?;
   assert_eq!(hdr.count, size);
-  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+  assert_eq!(hdr.len_tag, LEN_TAG_U32);
 
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), size);
@@ -330,9 +335,9 @@ fn test_large_array_f32_u32_roundtrip() -> aok::Result<()> {
   data[67_000] = 88888.5f32;
 
   let compressed = compress(&data);
-  let hdr = fastalp::read_header(&compressed)?;
+  let hdr = read_header(&compressed)?;
   assert_eq!(hdr.count, size);
-  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+  assert_eq!(hdr.len_tag, LEN_TAG_U32);
 
   let decompressed: Vec<f32> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), size);
@@ -359,9 +364,9 @@ fn test_large_array_delta_u32_roundtrip() -> aok::Result<()> {
   data[70_000] = 999999.99;
 
   let compressed = compress_delta(&data);
-  let hdr = fastalp::read_header(&compressed)?;
+  let hdr = read_header(&compressed)?;
   assert_eq!(hdr.count, size);
-  assert_eq!(hdr.len_tag, fastalp::LEN_TAG_U32);
+  assert_eq!(hdr.len_tag, LEN_TAG_U32);
 
   let decompressed: Vec<f64> = decompress(&compressed)?;
   assert_eq!(decompressed.len(), size);
@@ -580,4 +585,107 @@ fn test_capi_roundtrip() {
     fastalp::fastalp_encoder_f32_reset(enc_f32);
     fastalp::fastalp_encoder_f32_free(enc_f32);
   }
+}
+
+#[test]
+fn test_exposed_utilities() -> aok::Result<()> {
+  assert_eq!(CHUNK_SIZE, 1024);
+  assert_eq!(CHUNK_SIZE_1024, 1024);
+
+  // 1. 测试 count() / read_count() 函数在不同大小数据上的 O(1) 解析准确性与上限推导
+  let sizes = [0usize, 1, 10, 255, 256, 1024, 2048, 70_000];
+  for &sz in &sizes {
+    let data: Vec<f64> = (0..sz).map(|i| (i as f64) * 0.125).collect();
+    let comp = compress(&data);
+
+    let counted = count(&comp)?;
+    assert_eq!(counted, sz, "count mismatch for size {sz}");
+
+    let counted_hdr = read_count(&comp)?;
+    assert_eq!(counted_hdr, sz, "read_count mismatch for size {sz}");
+
+    #[cfg(feature = "capi")]
+    unsafe {
+      let c_count = fastalp::fastalp_count(comp.as_ptr(), comp.len());
+      assert_eq!(c_count, sz, "capi fastalp_count mismatch for size {sz}");
+    }
+
+    let max_sz_f64 = max_compressed_size::<f64>(sz);
+    assert!(
+      comp.len() <= max_sz_f64,
+      "compressed len {} exceeds max_compressed_size {}",
+      comp.len(),
+      max_sz_f64
+    );
+
+    // 2. 测试 decompress_into_slice 切片直接解压（零堆分配）
+    let mut slice_dst = vec![0.0f64; sz];
+    let written = decompress_into_slice(&comp, &mut slice_dst)?;
+    assert_eq!(written, sz);
+    assert_eq!(&slice_dst[..], &data[..]);
+
+    // 3. 测试 decompress_into_raw 底层裸指针解压
+    if sz > 0 {
+      let mut raw_dst = vec![0.0f64; sz];
+      unsafe {
+        let raw_written = decompress_into_raw(&comp, raw_dst.as_mut_ptr(), sz)?;
+        assert_eq!(raw_written, sz);
+      }
+      assert_eq!(&raw_dst[..], &data[..]);
+    }
+
+    // 4. 测试单精度 f32
+    let data_f32: Vec<f32> = (0..sz).map(|i| (i as f32) * 0.25).collect();
+    let comp_f32 = compress(&data_f32);
+    let counted_f32 = count(&comp_f32)?;
+    assert_eq!(counted_f32, sz, "count mismatch for f32 size {sz}");
+
+    let max_sz_f32 = max_compressed_size::<f32>(sz);
+    assert!(
+      comp_f32.len() <= max_sz_f32,
+      "compressed f32 len {} exceeds max_compressed_size {}",
+      comp_f32.len(),
+      max_sz_f32
+    );
+
+    let mut slice_f32 = vec![0.0f32; sz];
+    let written_f32 = decompress_into_slice(&comp_f32, &mut slice_f32)?;
+    assert_eq!(written_f32, sz);
+    assert_eq!(&slice_f32[..], &data_f32[..]);
+  }
+
+  // 5. 校验异常与边界情况
+  // 5.1 空切片提取 count 报 UnexpectedEof
+  assert!(matches!(count(&[]), Err(Error::UnexpectedEof { .. })));
+
+  // 5.2 目标切片容量不足时 decompress_into_slice 报 BufferTooSmall
+  let sample_data = vec![1.0f64, 2.0, 3.0, 4.0];
+  let comp_sample = compress(&sample_data);
+  let mut small_buf = [0.0f64; 2];
+  assert!(matches!(
+    decompress_into_slice(&comp_sample, &mut small_buf),
+    Err(Error::BufferTooSmall {
+      needed: 4,
+      available: 2
+    })
+  ));
+
+  // 5.3 非法类型标识字节报 InvalidHeader
+  let mut invalid_comp = comp_sample.clone();
+  invalid_comp[0] &= 0xF0; // type_byte = 0
+  assert!(matches!(count(&invalid_comp), Err(Error::InvalidHeader)));
+  assert!(matches!(
+    read_header(&invalid_comp),
+    Err(Error::InvalidHeader)
+  ));
+
+  let mut invalid_comp2 = comp_sample.clone();
+  invalid_comp2[0] = (invalid_comp2[0] & 0xF0) | 15; // type_byte = 15
+  assert!(matches!(count(&invalid_comp2), Err(Error::InvalidHeader)));
+  assert!(matches!(
+    read_header(&invalid_comp2),
+    Err(Error::InvalidHeader)
+  ));
+
+  Ok(())
 }

@@ -46,14 +46,14 @@ Comprehensive 37-dataset side-by-side evaluation on identical hardware:
 
 ### Industrial Scenario Micro-Benchmarks
 
-| Business Scenario Slice | Dataset Scale | fastalp (Decomp / Comp / Ratio) | C++ ALP (Decomp / Comp / Ratio) | Pcodec (Decomp / Comp / Ratio) | Zstd (Decomp / Comp / Ratio) |
+| Business Scenario Slice | Dataset Scale | fastalp<br>(Decomp / Comp / Ratio) | C++ ALP<br>(Decomp / Comp / Ratio) | Pcodec<br>(Decomp / Comp / Ratio) | Zstd<br>(Decomp / Comp / Ratio) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **IoT Environmental Sensing** | 11 sets (11,264 pts) | **26.6 GB/s** ｜ **5.7 GB/s** ｜ **7.92x** | 21.3 GB/s ｜ 0.8 GB/s ｜ 7.91x | 1.6 GB/s ｜ 0.2 GB/s ｜ 3.02x | 1.0 GB/s ｜ 0.4 GB/s ｜ 2.11x |
-| **Quantitative Trading Quotes** | 7 sets (7,168 pts) | **19.6 GB/s** ｜ **5.9 GB/s** ｜ **7.04x** | 20.5 GB/s ｜ 0.8 GB/s ｜ 7.04x | 1.7 GB/s ｜ 0.2 GB/s ｜ 3.71x | 1.2 GB/s ｜ 0.4 GB/s ｜ 2.90x |
-| **Geospatial & GPS Trajectory** | 5 sets (5,120 pts) | **19.9 GB/s** ｜ **5.2 GB/s** ｜ **6.35x** | 20.3 GB/s ｜ 0.8 GB/s ｜ 6.07x | 2.0 GB/s ｜ 0.2 GB/s ｜ 1.84x | 1.1 GB/s ｜ 0.4 GB/s ｜ 1.63x |
-| **Healthcare Claims & Billing** | 5 sets (5,120 pts) | **36.3 GB/s** ｜ **2.1 GB/s** ｜ **1.66x** | 20.0 GB/s ｜ 0.8 GB/s ｜ 2.19x | 2.0 GB/s ｜ 0.2 GB/s ｜ 2.16x | 0.9 GB/s ｜ 0.4 GB/s ｜ 1.99x |
-| **Public Demographics & Census** | 6 sets (6,144 pts) | **44.7 GB/s** ｜ **7.0 GB/s** ｜ **8.89x** | 21.7 GB/s ｜ 0.8 GB/s ｜ 4.64x | 3.0 GB/s ｜ 0.4 GB/s ｜ 3.79x | 3.0 GB/s ｜ 2.1 GB/s ｜ 4.15x |
-| **Monotonic Ramp & Steady Streams** | 3 sets (3,072 pts) | **44.4 GB/s** ｜ **10.2 GB/s** ｜ **11.70x** | 19.8 GB/s ｜ 0.9 GB/s ｜ 2.90x | 1.0 GB/s ｜ 0.1 GB/s ｜ 8.58x | 1.4 GB/s ｜ 0.4 GB/s ｜ 6.84x |
+| **IoT Environmental Sensing** | 11 sets (11,264 pts) | **26.6 GB/s**<br>**5.7 GB/s**<br>**7.92x** | 21.3 GB/s<br>0.8 GB/s<br>7.91x | 1.6 GB/s<br>0.2 GB/s<br>3.02x | 1.0 GB/s<br>0.4 GB/s<br>2.11x |
+| **Quantitative Trading Quotes** | 7 sets (7,168 pts) | **19.6 GB/s**<br>**5.9 GB/s**<br>**7.04x** | 20.5 GB/s<br>0.8 GB/s<br>7.04x | 1.7 GB/s<br>0.2 GB/s<br>3.71x | 1.2 GB/s<br>0.4 GB/s<br>2.90x |
+| **Geospatial & GPS Trajectory** | 5 sets (5,120 pts) | **19.9 GB/s**<br>**5.2 GB/s**<br>**6.35x** | 20.3 GB/s<br>0.8 GB/s<br>6.07x | 2.0 GB/s<br>0.2 GB/s<br>1.84x | 1.1 GB/s<br>0.4 GB/s<br>1.63x |
+| **Healthcare Claims & Billing** | 5 sets (5,120 pts) | **36.3 GB/s**<br>**2.1 GB/s**<br>**1.66x** | 20.0 GB/s<br>0.8 GB/s<br>2.19x | 2.0 GB/s<br>0.2 GB/s<br>2.16x | 0.9 GB/s<br>0.4 GB/s<br>1.99x |
+| **Public Demographics & Census** | 6 sets (6,144 pts) | **44.7 GB/s**<br>**7.0 GB/s**<br>**8.89x** | 21.7 GB/s<br>0.8 GB/s<br>4.64x | 3.0 GB/s<br>0.4 GB/s<br>3.79x | 3.0 GB/s<br>2.1 GB/s<br>4.15x |
+| **Monotonic Ramp & Steady Streams** | 3 sets (3,072 pts) | **44.4 GB/s**<br>**10.2 GB/s**<br>**11.70x** | 19.8 GB/s<br>0.9 GB/s<br>2.90x | 1.0 GB/s<br>0.1 GB/s<br>8.58x | 1.4 GB/s<br>0.4 GB/s<br>6.84x |
 
 ### C++ ALP Benchmark Methodology & Calibration
 

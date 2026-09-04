@@ -68,6 +68,7 @@ fastalp/
 │   │   ├── mod.rs      # Module facade and re-exports
 │   │   ├── pack.rs     # Dense bitpacking with 128-bit register accumulator
 │   │   └── unpack.rs   # Direct bit unpacking with stack LUT acceleration
+│   ├── capi.rs         # Optional C-compatible FFI bindings and handle management
 │   ├── constants.rs    # Precomputed static power tables and format constants
 │   ├── decoder/        # Generic decompression pipeline & decimal division reconstruction
 │   │   ├── mod.rs      # Decompression facade and mode dispatch

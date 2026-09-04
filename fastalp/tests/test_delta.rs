@@ -1,6 +1,6 @@
 use fastalp::{
-  Result, TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F64_DEC, TYPE_F64_DEC_DELTA, TYPE_F64_DELTA,
-  compress, compress_delta, decompress,
+  Result, compress, compress_delta, decompress,
+  header::{TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F64_DEC, TYPE_F64_DEC_DELTA, TYPE_F64_DELTA},
 };
 
 #[ctor::ctor(unsafe)]

@@ -15,55 +15,12 @@
 A pure Rust implementation of adaptive lossless floating-point compression, deeply absorbing and extending the theoretical foundation of the ACM SIGMOD 2024 Best Artifact paper [ALP](https://dl.acm.org/doi/10.1145/3626717), providing high-performance unified generic interfaces for both `f64` and `f32` streams.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Jr/n7T1AcQ8XySBEMuQ1XoA.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@_-/YG2ep3aLyQzlmQ1LUPlQ.svg" alt="fastalp Floating-Point Compression Performance & Ratio Benchmark" width="100%">
   <br>
   <sub><b>Benchmark Environment</b>: CPU: Apple M2 Max (12 Cores) ｜ OS: macOS 26.5.1 ｜ Toolchain: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
 
 ---
-
-- [Theoretical Background & Official Paper](#theoretical-background-official-paper)
-- [Features](#features)
-  - [Key Algorithmic & Architectural Breakthroughs over C++ ALP](#key-algorithmic-architectural-breakthroughs-over-c-alp)
-- [Usage](#usage)
-  - [Installation](#installation)
-  - [Basic Compression and Decompression](#basic-compression-and-decompression)
-  - [In-Place Buffer Reuse](#in-place-buffer-reuse)
-  - [Stateful Encoder & Parameter Caching](#stateful-encoder-parameter-caching)
-  - [Single-Precision Floating-Point Processing](#single-precision-floating-point-processing)
-  - [High-Performance Engineering Tips & Best Practices](#high-performance-engineering-tips-best-practices)
-    - [Enable Parameter Caching for Streaming Pipelines](#enable-parameter-caching-for-streaming-pipelines)
-    - [In-Place Buffer Reuse to Eliminate Allocation Jitter](#in-place-buffer-reuse-to-eliminate-allocation-jitter)
-    - [Low-Entropy and Monotonic Waveform Acceleration](#low-entropy-and-monotonic-waveform-acceleration)
-- [Architecture & Design](#architecture-design)
-  - [Compression Pipeline](#compression-pipeline)
-  - [Decompression Pipeline](#decompression-pipeline)
-- [Technology Stack](#technology-stack)
-- [Project Architecture](#project-architecture)
-- [Performance & Comparative Benchmarks](#performance-comparative-benchmarks)
-  - [Test Environment and Compiler Setup](#test-environment-and-compiler-setup)
-  - [Cross-Algorithm Benchmark Comparison](#cross-algorithm-benchmark-comparison)
-  - [Pure Encoding & Streaming Cache Throughput Deep Dive](#pure-encoding-streaming-cache-throughput-deep-dive)
-  - [Industrial Scenario Micro-Benchmarks](#industrial-scenario-micro-benchmarks)
-  - [C++ ALP Benchmark Methodology & Calibration](#c-alp-benchmark-methodology-calibration)
-  - [Comprehensive Dataset Coverage & Sources](#comprehensive-dataset-coverage-sources)
-- [Architectural Evolution & Novel Optimizations](#architectural-evolution-novel-optimizations)
-  - [Foundations Inherited from Original ALP](#foundations-inherited-from-original-alp)
-  - [Proprietary Algorithmic & Performance Breakthroughs](#proprietary-algorithmic-performance-breakthroughs)
-- [C-Compatible API & Cross-Language Integration](#c-compatible-api-cross-language-integration)
-  - [Buffer Capacity Estimation](#buffer-capacity-estimation)
-  - [Thread-Local Streaming Interface](#thread-local-streaming-interface)
-  - [Explicit Instance Handle Interface](#explicit-instance-handle-interface)
-- [Changelog](#changelog)
-  - [v0.1.38](#v0138)
-  - [v0.1.37](#v0137)
-  - [v0.1.36](#v0136)
-  - [v0.1.35](#v0135)
-  - [v0.1.34](#v0134)
-  - [v0.1.33](#v0133)
-  - [v0.1.32](#v0132)
-  - [v0.1.31](#v0131)
-  - [v0.1.30](#v0130)
 
 ## Theoretical Background & Official Paper
 
@@ -134,7 +91,6 @@ Due to the IEEE 754 layout of exponents and mantissas, general-purpose byte comp
 - **Three-Stage Microarchitectural Sampling Pruning**:<br>
   Replaces unpruned parameter searches with a 3-tier cascade (pure decimal early return, 4/16-sample short-circuiting, and non-decimal abort), boosting end-to-end compression throughput to **3.7 GB/s (4.6x faster than C++ ALP)**; pure encoding kernel throughput reaches **6.0 GB/s (1.10x faster than C++ ALP)**; streaming throughput reaches **15~24+ GB/s** with cached parameters.
 
-
 ## Usage
 
 ### Installation
@@ -177,6 +133,37 @@ fn main() -> Result<()> {
   decompress_into(&compressed_buf, &mut restored)?;
 
   assert_eq!(restored, batch);
+  Ok(())
+}
+```
+
+### Zero-Allocation Slice Decompression & O(1) Count
+
+For mission-critical low-latency scenarios such as database query engines, embedded systems, or object-pool architectures, `fastalp` provides O(1) header element counting and in-place slice decompression without any heap allocation:
+
+```rust
+use fastalp::{
+  compress, count, decompress_into_slice, max_compressed_size, Result,
+};
+
+fn main() -> Result<()> {
+  let sensor_data = [20.5, 20.6, 20.8, 21.0, 20.9, 21.2];
+  let compressed = compress(&sensor_data);
+
+  // 1. O(1) zero-heap extraction of element count from compact header
+  let num_items = count(&compressed)?;
+  assert_eq!(num_items, 6);
+
+  // 2. Compute maximum possible compressed buffer size in bytes for preallocation
+  let max_cap = max_compressed_size::<f64>(num_items);
+  assert!(compressed.len() <= max_cap);
+
+  // 3. Decompress directly into a stack array or existing slice with zero heap allocations
+  let mut dst = [0.0f64; 6];
+  let written = decompress_into_slice(&compressed, &mut dst)?;
+  assert_eq!(written, 6);
+  assert_eq!(&dst[..], &sensor_data[..]);
+
   Ok(())
 }
 ```
@@ -274,7 +261,6 @@ for batch in batches {
 - **Constant Streams & Heartbeats**: On standby sensors or heartbeat streams, `fastalp` verifies equality in 1 CPU cycle, encoding 1024 items into 11 bytes (**744x ratio**).
 - **Linear Ramps & Physical Steps**: For monotonic waveforms (industrial PID, hydrological levels), `fastalp` automatically engages first-order Delta difference encoding to eliminate large span offsets, achieving **430x+** compression.
 
-
 ## Architecture & Design
 
 `fastalp` executes compression and decompression through modular pipeline stages:
@@ -345,6 +331,7 @@ fastalp/
 │   │   ├── mod.rs      # Module facade and re-exports
 │   │   ├── pack.rs     # Dense bitpacking with 128-bit register accumulator
 │   │   └── unpack.rs   # Direct bit unpacking with stack LUT acceleration
+│   ├── capi.rs         # Optional C-compatible FFI bindings and handle management
 │   ├── constants.rs    # Precomputed static power tables and format constants
 │   ├── decoder/        # Generic decompression pipeline & decimal division reconstruction
 │   │   ├── mod.rs      # Decompression facade and mode dispatch
@@ -376,7 +363,6 @@ fastalp/
     ├── test_delta.rs       # Specialized delta difference tests & edge cases
     └── test_roundtrip.rs   # Comprehensive lossless roundtrip & boundary tests
 ```
-
 
 ## Performance & Comparative Benchmarks
 
@@ -426,14 +412,14 @@ Comprehensive 37-dataset side-by-side evaluation on identical hardware:
 
 ### Industrial Scenario Micro-Benchmarks
 
-| Business Scenario Slice | Dataset Scale | fastalp (Decomp / Comp / Ratio) | C++ ALP (Decomp / Comp / Ratio) | Pcodec (Decomp / Comp / Ratio) | Zstd (Decomp / Comp / Ratio) |
+| Business Scenario Slice | Dataset Scale | fastalp<br>(Decomp / Comp / Ratio) | C++ ALP<br>(Decomp / Comp / Ratio) | Pcodec<br>(Decomp / Comp / Ratio) | Zstd<br>(Decomp / Comp / Ratio) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **IoT Environmental Sensing** | 11 sets (11,264 pts) | **26.6 GB/s** ｜ **5.7 GB/s** ｜ **7.92x** | 21.3 GB/s ｜ 0.8 GB/s ｜ 7.91x | 1.6 GB/s ｜ 0.2 GB/s ｜ 3.02x | 1.0 GB/s ｜ 0.4 GB/s ｜ 2.11x |
-| **Quantitative Trading Quotes** | 7 sets (7,168 pts) | **19.6 GB/s** ｜ **5.9 GB/s** ｜ **7.04x** | 20.5 GB/s ｜ 0.8 GB/s ｜ 7.04x | 1.7 GB/s ｜ 0.2 GB/s ｜ 3.71x | 1.2 GB/s ｜ 0.4 GB/s ｜ 2.90x |
-| **Geospatial & GPS Trajectory** | 5 sets (5,120 pts) | **19.9 GB/s** ｜ **5.2 GB/s** ｜ **6.35x** | 20.3 GB/s ｜ 0.8 GB/s ｜ 6.07x | 2.0 GB/s ｜ 0.2 GB/s ｜ 1.84x | 1.1 GB/s ｜ 0.4 GB/s ｜ 1.63x |
-| **Healthcare Claims & Billing** | 5 sets (5,120 pts) | **36.3 GB/s** ｜ **2.1 GB/s** ｜ **1.66x** | 20.0 GB/s ｜ 0.8 GB/s ｜ 2.19x | 2.0 GB/s ｜ 0.2 GB/s ｜ 2.16x | 0.9 GB/s ｜ 0.4 GB/s ｜ 1.99x |
-| **Public Demographics & Census** | 6 sets (6,144 pts) | **44.7 GB/s** ｜ **7.0 GB/s** ｜ **8.89x** | 21.7 GB/s ｜ 0.8 GB/s ｜ 4.64x | 3.0 GB/s ｜ 0.4 GB/s ｜ 3.79x | 3.0 GB/s ｜ 2.1 GB/s ｜ 4.15x |
-| **Monotonic Ramp & Steady Streams** | 3 sets (3,072 pts) | **44.4 GB/s** ｜ **10.2 GB/s** ｜ **11.70x** | 19.8 GB/s ｜ 0.9 GB/s ｜ 2.90x | 1.0 GB/s ｜ 0.1 GB/s ｜ 8.58x | 1.4 GB/s ｜ 0.4 GB/s ｜ 6.84x |
+| **IoT Environmental Sensing** | 11 sets (11,264 pts) | **26.6 GB/s**<br>**5.7 GB/s**<br>**7.92x** | 21.3 GB/s<br>0.8 GB/s<br>7.91x | 1.6 GB/s<br>0.2 GB/s<br>3.02x | 1.0 GB/s<br>0.4 GB/s<br>2.11x |
+| **Quantitative Trading Quotes** | 7 sets (7,168 pts) | **19.6 GB/s**<br>**5.9 GB/s**<br>**7.04x** | 20.5 GB/s<br>0.8 GB/s<br>7.04x | 1.7 GB/s<br>0.2 GB/s<br>3.71x | 1.2 GB/s<br>0.4 GB/s<br>2.90x |
+| **Geospatial & GPS Trajectory** | 5 sets (5,120 pts) | **19.9 GB/s**<br>**5.2 GB/s**<br>**6.35x** | 20.3 GB/s<br>0.8 GB/s<br>6.07x | 2.0 GB/s<br>0.2 GB/s<br>1.84x | 1.1 GB/s<br>0.4 GB/s<br>1.63x |
+| **Healthcare Claims & Billing** | 5 sets (5,120 pts) | **36.3 GB/s**<br>**2.1 GB/s**<br>**1.66x** | 20.0 GB/s<br>0.8 GB/s<br>2.19x | 2.0 GB/s<br>0.2 GB/s<br>2.16x | 0.9 GB/s<br>0.4 GB/s<br>1.99x |
+| **Public Demographics & Census** | 6 sets (6,144 pts) | **44.7 GB/s**<br>**7.0 GB/s**<br>**8.89x** | 21.7 GB/s<br>0.8 GB/s<br>4.64x | 3.0 GB/s<br>0.4 GB/s<br>3.79x | 3.0 GB/s<br>2.1 GB/s<br>4.15x |
+| **Monotonic Ramp & Steady Streams** | 3 sets (3,072 pts) | **44.4 GB/s**<br>**10.2 GB/s**<br>**11.70x** | 19.8 GB/s<br>0.9 GB/s<br>2.90x | 1.0 GB/s<br>0.1 GB/s<br>8.58x | 1.4 GB/s<br>0.4 GB/s<br>6.84x |
 
 ### C++ ALP Benchmark Methodology & Calibration
 
@@ -459,7 +445,6 @@ Evaluated on all 31 public datasets from the original ALP paper plus 6 represent
 - **Healthcare & Public Assistance (5 datasets)**: `medicare1`, `medicare9`, `cms1`, `cms9`, `cms25`.
 - **Government & Macroeconomics (6 datasets)**: `gov10`, `gov26`, `gov30`, `gov31`, `gov40`, `scene_macro`.
 - **Hardware Storage & Physical Waveforms (3 datasets)**: `ssd_hdd_benchmarks_f`, `scene_ramp`, `scene_steady`.
-
 
 ## Architectural Evolution & Novel Optimizations
 
@@ -528,7 +513,6 @@ Evaluated on all 31 public datasets from the original ALP paper plus 6 represent
 - **Zero-Cost Generic Trait Abstraction**:
   Unifies `f64` and `f32` operations under `AlpFloat` with precomputed static power tables and compile-time inlining.
 
-
 ## C-Compatible API & Cross-Language Integration
 
 `fastalp` provides an optional, disabled-by-default C-compatible FFI layer for integration into C, C++, Python, Go, and other language runtimes.<br>
@@ -547,10 +531,11 @@ Build standalone static libraries (`libfastalp.a`) or shared libraries (`libfast
 cargo build --release --features capi
 ```
 
-### Buffer Capacity Estimation
+### Buffer Capacity Estimation & Element Extraction
 
-Callers can calculate worst-case buffer bounds:
+Callers can calculate worst-case buffer bounds or extract contained element counts:
 
+- `fastalp_count(src, src_len)`: Reads the element count from the compressed byte stream in O(1) time without decompressing the payload, enabling optimal destination buffer preallocation.<br>
 - `fastalp_max_compressed_size_f64(len)`: Computes maximum compressed byte bound for `len` `f64` floats.<br>
 - `fastalp_max_compressed_size_f32(len)`: Computes maximum compressed byte bound for `len` `f32` floats.
 
@@ -573,7 +558,6 @@ Designed for worker-pool architectures and per-column isolated states:
 - `fastalp_encoder_f64_reset(enc)`: Clears cached model parameters in the handle.<br>
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`: Compresses data using the specified encoder handle.<br>
 - Single-precision equivalents: `FastAlpEncoderF32`, `fastalp_encoder_f32_new`, `fastalp_encoder_f32_free`, `fastalp_encoder_f32_reset`, and `fastalp_encoder_f32_compress`.
-
 
 ## Changelog
 
@@ -648,7 +632,6 @@ Designed for worker-pool architectures and per-column isolated states:
 
 - Clarified standard ALP baseline vs custom compression ratio optimizations; enhanced floating-point precision stability.
 
-
 ---
 
 <a id="zh"></a>
@@ -658,55 +641,12 @@ Designed for worker-pool architectures and per-column isolated states:
 纯 Rust 实现的自适应无损浮点数压缩算法库，深度吸收并拓展了 ACM SIGMOD 2024 最佳 Artifact 论文 [ALP](https://dl.acm.org/doi/10.1145/3626717) 的理论体系，通过统一泛型接口提供对 `f64` 与 `f32` 数据流的高性能压缩与解压。
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Tq/QKOaP1s7tQeonsvhQwRQ.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@k5/RftVCHGArWnHxWDsFOXg.svg" alt="fastalp 浮点压缩算法全量性能与压缩比横向对比" width="100%">
   <br>
   <sub><b>评测环境</b>: 芯片: Apple M2 Max (12 核) ｜ 环境: macOS 26.5.1 ｜ 工具链: Rust 1.98.0 / Clang (-O3)</sub>
 </p>
 
 ---
-
-- [理论背景与官方论文](#理论背景与官方论文)
-- [功能特性](#功能特性)
-  - [针对 C++ 官方实现（`cwida/ALP`）的核心算法与架构升级](#针对-c-官方实现cwidaalp的核心算法与架构升级)
-- [使用示例](#使用示例)
-  - [添加依赖](#添加依赖)
-  - [基础压缩与解压](#基础压缩与解压)
-  - [内存缓冲区复用](#内存缓冲区复用)
-  - [状态化编码与参数缓存](#状态化编码与参数缓存)
-  - [单精度浮点数据处理](#单精度浮点数据处理)
-  - [高性能工程技巧与最佳实践](#高性能工程技巧与最佳实践)
-    - [连续时序流启用参数缓存](#连续时序流启用参数缓存)
-    - [就地复用缓冲区消除堆分配与内存抖动](#就地复用缓冲区消除堆分配与内存抖动)
-    - [极低熵与单调波形自适应增益](#极低熵与单调波形自适应增益)
-- [架构设计](#架构设计)
-  - [压缩流程](#压缩流程)
-  - [解压流程](#解压流程)
-- [技术栈](#技术栈)
-- [目录结构](#目录结构)
-- [性能评测与多算法对比](#性能评测与多算法对比)
-  - [测试环境与编译配置](#测试环境与编译配置)
-  - [主流浮点与时序压缩算法同机横向对比](#主流浮点与时序压缩算法同机横向对比)
-  - [压缩纯编码与流式参数复用进阶对比](#压缩纯编码与流式参数复用进阶对比)
-  - [典型工业场景微基准细分实测](#典型工业场景微基准细分实测)
-  - [C++ ALP 测试机制与统计口径说明](#c-alp-测试机制与统计口径说明)
-  - [评测数据集全景与公开数据源](#评测数据集全景与公开数据源)
-- [架构演进与优化全景](#架构演进与优化全景)
-  - [参考与借鉴原版 ALP 的架构设计](#参考与借鉴原版-alp-的架构设计)
-  - [自主研发的算法与性能优化](#自主研发的算法与性能优化)
-- [C 兼容接口与跨语言集成](#c-兼容接口与跨语言集成)
-  - [缓冲区容量预估](#缓冲区容量预估)
-  - [线程局部流式接口](#线程局部流式接口)
-  - [独立实例句柄接口](#独立实例句柄接口)
-- [更新日志](#更新日志)
-  - [v0.1.38](#v0138)
-  - [v0.1.37](#v0137)
-  - [v0.1.36](#v0136)
-  - [v0.1.35](#v0135)
-  - [v0.1.34](#v0134)
-  - [v0.1.33](#v0133)
-  - [v0.1.32](#v0132)
-  - [v0.1.31](#v0131)
-  - [v0.1.30](#v0130)
 
 ## 理论背景与官方论文
 
@@ -786,7 +726,6 @@ ALP（Adaptive Lossless Floating-Point Compression）是由荷兰国家数学与
   原版 `init` 采用全量暴力穷举，采样耗时占全流程 80% 以上，导致端到端压缩吞吐仅约 0.80 GB/s；<br>
   `fastalp` 采用纯十进制早停、4 样本短路快筛和非十进制熔断的三级剪枝流水线，将端到端压缩吞吐提升至 **3.7 GB/s（提速 4.6x）**；在压缩纯编码吞吐（不含采样）口径下达 **6.0 GB/s（较 C++ 快 1.10x）**；在命中状态化参数缓存时，流式参数缓存吞吐可达 **15~24+ GB/s**。
 
-
 ## 使用示例
 
 ### 添加依赖
@@ -829,6 +768,37 @@ fn main() -> Result<()> {
   decompress_into(&compressed_buf, &mut restored)?;
 
   assert_eq!(restored, batch);
+  Ok(())
+}
+```
+
+### 零堆分配切片解压与 O(1) 元素计数
+
+针对数据库执行器、嵌入式环境或预分配内存池等极致低延迟场景，`fastalp` 提供 O(1) 紧凑头部元素计数与切片原地解压接口，全程零堆内存分配：
+
+```rust
+use fastalp::{
+  compress, count, decompress_into_slice, max_compressed_size, Result,
+};
+
+fn main() -> Result<()> {
+  let sensor_data = [20.5, 20.6, 20.8, 21.0, 20.9, 21.2];
+  let compressed = compress(&sensor_data);
+
+  // 1. O(1) 零堆分配快速提取压缩块中的元素总数
+  let num_items = count(&compressed)?;
+  assert_eq!(num_items, 6);
+
+  // 2. 预估最坏情况下（含保底回退）所需最大压缩缓冲区大小，防止越界
+  let max_cap = max_compressed_size::<f64>(num_items);
+  assert!(compressed.len() <= max_cap);
+
+  // 3. 解压至栈数组或既有切片，实现真正的零堆内存分配与零拷贝
+  let mut dst = [0.0f64; 6];
+  let written = decompress_into_slice(&compressed, &mut dst)?;
+  assert_eq!(written, 6);
+  assert_eq!(&dst[..], &sensor_data[..]);
+
   Ok(())
 }
 ```
@@ -926,7 +896,6 @@ for batch in batches {
 - **常数流与设备心跳**：当遇到设备断线、待机或心跳常数时，`fastalp` 入口仅需 1 个 CPU 时钟周期识别全等流，1024 元素以 11 字节高速输出（压缩比达 **744x**）。
 - **线性升降波形与步进计数**：针对工业 PID 调节、水文流量与连续计数器，`fastalp` 自动激活 Delta 一阶差分编码，动态消除波形大跨度基准，压缩比突破 **430x+**。
 
-
 ## 架构设计
 
 `fastalp` 编解码流程划分为以下阶段：
@@ -1002,6 +971,7 @@ fastalp/
 │   │   ├── mod.rs      # 门面导出
 │   │   ├── pack.rs     # 128 位累加器位打包算子
 │   │   └── unpack.rs   # 局部查表与直接位解包算子
+│   ├── capi.rs         # C 兼容 FFI 接口与独立编码器句柄
 │   ├── constants.rs    # 静态幂次表与格式常量
 │   ├── decoder/        # 泛型流式解压与除法重构
 │   │   ├── mod.rs      # 解压门面与模式派发
@@ -1033,7 +1003,6 @@ fastalp/
     ├── test_delta.rs       # Delta 差分时序专项与异常测试
     └── test_roundtrip.rs   # 往返无损与边界测试
 ```
-
 
 ## 性能评测与多算法对比
 
@@ -1083,14 +1052,14 @@ fastalp/
 
 ### 典型工业场景微基准细分实测
 
-| 业务场景切片 | 样本规模 | fastalp (解压 / 压缩 / 压缩比) | C++ ALP (解压 / 压缩 / 压缩比) | Pcodec (解压 / 压缩 / 压缩比) | Zstd (解压 / 压缩 / 压缩比) |
+| 业务场景切片 | 样本规模 | fastalp<br>(解压 / 压缩 / 压缩比) | C++ ALP<br>(解压 / 压缩 / 压缩比) | Pcodec<br>(解压 / 压缩 / 压缩比) | Zstd<br>(解压 / 压缩 / 压缩比) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **物联网与连续环境传感** | 11 组 (11,264 点) | **26.6 GB/s** ｜ **5.7 GB/s** ｜ **7.92x** | 21.3 GB/s ｜ 0.8 GB/s ｜ 7.91x | 1.6 GB/s ｜ 0.2 GB/s ｜ 3.02x | 1.0 GB/s ｜ 0.4 GB/s ｜ 2.11x |
-| **量化金融交易与撮合行情** | 7 组 (7,168 点) | **19.6 GB/s** ｜ **5.9 GB/s** ｜ **7.04x** | 20.5 GB/s ｜ 0.8 GB/s ｜ 7.04x | 1.7 GB/s ｜ 0.2 GB/s ｜ 3.71x | 1.2 GB/s ｜ 0.4 GB/s ｜ 2.90x |
-| **地理空间高精测绘与轨迹** | 5 组 (5,120 点) | **19.9 GB/s** ｜ **5.2 GB/s** ｜ **6.35x** | 20.3 GB/s ｜ 0.8 GB/s ｜ 6.07x | 2.0 GB/s ｜ 0.2 GB/s ｜ 1.84x | 1.1 GB/s ｜ 0.4 GB/s ｜ 1.63x |
-| **公共卫生与医疗结算流水** | 5 组 (5,120 点) | **36.3 GB/s** ｜ **2.1 GB/s** ｜ **1.66x** | 20.0 GB/s ｜ 0.8 GB/s ｜ 2.19x | 2.0 GB/s ｜ 0.2 GB/s ｜ 2.16x | 0.9 GB/s ｜ 0.4 GB/s ｜ 1.99x |
-| **政务民生与宏观统计普查** | 6 组 (6,144 点) | **44.7 GB/s** ｜ **7.0 GB/s** ｜ **8.89x** | 21.7 GB/s ｜ 0.8 GB/s ｜ 4.64x | 3.0 GB/s ｜ 0.4 GB/s ｜ 3.79x | 3.0 GB/s ｜ 2.1 GB/s ｜ 4.15x |
-| **物理单调波形与稳态流** | 3 组 (3,072 点) | **44.4 GB/s** ｜ **10.2 GB/s** ｜ **11.70x** | 19.8 GB/s ｜ 0.9 GB/s ｜ 2.90x | 1.0 GB/s ｜ 0.1 GB/s ｜ 8.58x | 1.4 GB/s ｜ 0.4 GB/s ｜ 6.84x |
+| **物联网与连续环境传感** | 11 组 (11,264 点) | **26.6 GB/s**<br>**5.7 GB/s**<br>**7.92x** | 21.3 GB/s<br>0.8 GB/s<br>7.91x | 1.6 GB/s<br>0.2 GB/s<br>3.02x | 1.0 GB/s<br>0.4 GB/s<br>2.11x |
+| **量化金融交易与撮合行情** | 7 组 (7,168 点) | **19.6 GB/s**<br>**5.9 GB/s**<br>**7.04x** | 20.5 GB/s<br>0.8 GB/s<br>7.04x | 1.7 GB/s<br>0.2 GB/s<br>3.71x | 1.2 GB/s<br>0.4 GB/s<br>2.90x |
+| **地理空间高精测绘与轨迹** | 5 组 (5,120 点) | **19.9 GB/s**<br>**5.2 GB/s**<br>**6.35x** | 20.3 GB/s<br>0.8 GB/s<br>6.07x | 2.0 GB/s<br>0.2 GB/s<br>1.84x | 1.1 GB/s<br>0.4 GB/s<br>1.63x |
+| **公共卫生与医疗结算流水** | 5 组 (5,120 点) | **36.3 GB/s**<br>**2.1 GB/s**<br>**1.66x** | 20.0 GB/s<br>0.8 GB/s<br>2.19x | 2.0 GB/s<br>0.2 GB/s<br>2.16x | 0.9 GB/s<br>0.4 GB/s<br>1.99x |
+| **政务民生与宏观统计普查** | 6 组 (6,144 点) | **44.7 GB/s**<br>**7.0 GB/s**<br>**8.89x** | 21.7 GB/s<br>0.8 GB/s<br>4.64x | 3.0 GB/s<br>0.4 GB/s<br>3.79x | 3.0 GB/s<br>2.1 GB/s<br>4.15x |
+| **物理单调波形与稳态流** | 3 组 (3,072 点) | **44.4 GB/s**<br>**10.2 GB/s**<br>**11.70x** | 19.8 GB/s<br>0.9 GB/s<br>2.90x | 1.0 GB/s<br>0.1 GB/s<br>8.58x | 1.4 GB/s<br>0.4 GB/s<br>6.84x |
 
 ### C++ ALP 测试机制与统计口径说明
 
@@ -1158,7 +1127,6 @@ fastalp/
   - `ssd_hdd_benchmarks_f`：固态硬盘与机械硬盘连续 I/O 吞吐基准 · [Kaggle 存储设备吞吐实测数据库](https://www.kaggle.com/datasets/alanjo/ssd-and-hdd-benchmarks)
   - `scene_ramp`：平滑升降坡道、连续物理量与单调时序（1024 点）· 工业 PID 调节、水文流量与连续步进计数器
   - `scene_steady`：恒定传感、无故障零冗余与心跳流（1024 点）· 设备自检心跳流与高频常数工业监控
-
 
 ## 架构演进与优化全景
 
@@ -1254,7 +1222,6 @@ fastalp 并非简单的语言转译，而是在完整吸收 C++ ALP 论文精髓
   用于一套代码兼顾 `f64` 与 `f32`，避免代码膨胀与运行时分支开销。<br>
   通过 `AlpFloat` 特征将双精度与单精度浮点运算统一为泛型流水线，配合编译期预计算的 10 的幂次表与逆乘数表，实现无额外开销的高效内联。
 
-
 ## C 兼容接口与跨语言集成
 
 `fastalp` 提供默认不启用的可选 C 兼容接口（FFI），便于集成到 C、C++、Python、Go 等多语言运行环境中。<br>
@@ -1273,10 +1240,11 @@ fastalp = { version = "0.1.38", features = ["capi"] }
 cargo build --release --features capi
 ```
 
-### 缓冲区容量预估
+### 缓冲区容量预估与元素提取
 
-调用方可预先计算最差情况下的缓冲区需求，确保不发生容量不足异常：
+调用方可预先计算最差情况下的缓冲区需求或提取压缩块元素数，确保不发生容量不足异常：
 
+- `fastalp_count(src, src_len)`：从压缩字节流自描述头部以 O(1) 复杂度快速解析出包含的浮点元素总数，便于调用方按需预分配解压目标缓冲区。<br>
 - `fastalp_max_compressed_size_f64(len)`：计算 `len` 个 `f64` 浮点数所需的最大目标缓冲区字节容量。<br>
 - `fastalp_max_compressed_size_f32(len)`：计算 `len` 个 `f32` 浮点数所需的最大目标缓冲区字节容量。
 
@@ -1299,7 +1267,6 @@ cargo build --release --features capi
 - `fastalp_encoder_f64_reset(enc)`：重置指定编码器句柄中的已缓存模型参数。<br>
 - `fastalp_encoder_f64_compress(enc, src, len, dst, dst_cap)`：使用指定编码器句柄压缩 `f64` 浮点数组。<br>
 - 单精度浮点对应句柄接口：`FastAlpEncoderF32`、`fastalp_encoder_f32_new`、`fastalp_encoder_f32_free`、`fastalp_encoder_f32_reset` 以及 `fastalp_encoder_f32_compress`。
-
 
 ## 更新日志
 
@@ -1373,4 +1340,3 @@ cargo build --release --features capi
 ### v0.1.30
 
 - 明确标准 ALP 基线与定制算法压缩比对比；增强浮点极值与高精度时序数据压缩稳定性。
-

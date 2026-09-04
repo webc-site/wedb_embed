@@ -16,10 +16,11 @@ fastalp = { version = "0.1.38", features = ["capi"] }
 cargo build --release --features capi
 ```
 
-### 缓冲区容量预估
+### 缓冲区容量预估与元素提取
 
-调用方可预先计算最差情况下的缓冲区需求，确保不发生容量不足异常：
+调用方可预先计算最差情况下的缓冲区需求或提取压缩块元素数，确保不发生容量不足异常：
 
+- `fastalp_count(src, src_len)`：从压缩字节流自描述头部以 O(1) 复杂度快速解析出包含的浮点元素总数，便于调用方按需预分配解压目标缓冲区。<br>
 - `fastalp_max_compressed_size_f64(len)`：计算 `len` 个 `f64` 浮点数所需的最大目标缓冲区字节容量。<br>
 - `fastalp_max_compressed_size_f32(len)`：计算 `len` 个 `f32` 浮点数所需的最大目标缓冲区字节容量。
 

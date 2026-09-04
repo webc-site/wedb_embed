@@ -1,19 +1,27 @@
 use core::hint::unreachable_unchecked;
-use std::ptr::read_unaligned;
+use std::{mem::size_of, ptr::read_unaligned};
 
-use crate::{
+use crate::error::{Error, Result};
+pub use crate::{
   constants::{
-    CHUNK_SIZE_1024, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT, LEN_TAG_U8, LEN_TAG_U16,
-    LEN_TAG_U32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA, TYPE_F32_RAW, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
+    CHUNK_SIZE, CHUNK_SIZE_1024, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT, LEN_TAG_U8,
+    LEN_TAG_U16, LEN_TAG_U32, MAX_TYPE_BYTE, TYPE_F32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA,
+    TYPE_F32_DELTA, TYPE_F32_RAW, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA, TYPE_F64_DELTA,
     TYPE_F64_RAW, TYPE_MASK,
   },
-  error::{Error, Result},
   params::AlpParams,
 };
 
+/// Descriptor byte length (1B).
+const DESC_LEN: usize = 1;
+/// Maximum count field length in bytes (u32: 4B).
+const MAX_COUNT_LEN: usize = size_of::<u32>();
+/// Packed parameters field length in bytes (u16: 2B).
+const PARAMS_LEN: usize = size_of::<u16>();
+
 /// Maximum header length in bytes (1B desc + 4B count + 2B params).
 /// 自描述头部最大字节长度 (1B 描述符 + 4B u32 长度 + 2B 参数)
-pub const MAX_HEADER_LEN: usize = 7;
+pub const MAX_HEADER_LEN: usize = DESC_LEN + MAX_COUNT_LEN + PARAMS_LEN;
 
 /// Parsed header components from self-describing byte sequence.
 /// 自描述字节序列解析得到的头部信息
@@ -87,6 +95,66 @@ pub fn write_header(type_byte: u8, count: usize, params: Option<u16>, dst: &mut 
   dst.extend_from_slice(&buf[..len]);
 }
 
+/// Reads the element count from the compact self-describing header in O(1) time without reading params or payload.
+///
+/// 从紧凑自描述头部快速读取元素总数（O(1) 复杂度，零内存分配，无需解析后续参数与有效载荷）。
+#[inline(always)]
+pub fn read_count(src: &[u8]) -> Result<usize> {
+  if src.is_empty() {
+    return Err(Error::UnexpectedEof {
+      needed: 1,
+      available: 0,
+    });
+  }
+
+  let desc_byte = src[0];
+  let type_byte = desc_byte & TYPE_MASK;
+  if type_byte == 0 || type_byte > MAX_TYPE_BYTE {
+    return Err(Error::InvalidHeader);
+  }
+
+  let len_tag = (desc_byte >> LEN_TAG_SHIFT) & LEN_TAG_MASK;
+  match len_tag {
+    LEN_TAG_1024 => Ok(CHUNK_SIZE_1024),
+    LEN_TAG_U8 => {
+      if src.len() < 2 {
+        return Err(Error::UnexpectedEof {
+          needed: 2,
+          available: src.len(),
+        });
+      }
+      Ok(src[1] as usize)
+    }
+    LEN_TAG_U16 => {
+      if src.len() < 3 {
+        return Err(Error::UnexpectedEof {
+          needed: 3,
+          available: src.len(),
+        });
+      }
+      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u16
+      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u16
+      let c = unsafe { u16::from_le(read_unaligned(src.as_ptr().add(1).cast::<u16>())) } as usize;
+      Ok(c)
+    }
+    LEN_TAG_U32 => {
+      if src.len() < 5 {
+        return Err(Error::UnexpectedEof {
+          needed: 5,
+          available: src.len(),
+        });
+      }
+      // SAFETY: Available bytes verified above, read_unaligned safely reads little-endian u32
+      // SAFETY: 上方已校验可用字节充足，read_unaligned 安全读取小端 u32
+      let c = unsafe { u32::from_le(read_unaligned(src.as_ptr().add(1).cast::<u32>())) } as usize;
+      Ok(c)
+    }
+    // SAFETY: len_tag is 2 bits masked with 0x03, 0..=3 fully covered above
+    // SAFETY: len_tag 取值严格为 0..=3，上方 4 个分支已完全穷尽全部可能取值
+    _ => unsafe { unreachable_unchecked() },
+  }
+}
+
 /// Parses compact self-describing header from src.
 /// 从 src 字节序列中解析紧凑自描述头部
 #[inline(always)]
@@ -100,6 +168,10 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
 
   let desc_byte = src[0];
   let type_byte = desc_byte & TYPE_MASK;
+  if type_byte == 0 || type_byte > MAX_TYPE_BYTE {
+    return Err(Error::InvalidHeader);
+  }
+
   let len_tag = (desc_byte >> LEN_TAG_SHIFT) & LEN_TAG_MASK;
   let mut cursor = 1;
 

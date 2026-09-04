@@ -129,38 +129,3 @@ unsafe fn decode_standard_inner<F: AlpFloat, D: AlpDecoder<F>>(
   }
   Ok(())
 }
-
-/// Decodes standard FOR ALP block into `dst` slice (src is payload after header, zero-heap allocation).
-/// 解压标准基准值对齐（FOR）ALP 数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
-#[inline(always)]
-pub fn decode_standard_slice<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  params: AlpParams,
-  dst: &mut [F],
-) -> Result<()> {
-  if dst.len() < count {
-    return Err(Error::BufferTooSmall {
-      needed: count,
-      available: dst.len(),
-    });
-  }
-  unsafe { decode_standard_raw(src, count, params, dst.as_mut_ptr()) }
-}
-
-/// Decodes standard FOR ALP block into `dst` vector (src is payload after header).
-/// 解压标准基准值对齐（FOR）ALP 数据块至 `dst` 缓冲区 (src 为头部之后的有效载荷)
-pub fn decode_standard<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  params: AlpParams,
-  dst: &mut Vec<F>,
-) -> Result<()> {
-  let old_len = dst.len();
-  dst.reserve(count);
-  unsafe {
-    decode_standard_raw(src, count, params, dst.as_mut_ptr().add(old_len))?;
-    dst.set_len(old_len + count);
-  }
-  Ok(())
-}

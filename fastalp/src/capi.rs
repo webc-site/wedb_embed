@@ -8,7 +8,7 @@ use std::{
   panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use crate::{Encoder, MAX_HEADER_LEN, compress_into, decompress_into_raw};
+use crate::{Encoder, compress_into, decompress_into_raw};
 
 thread_local! {
   static TLS_COMP_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -37,7 +37,7 @@ thread_local! {
 /// 所需的最大目标缓冲区字节容量。
 #[unsafe(no_mangle)]
 pub extern "C" fn fastalp_max_compressed_size_f64(len: usize) -> usize {
-  MAX_HEADER_LEN.saturating_add(len.saturating_mul(size_of::<f64>()))
+  crate::max_compressed_size::<f64>(len)
 }
 
 /// Computes the maximum possible compressed buffer size in bytes for `len` f32 values.
@@ -61,7 +61,41 @@ pub extern "C" fn fastalp_max_compressed_size_f64(len: usize) -> usize {
 /// 所需的最大目标缓冲区字节容量。
 #[unsafe(no_mangle)]
 pub extern "C" fn fastalp_max_compressed_size_f32(len: usize) -> usize {
-  MAX_HEADER_LEN.saturating_add(len.saturating_mul(size_of::<f32>()))
+  crate::max_compressed_size::<f32>(len)
+}
+
+/// Reads the element count from the compressed byte buffer in O(1) time without decompressing.
+///
+/// # Arguments
+/// * `src` - Pointer to the compressed byte buffer.
+/// * `src_len` - Length of the compressed byte buffer.
+///
+/// # Returns
+/// The number of floating-point values contained in the compressed buffer, or `0` on error.
+///
+/// # Safety
+/// * `src` must point to at least `src_len` readable bytes.
+///
+/// ---
+///
+/// 从压缩字节缓冲区快速读取元素总数（O(1) 复杂度，零内存分配，无需解压任何有效载荷数据）。
+///
+/// # 参数
+/// * `src` - 压缩字节缓冲区指针。
+/// * `src_len` - 压缩字节缓冲区的有效长度。
+///
+/// # 返回值
+/// 压缩块中所包含的浮点元素总数；若数据损坏或无法解析则返回 `0`。
+///
+/// # 安全性保证 (Safety)
+/// * `src` 必须指向至少 `src_len` 字节可读的有效内存。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fastalp_count(src: *const u8, src_len: usize) -> usize {
+  if src.is_null() || src_len == 0 {
+    return 0;
+  }
+  let input = unsafe { from_raw_parts(src, src_len) };
+  crate::count(input).unwrap_or(0)
 }
 
 /// Resets the cached model parameters for the thread-local double-precision (f64) encoder.

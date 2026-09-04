@@ -131,41 +131,6 @@ unsafe fn decode_delta_inner<F: AlpFloat, D: AlpDecoder<F>>(
   Ok(())
 }
 
-/// Decodes an ALP Delta differential compressed block into `dst` slice.
-/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 切片 (src 为头部之后的有效载荷，零堆分配)
-#[inline(always)]
-pub fn decode_delta_slice<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  params: AlpParams,
-  dst: &mut [F],
-) -> Result<()> {
-  if dst.len() < count {
-    return Err(Error::BufferTooSmall {
-      needed: count,
-      available: dst.len(),
-    });
-  }
-  unsafe { decode_delta_raw(src, count, params, dst.as_mut_ptr()) }
-}
-
-/// Decodes an ALP Delta differential compressed block into `dst`.
-/// 解压 ALP Delta 一阶差分压缩数据块至 `dst` 缓冲区 (src 为头部之后的有效载荷)
-pub fn decode_delta<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  params: AlpParams,
-  dst: &mut Vec<F>,
-) -> Result<()> {
-  let old_len = dst.len();
-  dst.reserve(count);
-  unsafe {
-    decode_delta_raw(src, count, params, dst.as_mut_ptr().add(old_len))?;
-    dst.set_len(old_len + count);
-  }
-  Ok(())
-}
-
 /// Helper decoding a batch of delta offsets with 8-way unrolling into destination float pointer.
 /// 8路循环展开解码单批 Delta 偏移量至浮点目标指针（采用树状前缀和降低依赖延迟）
 ///

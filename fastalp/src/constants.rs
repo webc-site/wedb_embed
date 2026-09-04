@@ -2,15 +2,15 @@ use std::mem::size_of;
 
 /// Bits per byte constant.
 /// 每字节比特数常量
-pub const BITS_PER_BYTE: usize = 8;
+pub(crate) const BITS_PER_BYTE: usize = 8;
 
 /// Bits in u64 constant.
 /// u64 比特数常量
-pub const BITS_U64: usize = 64;
+pub(crate) const BITS_U64: usize = 64;
 
 /// Byte size of u64.
 /// u64 字节大小
-pub const BYTES_U64: usize = size_of::<u64>();
+pub(crate) const BYTES_U64: usize = size_of::<u64>();
 
 /// Format type identifier for f64 ALP compressed chunk.
 /// f64 ALP 压缩数据块类型标识
@@ -52,33 +52,38 @@ pub const TYPE_F64_DEC_DELTA: u8 = 9;
 /// f32 十进制精确除法时序差分压缩数据块类型标识
 pub const TYPE_F32_DEC_DELTA: u8 = 10;
 
+/// Maximum valid format type identifier.
+/// 最大有效编码格式类型标识
+pub const MAX_TYPE_BYTE: u8 = TYPE_F32_DEC_DELTA;
+
 /// Maximum decimal exponent for double precision f64.
 /// f64 最大十进制指数
-pub const MAX_EXPONENT_F64: u8 = 18;
+pub(crate) const MAX_EXPONENT_F64: u8 = 18;
 
 /// Maximum decimal exponent for single precision f32.
 /// f32 最大十进制指数
-pub const MAX_EXPONENT_F32: u8 = 10;
+pub(crate) const MAX_EXPONENT_F32: u8 = 10;
 
 /// Maximum factor exponent for f64.
 /// f64 最大因子指数
-pub const MAX_FAC_F64: u8 = 8;
+pub(crate) const MAX_FAC_F64: u8 = 8;
 
 /// Maximum factor exponent for f32.
 /// f32 最大因子指数
-pub const MAX_FAC_F32: u8 = 4;
+pub(crate) const MAX_FAC_F32: u8 = 4;
 
 /// Maximum encodable finite threshold for f64.
 /// f64 编码上限阈值
-pub const ENCODING_UPPER_LIMIT_F64: f64 = 9223372036854774784.0;
+pub(crate) const ENCODING_UPPER_LIMIT_F64: f64 = 9223372036854774784.0;
 
 /// Maximum encodable finite threshold for f32.
 /// f32 编码上限阈值
-pub const ENCODING_UPPER_LIMIT_F32: f32 = 2147483520.0;
+pub(crate) const ENCODING_UPPER_LIMIT_F32: f32 = 2147483520.0;
 
 /// Standard chunk size for typical ALP blocks.
 /// 典型 ALP 标准块大小 (1024)
-pub const CHUNK_SIZE_1024: usize = 1024;
+pub const CHUNK_SIZE: usize = 1024;
+pub const CHUNK_SIZE_1024: usize = CHUNK_SIZE;
 
 /// Type ID mask (lower 4 bits of descriptor byte: 0..=15).
 /// 描述符字节低 4 位：编码类型掩码
@@ -110,51 +115,47 @@ pub const LEN_TAG_1024: u8 = 0b11;
 
 /// Maximum acceptable number of exceptions per block before fallback to RAW uncompressed encoding.
 /// 单块允许的最大异常值数量上限（超过此门限直接回退至 RAW 未压缩模式）
-pub const MAX_EXCEPTIONS: usize = 128;
+pub(crate) const MAX_EXCEPTIONS: usize = 128;
 
 /// Exception count field length in bytes (u16).
 /// 异常总数字段长度 (字节, u16)
-pub const EXC_COUNT_LEN: usize = size_of::<u16>();
+pub(crate) const EXC_COUNT_LEN: usize = size_of::<u16>();
 
 /// Exception position index field length in bytes (u16).
 /// 异常位置索引字段长度 (字节, u16)
-pub const EXC_POS_LEN: usize = size_of::<u16>();
+pub(crate) const EXC_POS_LEN: usize = size_of::<u16>();
 
 /// Exception count field length in bytes for large arrays (u32).
 /// 大数组异常总数字段长度 (字节, u32)
-pub const EXC_COUNT_LEN_U32: usize = size_of::<u32>();
+pub(crate) const EXC_COUNT_LEN_U32: usize = size_of::<u32>();
 
 /// Exception position index field length in bytes for large arrays (u32).
 /// 大数组异常位置索引字段长度 (字节, u32)
-pub const EXC_POS_LEN_U32: usize = size_of::<u32>();
+pub(crate) const EXC_POS_LEN_U32: usize = size_of::<u32>();
 
 /// Number of sample points drawn during parameter search.
 /// 参数推导搜索采样点数量
-pub const SAMPLES_COUNT: usize = 32;
+pub(crate) const SAMPLES_COUNT: usize = 32;
 
 /// Early exit Bit-width threshold for early exit when 0 exceptions are found in parameter sampling.
 /// 采样时当 0 异常且位宽不超过此门限时提前终止探测
-pub const EARLY_EXIT_BIT_WIDTH: usize = 8;
+pub(crate) const EARLY_EXIT_BIT_WIDTH: usize = 8;
 
 /// Lookup table size for 1-bit unpacking.
 /// 1 比特解包查找表大小
-pub const LUT_SIZE_1BIT: usize = 2;
+pub(crate) const LUT_SIZE_1BIT: usize = 2;
 
 /// Lookup table size for 2-bit unpacking.
 /// 2 比特解包查找表大小
-pub const LUT_SIZE_2BIT: usize = 4;
+pub(crate) const LUT_SIZE_2BIT: usize = 4;
 
 /// Lookup table size for 4-bit unpacking.
 /// 4 比特解包查找表大小
-pub const LUT_SIZE_4BIT: usize = 16;
-
-/// Lookup table size for 8-bit unpacking.
-/// 8 比特解包查找表大小
-pub const LUT_SIZE_8BIT: usize = 256;
+pub(crate) const LUT_SIZE_4BIT: usize = 16;
 
 /// Static positive power table for f64 (10^0 .. 10^18).
 /// f64 静态正幂表 10^0 .. 10^18
-pub const EXP_ARR_F64: [f64; 19] = [
+pub(crate) const EXP_ARR_F64: [f64; 19] = [
   1.0,
   10.0,
   100.0,
@@ -178,7 +179,7 @@ pub const EXP_ARR_F64: [f64; 19] = [
 
 /// Static negative power table for f64 (10^-0 .. 10^-18).
 /// f64 静态负幂表 10^-0 .. 10^-18
-pub const FRAC_ARR_F64: [f64; 19] = [
+pub(crate) const FRAC_ARR_F64: [f64; 19] = [
   1.0,
   0.1,
   0.01,
@@ -202,7 +203,7 @@ pub const FRAC_ARR_F64: [f64; 19] = [
 
 /// Static integer factor table for f64 (10^0 .. 10^18).
 /// f64 静态整型因子表 10^0 .. 10^18
-pub const FACT_ARR_F64: [i64; 19] = [
+pub(crate) const FACT_ARR_F64: [i64; 19] = [
   1,
   10,
   100,
@@ -226,7 +227,7 @@ pub const FACT_ARR_F64: [i64; 19] = [
 
 /// Static positive power table for f32 (10^0 .. 10^10).
 /// f32 静态正幂表 10^0 .. 10^10
-pub const EXP_ARR_F32: [f32; 11] = [
+pub(crate) const EXP_ARR_F32: [f32; 11] = [
   1.0,
   10.0,
   100.0,
@@ -242,7 +243,7 @@ pub const EXP_ARR_F32: [f32; 11] = [
 
 /// Static negative power table for f32 (10^-0 .. 10^-10).
 /// f32 静态负幂表 10^-0 .. 10^-10
-pub const FRAC_ARR_F32: [f32; 11] = [
+pub(crate) const FRAC_ARR_F32: [f32; 11] = [
   1.0,
   0.1,
   0.01,
@@ -258,7 +259,7 @@ pub const FRAC_ARR_F32: [f32; 11] = [
 
 /// Static integer factor table for f32 (10^0 .. 10^10).
 /// f32 静态整型因子表 10^0 .. 10^10
-pub const FACT_ARR_F32: [i64; 11] = [
+pub(crate) const FACT_ARR_F32: [i64; 11] = [
   1,
   10,
   100,

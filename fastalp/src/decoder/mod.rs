@@ -32,14 +32,14 @@ mod standard;
 use core::ptr::copy_nonoverlapping;
 use std::ptr::read_unaligned;
 
-pub use delta::{decode_delta, decode_delta_raw, decode_delta_slice};
-pub use standard::{decode_standard, decode_standard_raw, decode_standard_slice};
+use delta::decode_delta_raw;
+use standard::decode_standard_raw;
 
 use crate::{
   constants::{EXC_COUNT_LEN, EXC_COUNT_LEN_U32},
   error::{Error, Result},
   float::AlpFloat,
-  header::{ParsedHeader, read_header},
+  header::{ParsedHeader, read_count, read_header},
 };
 
 /// Generic floating-point decompression directly into raw pointer memory.
@@ -139,7 +139,7 @@ pub fn decompress_into_slice<F: AlpFloat>(src: &[u8], dst: &mut [F]) -> Result<u
 /// Generic floating-point decompression into `dst` buffer.
 /// 通用解压浮点数组至 `dst` 缓冲区（自动分发 RAW、标准 FOR 与 Delta 差分块）
 pub fn decompress_into<F: AlpFloat>(src: &[u8], dst: &mut Vec<F>) -> Result<()> {
-  let ParsedHeader { count, .. } = read_header(src)?;
+  let count = read_count(src)?;
   if count == 0 {
     return Ok(());
   }

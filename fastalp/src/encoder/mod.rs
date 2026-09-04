@@ -6,9 +6,7 @@ mod outlier;
 mod standard;
 mod state;
 
-pub use delta::encode_delta;
-pub use exception::Exception;
-pub use standard::encode_standard;
+pub(crate) use exception::Exception;
 pub use state::Encoder;
 
 use crate::float::AlpFloat;

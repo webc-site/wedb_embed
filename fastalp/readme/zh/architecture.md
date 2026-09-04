@@ -73,6 +73,7 @@ fastalp/
 │   │   ├── mod.rs      # 门面导出
 │   │   ├── pack.rs     # 128 位累加器位打包算子
 │   │   └── unpack.rs   # 局部查表与直接位解包算子
+│   ├── capi.rs         # C 兼容 FFI 接口与独立编码器句柄
 │   ├── constants.rs    # 静态幂次表与格式常量
 │   ├── decoder/        # 泛型流式解压与除法重构
 │   │   ├── mod.rs      # 解压门面与模式派发

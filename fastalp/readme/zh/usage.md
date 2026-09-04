@@ -44,6 +44,37 @@ fn main() -> Result<()> {
 }
 ```
 
+### 零堆分配切片解压与 O(1) 元素计数
+
+针对数据库执行器、嵌入式环境或预分配内存池等极致低延迟场景，`fastalp` 提供 O(1) 紧凑头部元素计数与切片原地解压接口，全程零堆内存分配：
+
+```rust
+use fastalp::{
+  compress, count, decompress_into_slice, max_compressed_size, Result,
+};
+
+fn main() -> Result<()> {
+  let sensor_data = [20.5, 20.6, 20.8, 21.0, 20.9, 21.2];
+  let compressed = compress(&sensor_data);
+
+  // 1. O(1) 零堆分配快速提取压缩块中的元素总数
+  let num_items = count(&compressed)?;
+  assert_eq!(num_items, 6);
+
+  // 2. 预估最坏情况下（含保底回退）所需最大压缩缓冲区大小，防止越界
+  let max_cap = max_compressed_size::<f64>(num_items);
+  assert!(compressed.len() <= max_cap);
+
+  // 3. 解压至栈数组或既有切片，实现真正的零堆内存分配与零拷贝
+  let mut dst = [0.0f64; 6];
+  let written = decompress_into_slice(&compressed, &mut dst)?;
+  assert_eq!(written, 6);
+  assert_eq!(&dst[..], &sensor_data[..]);
+
+  Ok(())
+}
+```
+
 ### 状态化编码与参数缓存
 
 针对连续数据块流式压缩场景，使用 `Encoder` 缓存采样参数并复用内部工作内存，消除重复采样开销：
