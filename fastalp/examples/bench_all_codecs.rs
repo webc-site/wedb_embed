@@ -58,49 +58,49 @@ const MICRO_RAW_BYTES: usize = MICRO_LEN * size_of::<f64>();
 const MICRO_GRAUPEL_RAW_BYTES: usize = MICRO_LEN * size_of::<Point>();
 
 /// Benchmark statistics for a single codec.
-/// 单个编解码器的基准测试统计结果
+/// 单个编解码器的基准测试统计结果。
 #[derive(Debug)]
 struct CodecResult {
   /// Codec display name.
-  /// 编解码器展示名称
+  /// 编解码器展示名称。
   name: &'static str,
   /// Compressed byte size.
-  /// 压缩后字节大小
+  /// 压缩后字节大小。
   compressed_bytes: usize,
-  /// Compression ratio (raw size / compressed size).
-  /// 压缩比 (原始大小 / 压缩大小)
+  /// Compression ratio (raw size divided by compressed size).
+  /// 压缩比率（原始大小除以压缩大小）。
   ratio: f64,
   /// Bits per value (or bits per point for composite time-series).
-  /// 每个值占用的比特数 (或复合时序每个点占用的比特数)
+  /// 每个数值占用的比特数（或复合时序每个点占用的比特数）。
   bits_per_val: f64,
-  /// Overall / sampled encoding throughput (GB/s).
-  /// 编码吞吐率 (GB/s)
+  /// Overall or sampled encoding throughput in gigabytes per second.
+  /// 综合或冷启动采样编码吞吐率（单位：GB/s）。
   enc_gb_s: f64,
-  /// Cold sampled encoding throughput (GB/s).
-  /// 冷启动采样编码吞吐率 (GB/s)
+  /// Cold sampled encoding throughput in gigabytes per second.
+  /// 冷启动采样编码吞吐率（单位：GB/s）。
   enc_sampled_gb_s: f64,
-  /// Warm pure kernel encoding throughput (GB/s).
-  /// 热状态纯内核编码吞吐率 (GB/s)
+  /// Warm pure kernel encoding throughput in gigabytes per second.
+  /// 热状态纯内核编码吞吐率（单位：GB/s）。
   enc_kernel_gb_s: f64,
-  /// Decoding throughput (GB/s).
-  /// 解码吞吐率 (GB/s)
+  /// Decoding throughput in gigabytes per second.
+  /// 解码吞吐率（单位：GB/s）。
   dec_gb_s: f64,
 }
 
 /// Zero-copy cast f64 slice into immutable byte slice for general byte compressors.
-/// 将双精度浮点数切片零拷贝转换为只读字节切片（用于通用字节压缩算法）
+/// 将双精度浮点数切片零拷贝转换为只读字节切片（用于通用字节压缩算法）。
 #[inline]
 fn as_u8_slice(data: &[f64]) -> &[u8] {
-  // SAFETY: f64 is standard IEEE 754 8-byte layout in contiguous memory.
-  // SAFETY: f64 内部为 IEEE 754 标准 8 字节表示，内存严格连续，转换为只读 u8 切片安全
+  // SAFETY: f64 uses standard IEEE 754 8-byte layout in contiguous memory.
+  // 安全说明：双精度浮点数遵循标准 8 字节连续内存布局，转换为只读字节切片安全。
   unsafe { from_raw_parts(data.as_ptr().cast::<u8>(), size_of_val(data)) }
 }
 
 /// Benchmark fastalp (Pure Rust).
-/// 评测 fastalp (纯 Rust)
+/// 评测纯 Rust 实现的 fastalp 算法。
 ///
 /// Measures both cold dynamic sampling throughput and warm pure kernel throughput.
-/// 同时测量端到端冷启动动态参数采样吞吐与热状态纯内核流水线吞吐
+/// 同时测量端到端冷启动动态参数采样吞吐与热状态纯内核流水线吞吐。
 fn bench_fastalp(data: &[f64]) -> CodecResult {
   let iters = 1000;
   let mut compressed = Vec::with_capacity(data.len() * 2 + 64);
@@ -108,7 +108,7 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
   let mut encoder = fastalp::Encoder::new();
 
   // Warm up CPU cache and saturate frequency.
-  // 充分预热缓存并让 CPU 频率饱和
+  // 充分预热处理器缓存并使工作频率达到饱和。
   for _ in 0..50 {
     compressed.clear();
     encoder.compress_into(data, &mut compressed);
@@ -117,7 +117,7 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
   }
 
   // 1. Measure cold sampled encoding (dynamic parameter sampling on each pass).
-  // 1. 测量端到端冷启动压缩（每次执行参数采样与探测，1000 循环平滑）
+  // 1. 测量端到端冷启动压缩（每次执行动态参数采样与探测，循环平滑消除波动）。
   let t0 = Instant::now();
   for _ in 0..iters {
     compressed.clear();
@@ -127,7 +127,7 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
   let enc_sampled_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
   // 2. Measure warm pure kernel encoding (reusing established parameters without sampling).
-  // 2. 测量热状态纯内核压缩（复用探测参数跳过采样，1000 循环平滑）
+  // 2. 测量热状态纯内核压缩（复用已探测的最优参数跳过采样，循环平滑消除波动）。
   encoder.reset();
   compressed.clear();
   encoder.compress_into(data, &mut compressed);
@@ -140,7 +140,7 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
   let enc_kernel_dt = t1.elapsed().as_secs_f64() / iters as f64;
 
   // 3. Measure decompression throughput (1000 iterations).
-  // 3. 测量解压吞吐 (1000 循环平滑消除抖动)
+  // 3. 测量解压吞吐率（循环平滑消除波动）。
   let t2 = Instant::now();
   for _ in 0..iters {
     restored.clear();
@@ -168,15 +168,20 @@ fn bench_fastalp(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark Pcodec (pco level 3).
-/// 评测 Pcodec (pco 级别 3)
+/// 评测 Pcodec 数值压缩算法（压缩级别 3）。
 fn bench_pco(data: &[f64]) -> CodecResult {
   let config = ChunkConfig::default().with_compression_level(3);
   let iters = 10;
+
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   for _ in 0..2 {
     let c = simple_compress(data, &config).unwrap();
     let _ = simple_decompress::<f64>(&c).unwrap();
   }
 
+  // Measure encoding throughput.
+  // 测量编码吞吐率。
   let mut compressed = Vec::new();
   let t0 = Instant::now();
   for _ in 0..iters {
@@ -185,6 +190,8 @@ fn bench_pco(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let mut restored = Vec::new();
   let t1 = Instant::now();
   for _ in 0..iters {
@@ -210,7 +217,7 @@ fn bench_pco(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark Zstandard (zstd level 3).
-/// 评测 Zstandard (zstd 级别 3)
+/// 评测 Zstandard 通用字典压缩算法（压缩级别 3）。
 fn bench_zstd(data: &[f64]) -> CodecResult {
   let raw = as_u8_slice(data);
   let iters = 20;
@@ -218,13 +225,15 @@ fn bench_zstd(data: &[f64]) -> CodecResult {
   let comp_len = compress_to_buffer(raw, &mut compressed, 3).unwrap();
   compressed.truncate(comp_len);
 
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   let mut restored = vec![0u8; raw.len()];
   for _ in 0..2 {
     let _ = decompress_to_buffer(&compressed, &mut restored).unwrap();
   }
 
   // Preallocate buffer to eliminate allocation noise during benchmarking.
-  // 预分配缓冲区消除迭代循环内的内存分配噪声
+  // 预分配缓冲区消除迭代循环内的内存分配噪声。
   let mut comp_buf = vec![0u8; raw.len() + 128];
   let t0 = Instant::now();
   for _ in 0..iters {
@@ -233,6 +242,8 @@ fn bench_zstd(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let t1 = Instant::now();
   for _ in 0..iters {
     let _ = decompress_to_buffer(&compressed, &mut restored).unwrap();
@@ -256,15 +267,20 @@ fn bench_zstd(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark LZ4 (lz4_flex).
-/// 评测 LZ4 (lz4_flex)
+/// 评测 LZ4 极速块级压缩算法。
 fn bench_lz4(data: &[f64]) -> CodecResult {
   let raw = as_u8_slice(data);
   let iters = 20;
+
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   for _ in 0..2 {
     let c = lz4_flex::compress_prepend_size(raw);
     let _ = lz4_flex::decompress_size_prepended(&c).unwrap();
   }
 
+  // Measure encoding throughput.
+  // 测量编码吞吐率。
   let mut compressed = Vec::new();
   let t0 = Instant::now();
   for _ in 0..iters {
@@ -273,6 +289,8 @@ fn bench_lz4(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let mut restored = Vec::new();
   let t1 = Instant::now();
   for _ in 0..iters {
@@ -298,43 +316,52 @@ fn bench_lz4(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark Snappy (snap).
-/// 评测 Snappy (snap)
+/// 评测 Snappy 高吞吐字节压缩算法。
 fn bench_snappy(data: &[f64]) -> CodecResult {
   let raw = as_u8_slice(data);
   let mut enc = SnapEncoder::new();
   let mut dec = SnapDecoder::new();
   let iters = 20;
 
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   for _ in 0..2 {
     let c = enc.compress_vec(raw).unwrap();
     let _ = dec.decompress_vec(&c).unwrap();
   }
 
-  let mut compressed = Vec::new();
+  // Preallocate buffer to eliminate allocation noise during benchmarking.
+  // 预分配缓冲区消除迭代循环内的内存分配噪声。
+  let max_len = max_compress_len(raw.len());
+  let mut comp_buf = vec![0u8; max_len];
+  let mut comp_len = 0;
   let t0 = Instant::now();
   for _ in 0..iters {
-    compressed = enc.compress_vec(raw).unwrap();
-    black_box(&compressed);
+    comp_len = enc.compress(raw, &mut comp_buf).unwrap();
+    black_box(&comp_buf[..comp_len]);
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
-  let mut restored = Vec::new();
+  let compressed = &comp_buf[..comp_len];
+  let mut restored = vec![0u8; raw.len()];
+
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let t1 = Instant::now();
   for _ in 0..iters {
-    restored = dec.decompress_vec(&compressed).unwrap();
-    black_box(&restored);
+    let dec_len = dec.decompress(compressed, &mut restored).unwrap();
+    black_box(&restored[..dec_len]);
   }
   let dec_dt = t1.elapsed().as_secs_f64() / iters as f64;
-  assert_eq!(restored.len(), raw.len());
 
   let raw_bytes = size_of_val(data);
   let enc_gb_s = (raw_bytes as f64 / enc_dt) / 1e9;
   let dec_gb_s = (raw_bytes as f64 / dec_dt) / 1e9;
   CodecResult {
     name: "Snappy (snap)",
-    compressed_bytes: compressed.len(),
-    ratio: raw_bytes as f64 / compressed.len() as f64,
-    bits_per_val: (compressed.len() * 8) as f64 / data.len() as f64,
+    compressed_bytes: comp_len,
+    ratio: raw_bytes as f64 / comp_len as f64,
+    bits_per_val: (comp_len * 8) as f64 / data.len() as f64,
     enc_gb_s,
     enc_sampled_gb_s: enc_gb_s,
     enc_kernel_gb_s: enc_gb_s,
@@ -343,22 +370,29 @@ fn bench_snappy(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark Chimp128 (graupel).
-/// 评测 Chimp128 (graupel)
+/// 评测 Chimp128 时序浮点异或压缩算法。
 ///
 /// Note: Graupel encodes composite Point(timestamp: i64, value: f64) with 16 raw bytes per point.
-/// 注意：Graupel 编解码时序复合结构体 Point(i64, f64)，每个点原始数据为 16 字节
+/// 说明：Graupel 编解码时序复合结构体 Point(i64, f64)，每个点原始数据为 16 字节。
 fn bench_chimp128(data: &[f64]) -> CodecResult {
+  // Construct composite timestamp and value points.
+  // 构建复合时间戳与数值时序点。
   let points: Vec<Point> = data
     .iter()
     .enumerate()
     .map(|(i, &v)| Point::new(i as i64, v))
     .collect();
   let iters = 10;
+
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   for _ in 0..2 {
     let c = Chimp128.encode(&points).unwrap();
     let _ = graupel::decode(&c).unwrap();
   }
 
+  // Measure encoding throughput.
+  // 测量编码吞吐率。
   let mut compressed = Vec::new();
   let t0 = Instant::now();
   for _ in 0..iters {
@@ -367,6 +401,8 @@ fn bench_chimp128(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let mut restored = Vec::new();
   let t1 = Instant::now();
   for _ in 0..iters {
@@ -377,8 +413,8 @@ fn bench_chimp128(data: &[f64]) -> CodecResult {
   assert_eq!(restored.len(), points.len());
 
   // Input payload consists of 16-byte Point(ts, val) tuples.
-  // 原始输入负载为每个时序点 16 字节（时间戳 + 浮点值）
-  let raw_bytes = points.len() * 16;
+  // 原始输入负载为每个时序点 16 字节（时间戳与浮点数值）。
+  let raw_bytes = points.len() * size_of::<Point>();
   let enc_gb_s = (raw_bytes as f64 / enc_dt) / 1e9;
   let dec_gb_s = (raw_bytes as f64 / dec_dt) / 1e9;
   CodecResult {
@@ -394,22 +430,29 @@ fn bench_chimp128(data: &[f64]) -> CodecResult {
 }
 
 /// Benchmark Gorilla (graupel).
-/// 评测 Gorilla (graupel)
+/// 评测 Gorilla 经典时序浮点异或压缩算法。
 ///
 /// Note: Graupel encodes composite Point(timestamp: i64, value: f64) with 16 raw bytes per point.
-/// 注意：Graupel 编解码时序复合结构体 Point(i64, f64)，每个点原始数据为 16 字节
+/// 说明：Graupel 编解码时序复合结构体 Point(i64, f64)，每个点原始数据为 16 字节。
 fn bench_gorilla(data: &[f64]) -> CodecResult {
+  // Construct composite timestamp and value points.
+  // 构建复合时间戳与数值时序点。
   let points: Vec<Point> = data
     .iter()
     .enumerate()
     .map(|(i, &v)| Point::new(i as i64, v))
     .collect();
   let iters = 10;
+
+  // Warm up CPU cache.
+  // 充分预热处理器缓存。
   for _ in 0..2 {
     let c = Gorilla.encode(&points).unwrap();
     let _ = graupel::decode(&c).unwrap();
   }
 
+  // Measure encoding throughput.
+  // 测量编码吞吐率。
   let mut compressed = Vec::new();
   let t0 = Instant::now();
   for _ in 0..iters {
@@ -418,6 +461,8 @@ fn bench_gorilla(data: &[f64]) -> CodecResult {
   }
   let enc_dt = t0.elapsed().as_secs_f64() / iters as f64;
 
+  // Measure decoding throughput.
+  // 测量解码吞吐率。
   let mut restored = Vec::new();
   let t1 = Instant::now();
   for _ in 0..iters {
@@ -428,8 +473,8 @@ fn bench_gorilla(data: &[f64]) -> CodecResult {
   assert_eq!(restored.len(), points.len());
 
   // Input payload consists of 16-byte Point(ts, val) tuples.
-  // 原始输入负载为每个时序点 16 字节（时间戳 + 浮点值）
-  let raw_bytes = points.len() * 16;
+  // 原始输入负载为每个时序点 16 字节（时间戳与浮点数值）。
+  let raw_bytes = points.len() * size_of::<Point>();
   let enc_gb_s = (raw_bytes as f64 / enc_dt) / 1e9;
   let dec_gb_s = (raw_bytes as f64 / dec_dt) / 1e9;
   CodecResult {
@@ -445,8 +490,10 @@ fn bench_gorilla(data: &[f64]) -> CodecResult {
 }
 
 /// Load standard time-series datasets from disk.
-/// 从磁盘加载全部公开时序测试数据集
+/// 从磁盘加载全部公开时序测试数据集。
 fn load_paper_samples() -> Vec<(String, Vec<f64>)> {
+  // Candidate relative and absolute directory paths.
+  // 候选相对路径与绝对路径列表。
   let candidates = [
     Path::new("/Users/z/git/db/ALP/data/samples"),
     Path::new("../ALP/data/samples"),
@@ -458,6 +505,8 @@ fn load_paper_samples() -> Vec<(String, Vec<f64>)> {
 
   let mut list = Vec::new();
   if let Ok(entries) = read_dir(dir) {
+    // Read and sort CSV sample file paths.
+    // 读取并按字母顺序排序样本文件路径。
     let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
     paths.sort();
     for p in paths {
@@ -466,6 +515,8 @@ fn load_paper_samples() -> Vec<(String, Vec<f64>)> {
           continue;
         };
         if let Ok(f) = File::open(&p) {
+          // Parse floating-point numbers line by line.
+          // 逐行解析双精度浮点数值。
           let vals: Vec<f64> = BufReader::new(f)
             .lines()
             .map_while(Result::ok)
@@ -488,17 +539,23 @@ fn load_paper_samples() -> Vec<(String, Vec<f64>)> {
   list
 }
 
+/// Benchmark suite entry point for executing all codecs and generating JSON reports.
+/// 运行全量算法基准测试并生成各算法独立 JSON 报表的主入口函数。
 fn main() {
   println!("Running full benchmark suite & generating individual algorithm JSONs...");
 
+  // Load standard time-series datasets.
+  // 加载公开标准时序测试数据集。
   let samples = load_paper_samples();
   if samples.is_empty() {
-    println!("未找到测试样本集！");
+    eprintln!("Warning: No test samples found in candidates path.");
     return;
   }
 
   println!("Found {} datasets to benchmark.", samples.len());
 
+  // Prepare standard microbenchmark scenarios (1024 floats each).
+  // 准备标准微基准测试场景数据（每组 1024 个浮点数）。
   let sensor_data: Vec<f64> = (0..MICRO_LEN)
     .map(|i| (200 + (i % 150)) as f64 * 0.1)
     .collect();
@@ -511,6 +568,8 @@ fn main() {
       .collect()
   };
 
+  // Resolve JSON output directory.
+  // 解析 JSON 报告输出目录。
   let json_dir = if Path::new("fastalp/benches/json").exists() {
     Path::new("fastalp/benches/json")
   } else {
@@ -518,10 +577,14 @@ fn main() {
   };
   let _ = create_dir_all(json_dir);
 
+  // List of codecs to benchmark.
+  // 待评测算法键名列表。
   let algo_keys = [
     "fastalp", "pco", "zstd", "lz4", "snappy", "chimp128", "gorilla",
   ];
 
+  // Benchmark each codec across all datasets and scenarios.
+  // 逐一评测各算法在全量数据集与微基准场景下的表现。
   for &key in &algo_keys {
     let runner: fn(&[f64]) -> CodecResult = match key {
       "fastalp" => bench_fastalp,
@@ -534,10 +597,20 @@ fn main() {
       _ => unreachable!(),
     };
 
+    // Execute microbenchmarks for current codec.
+    // 运行当前算法的微基准测试场景。
     let sensor_res = runner(&sensor_data);
     let ramp_res = runner(&ramp_data);
     let constant_res = runner(&constant_data);
     let random_res = runner(&random_noise);
+
+    // Microbenchmark raw byte count (aligned to 16 bytes for Graupel composite Point).
+    // 微基准测试原始字节数（针对 Graupel 复合时序点严格对齐为 16 字节分母）。
+    let micro_raw_bytes = if key == "chimp128" || key == "gorilla" {
+      MICRO_GRAUPEL_RAW_BYTES
+    } else {
+      MICRO_RAW_BYTES
+    };
 
     let mut ds_json_items = Vec::with_capacity(samples.len());
     let mut total_raw = 0;
@@ -547,10 +620,12 @@ fn main() {
     let mut sum_enc_kernel = 0.0;
     let mut sum_dec = 0.0;
 
+    // Evaluate standard time-series datasets.
+    // 评测各公开时序数据集。
     for (name, vals) in &samples {
       let r = runner(vals);
       let raw_bytes = if key == "chimp128" || key == "gorilla" {
-        vals.len() * 16
+        vals.len() * size_of::<Point>()
       } else {
         vals.len() * size_of::<f64>()
       };
@@ -575,13 +650,12 @@ fn main() {
 
     let n_ds = samples.len() as f64;
     let avg_ratio = total_raw as f64 / total_compressed as f64;
-    let avg_bv = (total_compressed * 8) as f64
-      / (total_raw as f64
-        / if key == "chimp128" || key == "gorilla" {
-          16.0
-        } else {
-          8.0
-        });
+    let bytes_per_elem = if key == "chimp128" || key == "gorilla" {
+      size_of::<Point>() as f64
+    } else {
+      size_of::<f64>() as f64
+    };
+    let avg_bv = (total_compressed * 8) as f64 / (total_raw as f64 / bytes_per_elem);
     let avg_enc = sum_enc / n_ds;
     let avg_enc_sampled = sum_enc_sampled / n_ds;
     let avg_enc_kernel = sum_enc_kernel / n_ds;
@@ -593,12 +667,8 @@ fn main() {
       "general_bytes"
     };
 
-    let micro_raw_bytes = if key == "chimp128" || key == "gorilla" {
-      MICRO_LEN * 16
-    } else {
-      MICRO_RAW_BYTES
-    };
-
+    // Serialize benchmark statistics to JSON format.
+    // 将基准测试统计结果序列化为 JSON 格式。
     let json_content = format!(
       r#"{{
   "algorithm": "{key}",
