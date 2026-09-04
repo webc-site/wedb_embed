@@ -30,15 +30,20 @@ mod delta;
 mod standard;
 
 use core::{
+  marker::PhantomData,
   mem::{MaybeUninit, size_of},
   ptr::copy_nonoverlapping,
+  slice::from_raw_parts_mut,
 };
 
 use delta::decode_delta_raw;
 use standard::decode_standard_raw;
 
 use crate::{
-  bitpack::{bitunpack_u64_slice, packed_byte_size},
+  bitpack::{
+    AlpDictDecoder, AlpRdConstantDecoder, bitunpack_core_generic, bitunpack_u64_raw,
+    bitunpack_u64_slice, packed_byte_size,
+  },
   constants::{EXC_COUNT_LEN, EXC_COUNT_LEN_U32, MAX_DICT_ENTRIES},
   error::{Error, Result},
   float::AlpFloat,
@@ -84,7 +89,9 @@ unsafe fn expand_byte<F: AlpFloat>(
       *prev = *dst_ptr.add(out_pos + 7);
     } else if byte == 0xFF {
       let p = *prev;
-      core::slice::from_raw_parts_mut(dst_ptr.add(out_pos), 8).fill(p);
+      for k in 0..8 {
+        dst_ptr.add(out_pos + k).write(p);
+      }
     } else {
       for k in 0..8 {
         if (byte & (1 << k)) == 0 {
@@ -153,7 +160,9 @@ pub(crate) unsafe fn expand_repeats<F: AlpFloat>(
         src_idx += 64;
         prev = *dst_ptr.add(base_out + 63);
       } else if word == u64::MAX {
-        core::slice::from_raw_parts_mut(dst_ptr.add(base_out), 64).fill(prev);
+        for k in 0..64 {
+          dst_ptr.add(base_out + k).write(prev);
+        }
       } else {
         let bytes_ptr = bitmap.as_ptr().add(base_out / 8);
         for b in 0..8 {
@@ -236,7 +245,9 @@ unsafe fn decode_dict_raw<F: AlpFloat>(
     let single_val = dict[0];
     // SAFETY: 调用方保证 dst_ptr 具有至少 count 个连续有效可写槽位
     unsafe {
-      core::slice::from_raw_parts_mut(dst_ptr, count).fill(single_val);
+      for i in 0..count {
+        dst_ptr.add(i).write(single_val);
+      }
     }
     return Ok(());
   }
@@ -250,10 +261,10 @@ unsafe fn decode_dict_raw<F: AlpFloat>(
     });
   }
 
-  let decoder = crate::bitpack::AlpDictDecoder { dict: &dict };
+  let decoder = AlpDictDecoder { dict: &dict };
   // SAFETY: 上方已校验 payload.len() >= indices_offset + packed_bytes，dst_ptr 具备 count 个有效槽位
   unsafe {
-    crate::bitpack::bitunpack_core_generic(
+    bitunpack_core_generic(
       &payload[indices_offset..indices_offset + packed_bytes],
       count,
       bit_width,
@@ -333,13 +344,13 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
   let exc_cursor = right_cursor + right_bytes;
 
   if left_bw == 0 {
-    let decoder = crate::bitpack::AlpRdConstantDecoder {
+    let decoder = AlpRdConstantDecoder {
       high_bits: shifted_dict[0],
-      _phantom: core::marker::PhantomData,
+      _phantom: PhantomData,
     };
     // SAFETY: 上方已前置校验 payload.len() >= right_cursor + right_bytes，dst_ptr 具备 count 个有效 F 槽位
     unsafe {
-      crate::bitpack::bitunpack_core_generic(
+      bitunpack_core_generic(
         &payload[right_cursor..right_cursor + right_bytes],
         count,
         right_bw,
@@ -368,28 +379,24 @@ unsafe fn decode_rd_raw<F: AlpFloat>(payload: &[u8], count: usize, dst_ptr: *mut
 
       if size_of::<F>() == 8 {
         // SAFETY: dst_ptr + block_offset has cur_count elements, for size_of 8, u64 layout is identical
-        let dst_u64 = unsafe {
-          core::slice::from_raw_parts_mut(dst_ptr.add(block_offset).cast::<u64>(), cur_count)
-        };
-        bitunpack_u64_slice(
-          &payload[cur_right_cursor..cur_right_cursor + cur_right_bytes],
-          cur_count,
-          right_bw,
-          dst_u64,
-        )?;
+        let dst_u64_ptr = unsafe { dst_ptr.add(block_offset).cast::<u64>() };
+        unsafe {
+          bitunpack_u64_raw(
+            &payload[cur_right_cursor..cur_right_cursor + cur_right_bytes],
+            cur_count,
+            right_bw,
+            dst_u64_ptr,
+          )?;
+        }
         cur_right_cursor += cur_right_bytes;
 
+        let dst_u64 = unsafe { from_raw_parts_mut(dst_u64_ptr, cur_count) };
         let (dst_chunks, dst_rem) = dst_u64.as_chunks_mut::<8>();
         let (left_chunks, left_rem) = left_buf[..cur_count].as_chunks::<8>();
         for (dc, lc) in dst_chunks.iter_mut().zip(left_chunks.iter()) {
-          dc[0] |= shifted_dict[lc[0] as usize & 7];
-          dc[1] |= shifted_dict[lc[1] as usize & 7];
-          dc[2] |= shifted_dict[lc[2] as usize & 7];
-          dc[3] |= shifted_dict[lc[3] as usize & 7];
-          dc[4] |= shifted_dict[lc[4] as usize & 7];
-          dc[5] |= shifted_dict[lc[5] as usize & 7];
-          dc[6] |= shifted_dict[lc[6] as usize & 7];
-          dc[7] |= shifted_dict[lc[7] as usize & 7];
+          unroll_8!(k => {
+            dc[k] |= shifted_dict[lc[k] as usize & 7];
+          });
         }
         for (d, l) in dst_rem.iter_mut().zip(left_rem.iter()) {
           *d |= shifted_dict[*l as usize & 7];

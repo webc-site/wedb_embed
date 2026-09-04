@@ -1,5 +1,4 @@
-use core::hint::unreachable_unchecked;
-use core::mem::size_of;
+use core::{hint::unreachable_unchecked, mem::size_of};
 
 use crate::error::{Error, Result};
 pub use crate::{
@@ -216,11 +215,7 @@ pub fn read_count(src: &[u8]) -> Result<usize> {
           available: src.len(),
         });
       }
-      let c = u32::from_le_bytes(
-        src[1..5]
-          .try_into()
-          .map_err(|_| Error::InvalidHeader)?,
-      ) as usize;
+      let c = u32::from_le_bytes(src[1..5].try_into().map_err(|_| Error::InvalidHeader)?) as usize;
       Ok(c)
     }
     // SAFETY: len_tag is 2 bits masked with 0x03, 0..=3 fully covered above

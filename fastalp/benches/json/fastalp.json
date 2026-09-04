@@ -9,8 +9,8 @@
     "bits_per_val": 17.33,
     "avg_enc_gb_s": 2.93,
     "avg_enc_sampled_gb_s": 2.93,
-    "avg_enc_kernel_gb_s": 9.03,
-    "avg_dec_gb_s": 27.70,
+    "avg_enc_kernel_gb_s": 9.01,
+    "avg_dec_gb_s": 30.72,
     "datasets": [
       {
         "name": "air_sensor_f",
@@ -18,10 +18,10 @@
         "compressed_bytes": 6798,
         "ratio": 1.2051,
         "bits_per_val": 53.11,
-        "enc_gb_s": 0.74,
-        "enc_sampled_gb_s": 0.74,
+        "enc_gb_s": 0.75,
+        "enc_sampled_gb_s": 0.75,
         "enc_kernel_gb_s": 3.33,
-        "dec_gb_s": 12.12
+        "dec_gb_s": 12.10
       },
       {
         "name": "arade4",
@@ -29,10 +29,10 @@
         "compressed_bytes": 3083,
         "ratio": 2.6572,
         "bits_per_val": 24.09,
-        "enc_gb_s": 3.31,
-        "enc_sampled_gb_s": 3.31,
-        "enc_kernel_gb_s": 12.72,
-        "dec_gb_s": 27.60
+        "enc_gb_s": 3.32,
+        "enc_sampled_gb_s": 3.32,
+        "enc_kernel_gb_s": 12.77,
+        "dec_gb_s": 28.08
       },
       {
         "name": "basel_temp_f",
@@ -40,10 +40,10 @@
         "compressed_bytes": 3968,
         "ratio": 2.0645,
         "bits_per_val": 31.00,
-        "enc_gb_s": 1.19,
-        "enc_sampled_gb_s": 1.19,
-        "enc_kernel_gb_s": 4.36,
-        "dec_gb_s": 12.66
+        "enc_gb_s": 1.20,
+        "enc_sampled_gb_s": 1.20,
+        "enc_kernel_gb_s": 4.37,
+        "dec_gb_s": 20.36
       },
       {
         "name": "basel_wind_f",
@@ -51,10 +51,10 @@
         "compressed_bytes": 3554,
         "ratio": 2.3050,
         "bits_per_val": 27.77,
-        "enc_gb_s": 1.20,
-        "enc_sampled_gb_s": 1.20,
-        "enc_kernel_gb_s": 3.40,
-        "dec_gb_s": 13.19
+        "enc_gb_s": 1.24,
+        "enc_sampled_gb_s": 1.24,
+        "enc_kernel_gb_s": 3.29,
+        "dec_gb_s": 19.56
       },
       {
         "name": "bird_migration_f",
@@ -62,10 +62,10 @@
         "compressed_bytes": 2071,
         "ratio": 3.9556,
         "bits_per_val": 16.18,
-        "enc_gb_s": 0.91,
-        "enc_sampled_gb_s": 0.91,
-        "enc_kernel_gb_s": 7.41,
-        "dec_gb_s": 47.72
+        "enc_gb_s": 0.92,
+        "enc_sampled_gb_s": 0.92,
+        "enc_kernel_gb_s": 7.32,
+        "dec_gb_s": 31.34
       },
       {
         "name": "bitcoin_f",
@@ -73,10 +73,10 @@
         "compressed_bytes": 2983,
         "ratio": 2.7462,
         "bits_per_val": 23.30,
-        "enc_gb_s": 1.50,
-        "enc_sampled_gb_s": 1.50,
-        "enc_kernel_gb_s": 5.06,
-        "dec_gb_s": 13.30
+        "enc_gb_s": 1.49,
+        "enc_sampled_gb_s": 1.49,
+        "enc_kernel_gb_s": 5.10,
+        "dec_gb_s": 19.97
       },
       {
         "name": "bitcoin_transactions_f",
@@ -84,10 +84,10 @@
         "compressed_bytes": 4119,
         "ratio": 1.9888,
         "bits_per_val": 32.18,
-        "enc_gb_s": 1.95,
-        "enc_sampled_gb_s": 1.95,
-        "enc_kernel_gb_s": 7.80,
-        "dec_gb_s": 32.85
+        "enc_gb_s": 1.99,
+        "enc_sampled_gb_s": 1.99,
+        "enc_kernel_gb_s": 7.84,
+        "dec_gb_s": 48.47
       },
       {
         "name": "city_temperature_f",
@@ -95,10 +95,10 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 6.27,
-        "enc_sampled_gb_s": 6.27,
-        "enc_kernel_gb_s": 12.99,
-        "dec_gb_s": 30.71
+        "enc_gb_s": 6.15,
+        "enc_sampled_gb_s": 6.15,
+        "enc_kernel_gb_s": 12.40,
+        "dec_gb_s": 29.88
       },
       {
         "name": "cms1",
@@ -106,10 +106,10 @@
         "compressed_bytes": 7184,
         "ratio": 1.1403,
         "bits_per_val": 56.12,
-        "enc_gb_s": 0.46,
-        "enc_sampled_gb_s": 0.46,
-        "enc_kernel_gb_s": 2.80,
-        "dec_gb_s": 11.13
+        "enc_gb_s": 0.47,
+        "enc_sampled_gb_s": 0.47,
+        "enc_kernel_gb_s": 2.88,
+        "dec_gb_s": 10.74
       },
       {
         "name": "cms25",
@@ -117,10 +117,10 @@
         "compressed_bytes": 5387,
         "ratio": 1.5207,
         "bits_per_val": 42.09,
-        "enc_gb_s": 2.76,
-        "enc_sampled_gb_s": 2.76,
-        "enc_kernel_gb_s": 9.92,
-        "dec_gb_s": 25.98
+        "enc_gb_s": 2.84,
+        "enc_sampled_gb_s": 2.84,
+        "enc_kernel_gb_s": 9.82,
+        "dec_gb_s": 26.16
       },
       {
         "name": "cms9",
@@ -128,10 +128,10 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 3.13,
-        "enc_sampled_gb_s": 3.13,
-        "enc_kernel_gb_s": 13.90,
-        "dec_gb_s": 30.08
+        "enc_gb_s": 3.16,
+        "enc_sampled_gb_s": 3.16,
+        "enc_kernel_gb_s": 13.85,
+        "dec_gb_s": 31.19
       },
       {
         "name": "food_prices",
@@ -139,10 +139,10 @@
         "compressed_bytes": 1634,
         "ratio": 5.0135,
         "bits_per_val": 12.77,
-        "enc_gb_s": 0.86,
-        "enc_sampled_gb_s": 0.86,
-        "enc_kernel_gb_s": 6.44,
-        "dec_gb_s": 7.41
+        "enc_gb_s": 0.84,
+        "enc_sampled_gb_s": 0.84,
+        "enc_kernel_gb_s": 6.46,
+        "dec_gb_s": 16.31
       },
       {
         "name": "gov10",
@@ -150,10 +150,10 @@
         "compressed_bytes": 3677,
         "ratio": 2.2279,
         "bits_per_val": 28.73,
-        "enc_gb_s": 1.43,
-        "enc_sampled_gb_s": 1.43,
-        "enc_kernel_gb_s": 7.81,
-        "dec_gb_s": 28.44
+        "enc_gb_s": 1.46,
+        "enc_sampled_gb_s": 1.46,
+        "enc_kernel_gb_s": 7.40,
+        "dec_gb_s": 27.89
       },
       {
         "name": "gov26",
@@ -161,10 +161,10 @@
         "compressed_bytes": 11,
         "ratio": 744.7273,
         "bits_per_val": 0.09,
-        "enc_gb_s": 7.57,
-        "enc_sampled_gb_s": 7.57,
-        "enc_kernel_gb_s": 24.59,
-        "dec_gb_s": 55.24
+        "enc_gb_s": 7.61,
+        "enc_sampled_gb_s": 7.61,
+        "enc_kernel_gb_s": 24.58,
+        "dec_gb_s": 47.04
       },
       {
         "name": "gov30",
@@ -172,10 +172,10 @@
         "compressed_bytes": 53,
         "ratio": 154.5660,
         "bits_per_val": 0.41,
-        "enc_gb_s": 1.03,
-        "enc_sampled_gb_s": 1.03,
-        "enc_kernel_gb_s": 9.38,
-        "dec_gb_s": 83.91
+        "enc_gb_s": 1.04,
+        "enc_sampled_gb_s": 1.04,
+        "enc_kernel_gb_s": 9.84,
+        "dec_gb_s": 95.12
       },
       {
         "name": "gov31",
@@ -183,10 +183,10 @@
         "compressed_bytes": 23,
         "ratio": 356.1739,
         "bits_per_val": 0.18,
-        "enc_gb_s": 1.37,
-        "enc_sampled_gb_s": 1.37,
-        "enc_kernel_gb_s": 6.37,
-        "dec_gb_s": 88.01
+        "enc_gb_s": 1.40,
+        "enc_sampled_gb_s": 1.40,
+        "enc_kernel_gb_s": 6.58,
+        "dec_gb_s": 93.67
       },
       {
         "name": "gov40",
@@ -196,8 +196,8 @@
         "bits_per_val": 0.34,
         "enc_gb_s": 1.04,
         "enc_sampled_gb_s": 1.04,
-        "enc_kernel_gb_s": 8.61,
-        "dec_gb_s": 31.28
+        "enc_kernel_gb_s": 8.94,
+        "dec_gb_s": 92.65
       },
       {
         "name": "medicare1",
@@ -205,10 +205,10 @@
         "compressed_bytes": 4087,
         "ratio": 2.0044,
         "bits_per_val": 31.93,
-        "enc_gb_s": 0.66,
-        "enc_sampled_gb_s": 0.66,
-        "enc_kernel_gb_s": 4.34,
-        "dec_gb_s": 13.20
+        "enc_gb_s": 0.65,
+        "enc_sampled_gb_s": 0.65,
+        "enc_kernel_gb_s": 4.15,
+        "dec_gb_s": 13.01
       },
       {
         "name": "medicare9",
@@ -216,10 +216,10 @@
         "compressed_bytes": 1419,
         "ratio": 5.7731,
         "bits_per_val": 11.09,
-        "enc_gb_s": 2.85,
-        "enc_sampled_gb_s": 2.85,
-        "enc_kernel_gb_s": 13.74,
-        "dec_gb_s": 30.93
+        "enc_gb_s": 2.84,
+        "enc_sampled_gb_s": 2.84,
+        "enc_kernel_gb_s": 13.86,
+        "dec_gb_s": 32.59
       },
       {
         "name": "neon_air_pressure",
@@ -227,10 +227,10 @@
         "compressed_bytes": 1298,
         "ratio": 6.3112,
         "bits_per_val": 10.14,
-        "enc_gb_s": 3.01,
-        "enc_sampled_gb_s": 3.01,
-        "enc_kernel_gb_s": 8.41,
-        "dec_gb_s": 13.47
+        "enc_gb_s": 2.96,
+        "enc_sampled_gb_s": 2.96,
+        "enc_kernel_gb_s": 8.66,
+        "dec_gb_s": 22.06
       },
       {
         "name": "neon_bio_temp_c",
@@ -238,10 +238,10 @@
         "compressed_bytes": 1042,
         "ratio": 7.8618,
         "bits_per_val": 8.14,
-        "enc_gb_s": 1.74,
-        "enc_sampled_gb_s": 1.74,
-        "enc_kernel_gb_s": 9.17,
-        "dec_gb_s": 16.00
+        "enc_gb_s": 1.75,
+        "enc_sampled_gb_s": 1.75,
+        "enc_kernel_gb_s": 8.77,
+        "dec_gb_s": 22.07
       },
       {
         "name": "neon_dew_point_temp",
@@ -249,10 +249,10 @@
         "compressed_bytes": 1170,
         "ratio": 7.0017,
         "bits_per_val": 9.14,
-        "enc_gb_s": 6.38,
-        "enc_sampled_gb_s": 6.38,
-        "enc_kernel_gb_s": 8.47,
-        "dec_gb_s": 13.30
+        "enc_gb_s": 6.12,
+        "enc_sampled_gb_s": 6.12,
+        "enc_kernel_gb_s": 8.39,
+        "dec_gb_s": 21.25
       },
       {
         "name": "neon_pm10_dust",
@@ -260,10 +260,10 @@
         "compressed_bytes": 714,
         "ratio": 11.4734,
         "bits_per_val": 5.58,
-        "enc_gb_s": 1.09,
-        "enc_sampled_gb_s": 1.09,
-        "enc_kernel_gb_s": 7.04,
-        "dec_gb_s": 12.78
+        "enc_gb_s": 1.07,
+        "enc_sampled_gb_s": 1.07,
+        "enc_kernel_gb_s": 6.78,
+        "dec_gb_s": 13.64
       },
       {
         "name": "neon_wind_dir",
@@ -271,10 +271,10 @@
         "compressed_bytes": 2059,
         "ratio": 3.9786,
         "bits_per_val": 16.09,
-        "enc_gb_s": 2.84,
-        "enc_sampled_gb_s": 2.84,
-        "enc_kernel_gb_s": 13.05,
-        "dec_gb_s": 47.92
+        "enc_gb_s": 2.85,
+        "enc_sampled_gb_s": 2.85,
+        "enc_kernel_gb_s": 13.42,
+        "dec_gb_s": 32.44
       },
       {
         "name": "nyc29",
@@ -284,8 +284,8 @@
         "bits_per_val": 19.13,
         "enc_gb_s": 0.92,
         "enc_sampled_gb_s": 0.92,
-        "enc_kernel_gb_s": 7.16,
-        "dec_gb_s": 14.88
+        "enc_kernel_gb_s": 6.79,
+        "dec_gb_s": 14.99
       },
       {
         "name": "poi_lat",
@@ -295,8 +295,8 @@
         "bits_per_val": 55.67,
         "enc_gb_s": 0.88,
         "enc_sampled_gb_s": 0.88,
-        "enc_kernel_gb_s": 3.62,
-        "dec_gb_s": 11.67
+        "enc_kernel_gb_s": 3.40,
+        "dec_gb_s": 10.46
       },
       {
         "name": "poi_lon",
@@ -304,10 +304,10 @@
         "compressed_bytes": 7246,
         "ratio": 1.1306,
         "bits_per_val": 56.61,
-        "enc_gb_s": 0.93,
-        "enc_sampled_gb_s": 0.93,
-        "enc_kernel_gb_s": 2.56,
-        "dec_gb_s": 11.18
+        "enc_gb_s": 0.92,
+        "enc_sampled_gb_s": 0.92,
+        "enc_kernel_gb_s": 2.55,
+        "dec_gb_s": 10.35
       },
       {
         "name": "scene_finance",
@@ -315,10 +315,10 @@
         "compressed_bytes": 787,
         "ratio": 10.4091,
         "bits_per_val": 6.15,
-        "enc_gb_s": 6.74,
-        "enc_sampled_gb_s": 6.74,
-        "enc_kernel_gb_s": 9.02,
-        "dec_gb_s": 13.22
+        "enc_gb_s": 6.87,
+        "enc_sampled_gb_s": 6.87,
+        "enc_kernel_gb_s": 9.22,
+        "dec_gb_s": 21.24
       },
       {
         "name": "scene_geo",
@@ -326,10 +326,10 @@
         "compressed_bytes": 19,
         "ratio": 431.1579,
         "bits_per_val": 0.15,
-        "enc_gb_s": 7.19,
-        "enc_sampled_gb_s": 7.19,
-        "enc_kernel_gb_s": 11.46,
-        "dec_gb_s": 32.26
+        "enc_gb_s": 7.26,
+        "enc_sampled_gb_s": 7.26,
+        "enc_kernel_gb_s": 11.39,
+        "dec_gb_s": 27.99
       },
       {
         "name": "scene_macro",
@@ -337,10 +337,10 @@
         "compressed_bytes": 803,
         "ratio": 10.2017,
         "bits_per_val": 6.27,
-        "enc_gb_s": 2.50,
-        "enc_sampled_gb_s": 2.50,
-        "enc_kernel_gb_s": 6.74,
-        "dec_gb_s": 32.82
+        "enc_gb_s": 2.52,
+        "enc_sampled_gb_s": 2.52,
+        "enc_kernel_gb_s": 6.79,
+        "dec_gb_s": 33.26
       },
       {
         "name": "scene_ramp",
@@ -348,10 +348,10 @@
         "compressed_bytes": 19,
         "ratio": 431.1579,
         "bits_per_val": 0.15,
-        "enc_gb_s": 8.29,
-        "enc_sampled_gb_s": 8.29,
-        "enc_kernel_gb_s": 11.96,
-        "dec_gb_s": 31.75
+        "enc_gb_s": 7.99,
+        "enc_sampled_gb_s": 7.99,
+        "enc_kernel_gb_s": 11.92,
+        "dec_gb_s": 27.56
       },
       {
         "name": "scene_sensor",
@@ -359,10 +359,10 @@
         "compressed_bytes": 1035,
         "ratio": 7.9150,
         "bits_per_val": 8.09,
-        "enc_gb_s": 6.66,
-        "enc_sampled_gb_s": 6.66,
-        "enc_kernel_gb_s": 14.60,
-        "dec_gb_s": 50.12
+        "enc_gb_s": 6.58,
+        "enc_sampled_gb_s": 6.58,
+        "enc_kernel_gb_s": 13.96,
+        "dec_gb_s": 30.40
       },
       {
         "name": "scene_steady",
@@ -370,10 +370,10 @@
         "compressed_bytes": 11,
         "ratio": 744.7273,
         "bits_per_val": 0.09,
-        "enc_gb_s": 7.53,
-        "enc_sampled_gb_s": 7.53,
-        "enc_kernel_gb_s": 23.88,
-        "dec_gb_s": 54.28
+        "enc_gb_s": 7.80,
+        "enc_sampled_gb_s": 7.80,
+        "enc_kernel_gb_s": 24.94,
+        "dec_gb_s": 78.99
       },
       {
         "name": "ssd_hdd_benchmarks_f",
@@ -381,10 +381,10 @@
         "compressed_bytes": 867,
         "ratio": 9.4487,
         "bits_per_val": 6.77,
-        "enc_gb_s": 0.62,
-        "enc_sampled_gb_s": 0.62,
-        "enc_kernel_gb_s": 5.93,
-        "dec_gb_s": 34.03
+        "enc_gb_s": 0.61,
+        "enc_sampled_gb_s": 0.61,
+        "enc_kernel_gb_s": 5.80,
+        "dec_gb_s": 14.92
       },
       {
         "name": "stocks_de",
@@ -392,10 +392,10 @@
         "compressed_bytes": 915,
         "ratio": 8.9530,
         "bits_per_val": 7.15,
-        "enc_gb_s": 5.64,
-        "enc_sampled_gb_s": 5.64,
-        "enc_kernel_gb_s": 9.20,
-        "dec_gb_s": 13.47
+        "enc_gb_s": 5.89,
+        "enc_sampled_gb_s": 5.89,
+        "enc_kernel_gb_s": 9.17,
+        "dec_gb_s": 21.72
       },
       {
         "name": "stocks_uk",
@@ -403,10 +403,10 @@
         "compressed_bytes": 1042,
         "ratio": 7.8618,
         "bits_per_val": 8.14,
-        "enc_gb_s": 3.92,
-        "enc_sampled_gb_s": 3.92,
-        "enc_kernel_gb_s": 9.32,
-        "dec_gb_s": 16.01
+        "enc_gb_s": 3.85,
+        "enc_sampled_gb_s": 3.85,
+        "enc_kernel_gb_s": 9.24,
+        "dec_gb_s": 24.41
       },
       {
         "name": "stocks_usa_c",
@@ -414,10 +414,10 @@
         "compressed_bytes": 564,
         "ratio": 14.5248,
         "bits_per_val": 4.41,
-        "enc_gb_s": 1.11,
-        "enc_sampled_gb_s": 1.11,
-        "enc_kernel_gb_s": 7.57,
-        "dec_gb_s": 10.02
+        "enc_gb_s": 1.12,
+        "enc_sampled_gb_s": 1.12,
+        "enc_kernel_gb_s": 7.45,
+        "dec_gb_s": 12.65
       }
     ]
   }

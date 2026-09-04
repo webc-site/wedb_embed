@@ -1,8 +1,12 @@
-use std::{env, fs, path::PathBuf, time::Instant};
+use std::{
+  env, fs,
+  path::{Path, PathBuf},
+  time::{Duration, Instant},
+};
 
 use fastalp::{Encoder, compress_into, decompress_into};
 
-fn load_csv(path: &PathBuf) -> Vec<f64> {
+fn load_csv(path: &Path) -> Vec<f64> {
   let content = fs::read_to_string(path).expect("Failed to read CSV");
   content
     .lines()
@@ -67,7 +71,7 @@ fn main() {
 
     // Measure End-to-End Compression with Dynamic Sampling (min of 3 rounds of 1000 iters)
     let comp_iters = 1000;
-    let mut best_enc_dur = std::time::Duration::MAX;
+    let mut best_enc_dur = Duration::MAX;
     for _ in 0..3 {
       let start_enc = Instant::now();
       for _ in 0..comp_iters {
@@ -82,7 +86,7 @@ fn main() {
     encoder.reset();
     comp_buf.clear();
     encoder.compress_into(&data, &mut comp_buf); // First pass establishes cached parameters
-    let mut best_enc_kern_dur = std::time::Duration::MAX;
+    let mut best_enc_kern_dur = Duration::MAX;
     for _ in 0..3 {
       let start_enc_kern = Instant::now();
       for _ in 0..comp_iters {
@@ -96,7 +100,7 @@ fn main() {
 
     // Measure Decompression (min of 3 rounds of 1000 iters - exact match with C++ ALP benchmark)
     let dec_iters = 1000;
-    let mut best_dec_dur = std::time::Duration::MAX;
+    let mut best_dec_dur = Duration::MAX;
     for _ in 0..3 {
       let start_dec = Instant::now();
       for _ in 0..dec_iters {

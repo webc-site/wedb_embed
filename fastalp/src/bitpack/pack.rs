@@ -1,3 +1,5 @@
+use core::ptr::copy_nonoverlapping;
+
 use crate::{
   constants::{BITS_PER_BYTE, BITS_U64, BYTES_U64},
   float::AlpFloat,
@@ -33,31 +35,9 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
     // SAFETY: dst 已 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，余数在结尾填充，完全覆盖 total_bytes 且不越界。
     unsafe {
       let dst_start = dst.as_mut_ptr().add(old_len);
-      let dst_ptr = match bit_width {
-        1 => pack_u64_chunks::<1>(chunks, dst_start),
-        2 => pack_u64_chunks::<2>(chunks, dst_start),
-        3 => pack_u64_chunks::<3>(chunks, dst_start),
-        4 => pack_u64_chunks::<4>(chunks, dst_start),
-        5 => pack_u64_chunks::<5>(chunks, dst_start),
-        6 => pack_u64_chunks::<6>(chunks, dst_start),
-        7 => pack_u64_chunks::<7>(chunks, dst_start),
-        8 => pack_u64_chunks::<8>(chunks, dst_start),
-        9 => pack_u64_chunks::<9>(chunks, dst_start),
-        10 => pack_u64_chunks::<10>(chunks, dst_start),
-        11 => pack_u64_chunks::<11>(chunks, dst_start),
-        12 => pack_u64_chunks::<12>(chunks, dst_start),
-        13 => pack_u64_chunks::<13>(chunks, dst_start),
-        14 => pack_u64_chunks::<14>(chunks, dst_start),
-        15 => pack_u64_chunks::<15>(chunks, dst_start),
-        16 => pack_u64_chunks::<16>(chunks, dst_start),
-        17 => pack_u64_chunks::<17>(chunks, dst_start),
-        18 => pack_u64_chunks::<18>(chunks, dst_start),
-        19 => pack_u64_chunks::<19>(chunks, dst_start),
-        20 => pack_u64_chunks::<20>(chunks, dst_start),
-        24 => pack_u64_chunks::<24>(chunks, dst_start),
-        28 => pack_u64_chunks::<28>(chunks, dst_start),
-        32 => pack_u64_chunks::<32>(chunks, dst_start),
-        _ => {
+      let dst_ptr = match_pack_23!(
+        bit_width,
+        fallback => {
           let stride = bit_width as usize;
           let mask = bit_mask(bit_width);
           let mut p = dst_start;
@@ -66,8 +46,9 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
             p = p.add(stride);
           }
           p
-        }
-      };
+        },
+        |W| pack_u64_chunks::<W>(chunks, dst_start)
+      );
 
       if !rem.is_empty() {
         pack_rem(rem.iter().copied(), bit_width, dst_ptr);
@@ -99,7 +80,7 @@ pub fn bitpack_u64(values: &[u64], bit_width: u8, dst: &mut Vec<u8>) {
       }
       if let Some(&last) = rem.first() {
         let acc = (last as u128).to_le();
-        core::ptr::copy_nonoverlapping((&acc as *const u128).cast::<u8>(), dst_ptr, 7);
+        copy_nonoverlapping((&acc as *const u128).cast::<u8>(), dst_ptr, 7);
       }
       dst.set_len(old_len + total_bytes);
     }
@@ -157,31 +138,9 @@ pub fn bitpack_encoded<F: AlpFloat>(
     // SAFETY: dst 已预先 reserve(total_bytes + 16)，按 8 个整数一组打包写入 stride 字节，完全覆盖 total_bytes。
     unsafe {
       let dst_start = dst.as_mut_ptr().add(old_len);
-      let dst_ptr = match bit_width {
-        1 => pack_encoded_chunks::<F, 1>(chunks, base, dst_start),
-        2 => pack_encoded_chunks::<F, 2>(chunks, base, dst_start),
-        3 => pack_encoded_chunks::<F, 3>(chunks, base, dst_start),
-        4 => pack_encoded_chunks::<F, 4>(chunks, base, dst_start),
-        5 => pack_encoded_chunks::<F, 5>(chunks, base, dst_start),
-        6 => pack_encoded_chunks::<F, 6>(chunks, base, dst_start),
-        7 => pack_encoded_chunks::<F, 7>(chunks, base, dst_start),
-        8 => pack_encoded_chunks::<F, 8>(chunks, base, dst_start),
-        9 => pack_encoded_chunks::<F, 9>(chunks, base, dst_start),
-        10 => pack_encoded_chunks::<F, 10>(chunks, base, dst_start),
-        11 => pack_encoded_chunks::<F, 11>(chunks, base, dst_start),
-        12 => pack_encoded_chunks::<F, 12>(chunks, base, dst_start),
-        13 => pack_encoded_chunks::<F, 13>(chunks, base, dst_start),
-        14 => pack_encoded_chunks::<F, 14>(chunks, base, dst_start),
-        15 => pack_encoded_chunks::<F, 15>(chunks, base, dst_start),
-        16 => pack_encoded_chunks::<F, 16>(chunks, base, dst_start),
-        17 => pack_encoded_chunks::<F, 17>(chunks, base, dst_start),
-        18 => pack_encoded_chunks::<F, 18>(chunks, base, dst_start),
-        19 => pack_encoded_chunks::<F, 19>(chunks, base, dst_start),
-        20 => pack_encoded_chunks::<F, 20>(chunks, base, dst_start),
-        24 => pack_encoded_chunks::<F, 24>(chunks, base, dst_start),
-        28 => pack_encoded_chunks::<F, 28>(chunks, base, dst_start),
-        32 => pack_encoded_chunks::<F, 32>(chunks, base, dst_start),
-        _ => {
+      let dst_ptr = match_pack_23!(
+        bit_width,
+        fallback => {
           let stride = bit_width as usize;
           let mut p = dst_start;
           for chunk in chunks {
@@ -189,8 +148,9 @@ pub fn bitpack_encoded<F: AlpFloat>(
             p = p.add(stride);
           }
           p
-        }
-      };
+        },
+        |W| pack_encoded_chunks::<F, W>(chunks, base, dst_start)
+      );
 
       pack_encoded_rem::<F>(rem, base, bit_width, dst_ptr);
       dst.set_len(old_len + total_bytes);
@@ -223,7 +183,7 @@ pub fn bitpack_encoded<F: AlpFloat>(
       if let Some(&last) = rem.first() {
         let off = F::int_diff_to_u64(last, base);
         let acc = (off as u128).to_le();
-        core::ptr::copy_nonoverlapping((&acc as *const u128).cast::<u8>(), dst_ptr, 7);
+        copy_nonoverlapping((&acc as *const u128).cast::<u8>(), dst_ptr, 7);
       }
       dst.set_len(old_len + total_bytes);
     }
@@ -284,31 +244,9 @@ pub fn bitpack_fused_delta<F: AlpFloat>(
     unsafe {
       let dst_start = dst.as_mut_ptr().add(old_len);
       let raw_ptr = raw_ints.as_ptr();
-      let dst_ptr = match bit_width {
-        1 => pack_fused_delta_chunks::<F, 1>(raw_ptr, min_delta, num_chunks, dst_start),
-        2 => pack_fused_delta_chunks::<F, 2>(raw_ptr, min_delta, num_chunks, dst_start),
-        3 => pack_fused_delta_chunks::<F, 3>(raw_ptr, min_delta, num_chunks, dst_start),
-        4 => pack_fused_delta_chunks::<F, 4>(raw_ptr, min_delta, num_chunks, dst_start),
-        5 => pack_fused_delta_chunks::<F, 5>(raw_ptr, min_delta, num_chunks, dst_start),
-        6 => pack_fused_delta_chunks::<F, 6>(raw_ptr, min_delta, num_chunks, dst_start),
-        7 => pack_fused_delta_chunks::<F, 7>(raw_ptr, min_delta, num_chunks, dst_start),
-        8 => pack_fused_delta_chunks::<F, 8>(raw_ptr, min_delta, num_chunks, dst_start),
-        9 => pack_fused_delta_chunks::<F, 9>(raw_ptr, min_delta, num_chunks, dst_start),
-        10 => pack_fused_delta_chunks::<F, 10>(raw_ptr, min_delta, num_chunks, dst_start),
-        11 => pack_fused_delta_chunks::<F, 11>(raw_ptr, min_delta, num_chunks, dst_start),
-        12 => pack_fused_delta_chunks::<F, 12>(raw_ptr, min_delta, num_chunks, dst_start),
-        13 => pack_fused_delta_chunks::<F, 13>(raw_ptr, min_delta, num_chunks, dst_start),
-        14 => pack_fused_delta_chunks::<F, 14>(raw_ptr, min_delta, num_chunks, dst_start),
-        15 => pack_fused_delta_chunks::<F, 15>(raw_ptr, min_delta, num_chunks, dst_start),
-        16 => pack_fused_delta_chunks::<F, 16>(raw_ptr, min_delta, num_chunks, dst_start),
-        17 => pack_fused_delta_chunks::<F, 17>(raw_ptr, min_delta, num_chunks, dst_start),
-        18 => pack_fused_delta_chunks::<F, 18>(raw_ptr, min_delta, num_chunks, dst_start),
-        19 => pack_fused_delta_chunks::<F, 19>(raw_ptr, min_delta, num_chunks, dst_start),
-        20 => pack_fused_delta_chunks::<F, 20>(raw_ptr, min_delta, num_chunks, dst_start),
-        24 => pack_fused_delta_chunks::<F, 24>(raw_ptr, min_delta, num_chunks, dst_start),
-        28 => pack_fused_delta_chunks::<F, 28>(raw_ptr, min_delta, num_chunks, dst_start),
-        32 => pack_fused_delta_chunks::<F, 32>(raw_ptr, min_delta, num_chunks, dst_start),
-        _ => {
+      let dst_ptr = match_pack_23!(
+        bit_width,
+        fallback => {
           let stride = bit_width as usize;
           let mut p = dst_start;
           let mut r = raw_ptr;
@@ -318,8 +256,9 @@ pub fn bitpack_fused_delta<F: AlpFloat>(
             r = r.add(CHUNK_8);
           }
           p
-        }
-      };
+        },
+        |W| pack_fused_delta_chunks::<F, W>(raw_ptr, min_delta, num_chunks, dst_start)
+      );
 
       pack_fused_delta_rem::<F>(raw_ints, rem_start, min_delta, bit_width, dst_ptr);
       dst.set_len(old_len + total_bytes);
@@ -499,32 +438,14 @@ unsafe fn flush_remaining_bits(mut acc: u128, mut bits: u32, mut dst_ptr: *mut u
 /// 为 8 元素 u64 数组批量施加位掩码
 #[inline(always)]
 fn mask_chunk_8(chunk: &[u64; CHUNK_8], mask: u64) -> [u64; CHUNK_8] {
-  [
-    chunk[0] & mask,
-    chunk[1] & mask,
-    chunk[2] & mask,
-    chunk[3] & mask,
-    chunk[4] & mask,
-    chunk[5] & mask,
-    chunk[6] & mask,
-    chunk[7] & mask,
-  ]
+  chunk.map(|x| x & mask)
 }
 
 /// Computes differences between an 8-element integer chunk and base as u64 array.
 /// 计算 8 元素整数块相对于基准值的差值数组
 #[inline(always)]
 fn diff_chunk_8<F: AlpFloat>(chunk: &[F::Int; CHUNK_8], base: F::Int) -> [u64; CHUNK_8] {
-  [
-    F::int_diff_to_u64(chunk[0], base),
-    F::int_diff_to_u64(chunk[1], base),
-    F::int_diff_to_u64(chunk[2], base),
-    F::int_diff_to_u64(chunk[3], base),
-    F::int_diff_to_u64(chunk[4], base),
-    F::int_diff_to_u64(chunk[5], base),
-    F::int_diff_to_u64(chunk[6], base),
-    F::int_diff_to_u64(chunk[7], base),
-  ]
+  chunk.map(|v| F::int_diff_to_u64(v, base))
 }
 
 /// Computes fused 8-element delta offsets directly from raw pointer.
@@ -534,26 +455,11 @@ unsafe fn delta_chunk_8<F: AlpFloat>(raw_ptr: *const F::Int, min_delta: F::Int) 
   // SAFETY: Caller guarantees raw_ptr has readable range of at least 9 elements (prev + 8 values)
   // SAFETY: 调用方保证 raw_ptr 具有至少 9 个元素的有效读取范围 (prev + 8 values)
   unsafe {
-    let prev = *raw_ptr;
-    let x0 = *raw_ptr.add(1);
-    let x1 = *raw_ptr.add(2);
-    let x2 = *raw_ptr.add(3);
-    let x3 = *raw_ptr.add(4);
-    let x4 = *raw_ptr.add(5);
-    let x5 = *raw_ptr.add(6);
-    let x6 = *raw_ptr.add(7);
-    let x7 = *raw_ptr.add(8);
-
-    [
-      F::int_diff_to_u64(F::int_sub(x0, prev), min_delta),
-      F::int_diff_to_u64(F::int_sub(x1, x0), min_delta),
-      F::int_diff_to_u64(F::int_sub(x2, x1), min_delta),
-      F::int_diff_to_u64(F::int_sub(x3, x2), min_delta),
-      F::int_diff_to_u64(F::int_sub(x4, x3), min_delta),
-      F::int_diff_to_u64(F::int_sub(x5, x4), min_delta),
-      F::int_diff_to_u64(F::int_sub(x6, x5), min_delta),
-      F::int_diff_to_u64(F::int_sub(x7, x6), min_delta),
-    ]
+    arr_8!(k => {
+      let curr = *raw_ptr.add(k + 1);
+      let prev = *raw_ptr.add(k);
+      F::int_diff_to_u64(F::int_sub(curr, prev), min_delta)
+    })
   }
 }
 
