@@ -1,8 +1,10 @@
 mod delta;
+mod dict;
 mod engine;
 mod exception;
 mod kernel;
 mod outlier;
+mod rd;
 mod standard;
 mod state;
 

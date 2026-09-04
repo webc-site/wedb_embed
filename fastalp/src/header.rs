@@ -4,10 +4,11 @@ use std::{mem::size_of, ptr::read_unaligned};
 use crate::error::{Error, Result};
 pub use crate::{
   constants::{
-    CHUNK_SIZE, CHUNK_SIZE_1024, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT, LEN_TAG_U8,
-    LEN_TAG_U16, LEN_TAG_U32, MAX_TYPE_BYTE, TYPE_F32, TYPE_F32_DEC, TYPE_F32_DEC_DELTA,
-    TYPE_F32_DELTA, TYPE_F32_RAW, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA, TYPE_F64_DELTA,
-    TYPE_F64_RAW, TYPE_MASK,
+    CHUNK_SIZE, CHUNK_SIZE_1024, FLAG_REPEAT, LEN_TAG_1024, LEN_TAG_MASK, LEN_TAG_SHIFT,
+    LEN_TAG_U8, LEN_TAG_U16, LEN_TAG_U32, MAX_TYPE_BYTE, TYPE_F32, TYPE_F32_DEC,
+    TYPE_F32_DEC_DELTA, TYPE_F32_DELTA, TYPE_F32_DICT, TYPE_F32_RAW, TYPE_F32_RD, TYPE_F64,
+    TYPE_F64_DEC, TYPE_F64_DEC_DELTA, TYPE_F64_DELTA, TYPE_F64_DICT, TYPE_F64_RAW, TYPE_F64_RD,
+    TYPE_MASK,
   },
   params::AlpParams,
 };
@@ -32,6 +33,7 @@ pub struct ParsedHeader {
   pub len_tag: u8,
   pub params: Option<AlpParams>,
   pub cursor: usize,
+  pub has_repeat: bool,
 }
 
 /// Calculates byte size needed to encode `count` in the compact header.
@@ -84,7 +86,8 @@ pub fn write_header(type_byte: u8, count: usize, params: Option<u16>, dst: &mut 
     (LEN_TAG_U32, 4)
   };
 
-  buf[0] = (type_byte & TYPE_MASK) | (len_tag << LEN_TAG_SHIFT);
+  let flag_repeat = type_byte & FLAG_REPEAT;
+  buf[0] = (type_byte & TYPE_MASK) | (len_tag << LEN_TAG_SHIFT) | flag_repeat;
   len += count_len;
 
   if let Some(p) = params {
@@ -168,6 +171,7 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
 
   let desc_byte = src[0];
   let type_byte = desc_byte & TYPE_MASK;
+  let has_repeat = (desc_byte & FLAG_REPEAT) != 0;
   if type_byte == 0 || type_byte > MAX_TYPE_BYTE {
     return Err(Error::InvalidHeader);
   }
@@ -222,13 +226,16 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
   };
 
   let is_raw = type_byte == TYPE_F64_RAW || type_byte == TYPE_F32_RAW;
-  if is_raw || count == 0 {
+  let is_dict = type_byte == TYPE_F64_DICT || type_byte == TYPE_F32_DICT;
+  let is_rd = type_byte == TYPE_F64_RD || type_byte == TYPE_F32_RD;
+  if is_raw || is_dict || is_rd || count == 0 {
     return Ok(ParsedHeader {
       type_byte,
       count,
       len_tag,
       params: None,
       cursor,
+      has_repeat,
     });
   }
 
@@ -255,5 +262,6 @@ pub fn read_header(src: &[u8]) -> Result<ParsedHeader> {
     len_tag,
     params: Some(alp_params),
     cursor,
+    has_repeat,
   })
 }

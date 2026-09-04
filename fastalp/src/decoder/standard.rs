@@ -1,19 +1,11 @@
 use core::slice::from_raw_parts_mut;
 
 use crate::{
-  bitpack::{AlpDecoder, bitunpack_core_generic, bitunpack_u64_slice, packed_byte_size},
+  bitpack::{AlpDecoder, bitunpack_core_generic, packed_byte_size},
   error::{Error, Result},
   float::AlpFloat,
   params::AlpParams,
 };
-
-/// Stack batch unpack scratch buffer size
-/// 栈上批量位解包暂存块大小
-const DECODE_BATCH_SIZE: usize = 1024;
-
-/// Dedicated bit-widths with vectorized inlining
-/// 具备针对性内联向量化优化的专用位宽表
-const SPECIAL_BW: [u8; 7] = [1, 2, 4, 8, 16, 32, 64];
 
 /// Decodes standard Frame-of-Reference (FOR) ALP block into raw pointer memory (src is payload after header, zero-heap allocation).
 /// 解压标准基准值对齐（FOR）ALP 数据块至裸指针内存 (src 为头部之后的有效载荷，零堆分配)
@@ -90,41 +82,16 @@ unsafe fn decode_standard_inner<F: AlpFloat, D: AlpDecoder<F>>(
       });
     }
 
-    if SPECIAL_BW.contains(&params.bit_width) || params.bit_width > 32 {
-      // SAFETY: Caller guarantees sufficient buffer and valid pointers
-      // SAFETY: 调用方保证缓冲区与指针充足有效
-      unsafe {
-        bitunpack_core_generic(
-          &payload[..packed_len],
-          count,
-          params.bit_width,
-          decoder,
-          dst_ptr,
-        );
-      }
-    } else {
-      let mut stack_offsets = [0u64; DECODE_BATCH_SIZE];
-      let mut processed = 0;
-      let mut pack_off = 0;
-      while processed < count {
-        let batch = (count - processed).min(DECODE_BATCH_SIZE);
-        let batch_bytes = packed_byte_size(batch, params.bit_width);
-        bitunpack_u64_slice(
-          &payload[pack_off..pack_off + batch_bytes],
-          batch,
-          params.bit_width,
-          &mut stack_offsets[..batch],
-        )?;
-        let out = unsafe { dst_ptr.add(processed) };
-        // SAFETY: out pointer points to batch continuous valid writable float slots
-        // SAFETY: out 指针指向 processed 开始的 batch 个有效连续可写浮点内存
-        let out_slice = unsafe { from_raw_parts_mut(out, batch) };
-        for (&off, dst) in stack_offsets[..batch].iter().zip(out_slice.iter_mut()) {
-          *dst = decoder.decode_offset(off);
-        }
-        pack_off += batch_bytes;
-        processed += batch;
-      }
+    // SAFETY: Caller guarantees sufficient buffer and valid pointers
+    // SAFETY: 调用方保证缓冲区与指针充足有效，bitunpack_core_generic 支持全量 1..=64 位宽的单趟寄存器级融合解码
+    unsafe {
+      bitunpack_core_generic(
+        &payload[..packed_len],
+        count,
+        params.bit_width,
+        decoder,
+        dst_ptr,
+      );
     }
   }
   Ok(())
