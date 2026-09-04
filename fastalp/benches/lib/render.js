@@ -42,7 +42,7 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const dualSecY = sec1TableBottom + 30;
   const dualGridY = dualSecY + 56;
   const dualCardW = (contentW - 14) / 2; // 329px
-  const dualCardH = 96;
+  const dualCardH = 98;
   const dualRow1Y = dualGridY;
   const dualSecBottom = dualRow1Y + dualCardH;
 
@@ -232,42 +232,42 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       title: i18n.scene_sensor_title,
       sub: i18n.scene_sensor_sub,
       badge: i18n.scene_sensor_badge,
-      badgeW: isZh ? 128 : 138,
+      badgeW: isZh ? 128 : 146,
       items: buildScenarioItems("scene_sensor")
     },
     {
       title: i18n.scene_finance_title,
       sub: i18n.scene_finance_sub,
       badge: i18n.scene_finance_badge,
-      badgeW: isZh ? 120 : 130,
+      badgeW: isZh ? 120 : 138,
       items: buildScenarioItems("scene_finance")
     },
     {
       title: i18n.scene_geo_title,
       sub: i18n.scene_geo_sub,
       badge: i18n.scene_geo_badge,
-      badgeW: isZh ? 120 : 130,
+      badgeW: isZh ? 120 : 138,
       items: buildScenarioItems("scene_geo")
     },
     {
       title: i18n.scene_health_title,
       sub: i18n.scene_health_sub,
       badge: i18n.scene_health_badge,
-      badgeW: isZh ? 120 : 130,
+      badgeW: isZh ? 120 : 138,
       items: buildScenarioItems("scene_health")
     },
     {
       title: i18n.scene_macro_title,
       sub: i18n.scene_macro_sub,
       badge: i18n.scene_macro_badge,
-      badgeW: isZh ? 120 : 130,
+      badgeW: isZh ? 120 : 138,
       items: buildScenarioItems("scene_macro")
     },
     {
       title: i18n.scene_waveform_title,
       sub: i18n.scene_waveform_sub,
       badge: i18n.scene_waveform_badge,
-      badgeW: isZh ? 120 : 130,
+      badgeW: isZh ? 120 : 138,
       items: buildScenarioItems("scene_waveform")
     }
   ];
@@ -342,6 +342,15 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
 
   const repoUrl = "github.com/webc-site/wedb_embed/tree/main/fastalp";
 
+  // Dual Comparison Block (C++ ALP vs fastalp Dual Measurement)
+  const c1BadgeW = isZh ? 62 : 84;
+  const c1BadgeX = dualCardW - c1BadgeW - 12;
+  const c1BadgeTextX = c1BadgeX + c1BadgeW / 2;
+
+  const c2BadgeW = isZh ? 62 : 78;
+  const c2BadgeX = dualCardW - c2BadgeW - 12;
+  const c2BadgeTextX = c2BadgeX + c2BadgeW / 2;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${totalH}" viewBox="0 0 ${width} ${totalH}" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Clean White Background -->
@@ -389,27 +398,27 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     <!-- Card 1: Pure Kernel (Left) -->
     <g transform="translate(${margin}, ${dualRow1Y})">
       <rect width="${dualCardW}" height="${dualCardH}" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.2"/>
-      <text x="14" y="24" font-size="13" font-weight="bold" fill="#166534">${i18n.dual_card1_title}</text>
-      <rect x="${dualCardW - (isZh ? 74 : 124)}" y="8" width="${isZh ? 62 : 112}" height="20" rx="4" fill="#dcfce7"/>
-      <text x="${dualCardW - (isZh ? 43 : 68)}" y="22.5" font-size="10.5" font-weight="bold" fill="#15803d" text-anchor="middle">${i18n.dual_card1_tag}</text>
+      <text x="14" y="24" font-size="${isZh ? 13 : 12.5}" font-weight="bold" fill="#166534">${i18n.dual_card1_title}</text>
+      <rect x="${c1BadgeX}" y="8" width="${c1BadgeW}" height="20" rx="4" fill="#dcfce7"/>
+      <text x="${c1BadgeTextX}" y="22" font-size="10.5" font-weight="bold" fill="#15803d" text-anchor="middle">${i18n.dual_card1_tag}</text>
       
       <text x="14" y="49" font-size="19" font-weight="800" fill="#15803d">${faKern.toFixed(1)} GB/s</text>
       <text x="${dualCardW - 14}" y="49" font-size="13.5" font-weight="bold" fill="#166534" text-anchor="end">${isZh ? "较 C++ 快" : "vs C++"} ${kernSpeedup}</text>
-      <text x="14" y="68" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card1_desc}</text>
-      <text x="14" y="84" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card1_cpp.replace("{val}", cppKern.toFixed(1))}</text>
+      <text x="14" y="69" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card1_desc}</text>
+      <text x="14" y="86" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card1_cpp.replace("{val}", cppKern.toFixed(1))}</text>
     </g>
 
     <!-- Card 2: Streaming Cache (Right) -->
     <g transform="translate(${margin + dualCardW + 14}, ${dualRow1Y})">
       <rect width="${dualCardW}" height="${dualCardH}" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.2"/>
-      <text x="14" y="24" font-size="13" font-weight="bold" fill="#6b21a8">${i18n.dual_card2_title}</text>
-      <rect x="${dualCardW - (isZh ? 74 : 142)}" y="8" width="${isZh ? 62 : 130}" height="20" rx="4" fill="#f3e8ff"/>
-      <text x="${dualCardW - (isZh ? 43 : 77)}" y="22.5" font-size="10.5" font-weight="bold" fill="#7e22ce" text-anchor="middle">${i18n.dual_card2_tag}</text>
+      <text x="14" y="24" font-size="${isZh ? 13 : 12.5}" font-weight="bold" fill="#6b21a8">${i18n.dual_card2_title}</text>
+      <rect x="${c2BadgeX}" y="8" width="${c2BadgeW}" height="20" rx="4" fill="#f3e8ff"/>
+      <text x="${c2BadgeTextX}" y="22" font-size="10.5" font-weight="bold" fill="#7e22ce" text-anchor="middle">${i18n.dual_card2_tag}</text>
       
       <text x="14" y="49" font-size="19" font-weight="800" fill="#7e22ce">15 ~ 24+ GB/s</text>
       <text x="${dualCardW - 14}" y="49" font-size="13.5" font-weight="bold" fill="#6b21a8" text-anchor="end">${isZh ? "平稳时序写入" : "Steady Stream"}</text>
-      <text x="14" y="68" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card2_desc}</text>
-      <text x="14" y="84" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card2_cpp}</text>
+      <text x="14" y="69" font-size="11.5" font-weight="500" fill="#334155">${i18n.dual_card2_desc}</text>
+      <text x="14" y="86" font-size="11" font-weight="500" fill="#64748b">${i18n.dual_card2_cpp}</text>
     </g>
   </g>
 

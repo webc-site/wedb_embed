@@ -1,5 +1,5 @@
 use crate::{
-  bitpack::{bitunpack_u64_slice, packed_byte_size},
+  bitpack::{AlpDecoder, bitunpack_u64_slice, packed_byte_size},
   error::{Error, Result},
   float::AlpFloat,
   params::AlpParams,
@@ -36,109 +36,16 @@ pub unsafe fn decode_delta_raw<F: AlpFloat>(
   let min_delta = F::read_base(&src[cursor..cursor + F::BASE_SIZE]);
   cursor += F::BASE_SIZE;
 
-  let (exp_factor, fac_int, frac_flt) = params.factors::<F>();
-
-  if count == 1 {
-    let val = if params.use_div {
-      F::decode_from_int_div(first, exp_factor)
-    } else if fac_int == 1 {
-      F::decode_from_int_fac1(first, frac_flt)
-    } else {
-      F::decode_from_int(first, fac_int, frac_flt)
-    };
+  let payload = &src[cursor..];
+  dispatch_decoder!(params, first, F, decoder => {
+    // SAFETY: 上方已校验有效字节数，且调用方保证 dst_ptr 具有 count 空间
     unsafe {
-      *dst_ptr = val;
+      decode_delta_inner(payload, count, params, decoder, first, min_delta, dst_ptr)?;
     }
-  } else if params.bit_width == 0 {
-    // SAFETY: dst 已具备 count 个空间，使用底层指针单遍写入，消除双重写零开销
-    unsafe {
-      let ptr = dst_ptr;
-      let mut curr = first;
-      macro_rules! reconstruct_unrolled {
-        ($dec_expr:expr) => {{
-          let d2 = F::int_add(min_delta, min_delta);
-          let d3 = F::int_add(d2, min_delta);
-          let d4 = F::int_add(d2, d2);
-          let unroll_end = 1 + ((count - 1) & !3);
-          let mut i = 1;
-          while i < unroll_end {
-            *ptr.add(i) = $dec_expr(F::int_add(curr, min_delta));
-            *ptr.add(i + 1) = $dec_expr(F::int_add(curr, d2));
-            *ptr.add(i + 2) = $dec_expr(F::int_add(curr, d3));
-            *ptr.add(i + 3) = $dec_expr(F::int_add(curr, d4));
-            curr = F::int_add(curr, d4);
-            i += 4;
-          }
-          while i < count {
-            curr = F::int_add(curr, min_delta);
-            *ptr.add(i) = $dec_expr(curr);
-            i += 1;
-          }
-        }};
-      }
+  });
 
-      if params.use_div {
-        *ptr = F::decode_from_int_div(first, exp_factor);
-        reconstruct_unrolled!(|c| F::decode_from_int_div(c, exp_factor));
-      } else if fac_int == 1 {
-        *ptr = F::decode_from_int_fac1(first, frac_flt);
-        reconstruct_unrolled!(|c| F::decode_from_int_fac1(c, frac_flt));
-      } else {
-        *ptr = F::decode_from_int(first, fac_int, frac_flt);
-        reconstruct_unrolled!(|c| F::decode_from_int(c, fac_int, frac_flt));
-      }
-    }
-  } else {
-    let rest_count = count - 1;
-    let packed_len = packed_byte_size(rest_count, params.bit_width);
-    if src.len() < cursor + packed_len {
-      return Err(Error::UnexpectedEof {
-        needed: cursor + packed_len,
-        available: src.len(),
-      });
-    }
-
-    // SAFETY: dst 已具备 count 个空间，按 1024 分批流式解包写入 ptr
-    unsafe {
-      let ptr = dst_ptr;
-      let mut curr = first;
-      let packed_slice = &src[cursor..cursor + packed_len];
-
-      if params.use_div {
-        *ptr = F::decode_from_int_div(first, exp_factor);
-        decode_delta_stream(
-          packed_slice,
-          rest_count,
-          params.bit_width,
-          min_delta,
-          &mut curr,
-          ptr.add(1),
-          |c| F::decode_from_int_div(c, exp_factor),
-        )?;
-      } else if fac_int == 1 {
-        *ptr = F::decode_from_int_fac1(first, frac_flt);
-        decode_delta_stream(
-          packed_slice,
-          rest_count,
-          params.bit_width,
-          min_delta,
-          &mut curr,
-          ptr.add(1),
-          |c| F::decode_from_int_fac1(c, frac_flt),
-        )?;
-      } else {
-        *ptr = F::decode_from_int(first, fac_int, frac_flt);
-        decode_delta_stream(
-          packed_slice,
-          rest_count,
-          params.bit_width,
-          min_delta,
-          &mut curr,
-          ptr.add(1),
-          |c| F::decode_from_int(c, fac_int, frac_flt),
-        )?;
-      }
-    }
+  if params.bit_width > 0 && count > 1 {
+    let packed_len = packed_byte_size(count - 1, params.bit_width);
     cursor += packed_len;
   }
 
@@ -147,6 +54,75 @@ pub unsafe fn decode_delta_raw<F: AlpFloat>(
     super::patch_exceptions(&src[cursor..], count, dst_ptr)?;
   }
 
+  Ok(())
+}
+
+#[inline(always)]
+unsafe fn decode_delta_inner<F: AlpFloat, D: AlpDecoder<F>>(
+  payload: &[u8],
+  count: usize,
+  params: AlpParams,
+  decoder: D,
+  first: F::Int,
+  min_delta: F::Int,
+  dst_ptr: *mut F,
+) -> Result<()> {
+  if count == 1 {
+    unsafe {
+      *dst_ptr = decoder.decode_int(first);
+    }
+  } else if params.bit_width == 0 {
+    // SAFETY: dst 已具备 count 个空间，使用底层指针单遍写入，消除双重写零开销
+    unsafe {
+      let ptr = dst_ptr;
+      let mut curr = first;
+      *ptr = decoder.decode_int(first);
+      let d2 = F::int_add(min_delta, min_delta);
+      let d3 = F::int_add(d2, min_delta);
+      let d4 = F::int_add(d2, d2);
+      let unroll_end = 1 + ((count - 1) & !3);
+      let mut i = 1;
+      while i < unroll_end {
+        *ptr.add(i) = decoder.decode_int(F::int_add(curr, min_delta));
+        *ptr.add(i + 1) = decoder.decode_int(F::int_add(curr, d2));
+        *ptr.add(i + 2) = decoder.decode_int(F::int_add(curr, d3));
+        *ptr.add(i + 3) = decoder.decode_int(F::int_add(curr, d4));
+        curr = F::int_add(curr, d4);
+        i += 4;
+      }
+      while i < count {
+        curr = F::int_add(curr, min_delta);
+        *ptr.add(i) = decoder.decode_int(curr);
+        i += 1;
+      }
+    }
+  } else {
+    let rest_count = count - 1;
+    let packed_len = packed_byte_size(rest_count, params.bit_width);
+    if payload.len() < packed_len {
+      return Err(Error::UnexpectedEof {
+        needed: packed_len,
+        available: payload.len(),
+      });
+    }
+
+    // SAFETY: dst 已具备 count 个空间，按 1024 分批流式解包写入 ptr
+    unsafe {
+      let ptr = dst_ptr;
+      let mut curr = first;
+      let packed_slice = &payload[..packed_len];
+      *ptr = decoder.decode_int(first);
+      decode_delta_stream(
+        packed_slice,
+        rest_count,
+        params.bit_width,
+        min_delta,
+        &mut curr,
+        ptr.add(1),
+        |c| decoder.decode_int(c),
+      )?;
+    }
+  }
   Ok(())
 }
 

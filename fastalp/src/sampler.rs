@@ -5,7 +5,29 @@ use crate::{
   float::AlpFloat,
 };
 
-/// Sampling and optimal factor selection result.
+/// 纯十进制乘法前置快筛采样数量
+const PRE_CHECK_LEN_MUL: usize = 6;
+/// 混合因子前置快筛采样数量
+const PRE_CHECK_LEN_FAC: usize = 4;
+/// 混合因子前置异常快速淘汰门限
+const PRE_CHECK_MAX_EXC_FAC: usize = 2;
+/// 十进制除法模式前置早停检查样本数
+const DIV_EARLY_CHECK_LEN: usize = 6;
+/// 十进制除法模式前置早停异常数阈值
+const DIV_EARLY_ABORT_EXC: usize = 3;
+/// 混合因子额外开销倍数
+const FAC_PENALTY_MULT: usize = 2;
+/// 纯十进制极低位宽跳过因子穷举阈值（位/值）
+const LOW_COST_THRESHOLD_PER_VAL: usize = 3;
+/// 触发十进制除法的高精度指数阈值
+const HIGH_EXP_DIV_THRESHOLD: u8 = 14;
+
+/// 常用高频十进制精度探索顺序（2, 1, 3, 0, 4..）
+/// 工业传感器、金融量化、监控时序绝大多数为 1~3 位小数或整数，优先探索命中率超 95%
+const EXP_PRIORITY: [u8; 19] = [
+  2, 1, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+];
+
 /// 采样与最优系数选择结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BestParams {
@@ -14,14 +36,12 @@ pub struct BestParams {
   pub use_div: bool,
 }
 
-/// Checks whether float is special non-encodable value (NaN, Inf, -0.0, out of range).
 /// 检查浮点数是否为不可编码的特殊值（NaN, Inf, -0.0, 超出范围）
 #[inline(always)]
 pub fn is_impossible<F: AlpFloat>(n: F) -> bool {
   n.is_impossible()
 }
 
-/// High performance single float encoding probe with pre-extracted power factors.
 /// 高性能单值浮点数编码探测（已预提取幂表因子）
 #[inline(always)]
 pub fn try_encode_fast<F: AlpFloat>(
@@ -33,7 +53,6 @@ pub fn try_encode_fast<F: AlpFloat>(
   val.try_encode_fast(exp_factor, fac_int, frac_exp)
 }
 
-/// Attempts to encode float as integer and verifies 100% lossless reconstruction.
 /// 尝试将单个浮点数编码为整型，并验证反解是否 100% 精确无损
 #[inline(always)]
 pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int> {
@@ -46,22 +65,17 @@ pub fn try_encode_value<F: AlpFloat>(val: F, exp: u8, fac: u8) -> Option<F::Int>
   val.try_encode_fast(exp_factor, fac_int, frac_exp)
 }
 
-/// Fast single-pass search for identical/constant values.
 /// 全等与常数浮点数序列的快速指数与基准值探测（零堆分配、O(1) 复杂度）
 #[inline]
 pub fn find_identical_base<F: AlpFloat>(val: F) -> Option<(u8, F::Int)> {
   const FAC_INT: i64 = 1;
-  for exp in 0..=F::MAX_EXPONENT {
+  (0..=F::MAX_EXPONENT).find_map(|exp| {
     let frac_exp = F::frac_exp(exp);
     let exp_factor = F::exp_factor(exp, 0);
-    if let Some(base) = F::try_encode_fast(val, exp_factor, FAC_INT, frac_exp) {
-      return Some((exp, base));
-    }
-  }
-  None
+    F::try_encode_fast(val, exp_factor, FAC_INT, frac_exp).map(|base| (exp, base))
+  })
 }
 
-/// Discovers best exponent, factor, and division mode by evaluating cost over sampled subset.
 /// 通过对采样样本进行代价评估，找出最优的指数 (exp)、因子 (fac) 与除法重构模式 (use_div)
 pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
   if samples.is_empty() {
@@ -74,14 +88,9 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
 
   let mut valid_samples: [F; SAMPLES_COUNT] = [F::ZERO; SAMPLES_COUNT];
   let mut sample_len = 0;
-  for &val in samples {
-    if !val.is_impossible() {
-      valid_samples[sample_len] = val;
-      sample_len += 1;
-      if sample_len == SAMPLES_COUNT {
-        break;
-      }
-    }
+  for &val in samples.iter().filter(|v| !v.is_impossible()).take(SAMPLES_COUNT) {
+    valid_samples[sample_len] = val;
+    sample_len += 1;
   }
 
   let active_samples = &valid_samples[..sample_len];
@@ -101,96 +110,91 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
     use_div: false,
   };
 
-  // 第一轮：优先探测纯十进制乘法组合 (fac == 0)，按高频精度优先探索 (2, 1, 3, 0, 4..)
-  // 现实工业传感器、金融量化、监控时序绝大多数为 1~3 位小数或整数，优先探测命中率超 95%，即刻触发早停
-  const EXP_PRIORITY: [u8; 19] = [
-    2, 1, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-  ];
   let mut any_decimal = false;
+
+  // 第一轮：优先探测纯十进制乘法组合 (fac == 0)，按高频精度优先探索 (2, 1, 3, 0, 4..)
   for &exp in &EXP_PRIORITY {
     if exp > F::MAX_EXPONENT {
       continue;
     }
     let frac_exp = F::frac_exp(exp);
     let exp_factor = F::exp_factor(exp, 0);
-    let fac_int = 1i64;
+    const FAC_INT: i64 = 1;
 
-    // 前置 6 采样快筛：若前 6 个独立采样全部无法编码，其在 1024 全集产生 <=128 异常的概率低于 26 万分之一，直接跳过
-    let pre_n = active_samples.len().min(6);
-    let mut pre_enc = [None; 6];
+    // 前置快筛与极值合并单次迭代：消除临时数组与二次循环开销
+    let pre_n = active_samples.len().min(PRE_CHECK_LEN_MUL);
     let mut pre_exc = 0;
-    for (i, &val) in active_samples[..pre_n].iter().enumerate() {
-      let res = F::try_encode_fast(val, exp_factor, fac_int, frac_exp);
-      if res.is_none() {
-        pre_exc += 1;
-      }
-      pre_enc[i] = res;
-    }
-    if pre_exc == pre_n {
-      continue;
-    }
-
-    let mut exceptions = pre_exc;
     let mut min_val = F::MAX_INT;
     let mut max_val = F::MIN_INT;
 
-    for &enc_opt in &pre_enc[..pre_n] {
-      if let Some(enc) = enc_opt {
-        min_val = min_val.min(enc);
-        max_val = max_val.max(enc);
-      }
-    }
-
-    for &val in &active_samples[pre_n..] {
-      if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
+    for &val in &active_samples[..pre_n] {
+      if let Some(enc) = F::try_encode_fast(val, exp_factor, FAC_INT, frac_exp) {
         min_val = min_val.min(enc);
         max_val = max_val.max(enc);
       } else {
-        exceptions += 1;
-        if exceptions * F::EXCEPTION_PENALTY >= best_cost {
-          break;
-        }
+        pre_exc += 1;
       }
     }
+    let mul_feasible = pre_exc < pre_n;
+    let mut exceptions = pre_exc;
 
-    if exceptions != sample_len {
-      any_decimal = true;
-      if exceptions * F::EXCEPTION_PENALTY < best_cost {
-        let max_offset = if min_val <= max_val {
-          F::calc_range(min_val, max_val)
+    if mul_feasible {
+      for &val in &active_samples[pre_n..] {
+        if let Some(enc) = F::try_encode_fast(val, exp_factor, FAC_INT, frac_exp) {
+          min_val = min_val.min(enc);
+          max_val = max_val.max(enc);
         } else {
-          0
-        };
-        let bit_width = F::bits_needed(max_offset) as usize;
-        let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
+          exceptions += 1;
+          if exceptions * F::EXCEPTION_PENALTY >= best_cost {
+            break;
+          }
+        }
+      }
 
-        if total_cost < best_cost {
-          best_cost = total_cost;
-          best_exceptions = exceptions;
-          best_params = BestParams {
-            exp,
-            fac: 0,
-            use_div: false,
+      if exceptions != sample_len {
+        any_decimal = true;
+        if exceptions * F::EXCEPTION_PENALTY < best_cost {
+          let max_offset = if min_val <= max_val {
+            F::calc_range(min_val, max_val)
+          } else {
+            0
           };
-          if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
-            return best_params;
+          let bit_width = F::bits_needed(max_offset) as usize;
+          let total_cost = bit_width * sample_len + exceptions * F::EXCEPTION_PENALTY;
+
+          if total_cost < best_cost {
+            best_cost = total_cost;
+            best_exceptions = exceptions;
+            best_params = BestParams {
+              exp,
+              fac: 0,
+              use_div: false,
+            };
+            if total_cost == 0 || (exceptions == 0 && bit_width <= EARLY_EXIT_BIT_WIDTH) {
+              return best_params;
+            }
           }
         }
       }
     }
 
-    // 当 fac == 0 且标准乘法存在异常时，评估十进制除法重构模式 (Decimal Division Mode)
-    if exp > 0 && exceptions > 0 && exceptions < sample_len {
+    // 当 fac == 0 时，评估十进制除法重构模式 (Decimal Division Mode)
+    // 触发条件：乘法不可行、乘法存在异常、或高指数高精度场景 (exp >= HIGH_EXP_DIV_THRESHOLD)
+    if exp > 0 && (!mul_feasible || exceptions > 0 || exp >= HIGH_EXP_DIV_THRESHOLD) {
       let mut div_exceptions = 0usize;
       let mut div_min = F::MAX_INT;
       let mut div_max = F::MIN_INT;
 
-      for &val in active_samples {
+      for (idx, &val) in active_samples.iter().enumerate() {
         if let Some(enc) = F::try_encode_div(val, exp_factor) {
           div_min = div_min.min(enc);
           div_max = div_max.max(enc);
         } else {
           div_exceptions += 1;
+          if div_exceptions >= DIV_EARLY_ABORT_EXC && idx < DIV_EARLY_CHECK_LEN {
+            div_exceptions = sample_len;
+            break;
+          }
           if div_exceptions * F::EXCEPTION_PENALTY >= best_cost {
             break;
           }
@@ -226,7 +230,7 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
   }
 
   // 若数据非十进制，或已找到开销极小的十进制模型 (<=3 bit/val)，直接跳过高耗时的因子穷举
-  if !any_decimal || best_cost <= sample_len * 3 {
+  if !any_decimal || best_cost <= sample_len * LOW_COST_THRESHOLD_PER_VAL {
     return best_params;
   }
 
@@ -251,32 +255,28 @@ pub fn find_best_params<F: AlpFloat>(samples: &[F]) -> BestParams {
       let exp_factor = F::exp_factor(exp, fac);
       let fac_int = F::fac_int(fac);
 
-      // 4 采样快速筛选：若前 4 采样已有 >=2 个异常，直接跳过当前组合
-      let pre_n = active_samples.len().min(4);
-      let mut pre_enc = [None; 4];
+      // 前置快筛与极值合并单次迭代：消除临时数组与二次循环
+      let pre_n = active_samples.len().min(PRE_CHECK_LEN_FAC);
       let mut pre_exc = 0;
-      for (i, &val) in active_samples[..pre_n].iter().enumerate() {
-        let res = F::try_encode_fast(val, exp_factor, fac_int, frac_exp);
-        if res.is_none() {
+      let mut min_val = F::MAX_INT;
+      let mut max_val = F::MIN_INT;
+
+      for &val in &active_samples[..pre_n] {
+        if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {
+          min_val = min_val.min(enc);
+          max_val = max_val.max(enc);
+        } else {
           pre_exc += 1;
         }
-        pre_enc[i] = res;
       }
-      let fac_penalty = sample_len * 2;
-      if pre_exc >= 2 || pre_exc * F::EXCEPTION_PENALTY + fac_penalty >= best_cost {
+      let fac_penalty = sample_len * FAC_PENALTY_MULT;
+      if pre_exc >= PRE_CHECK_MAX_EXC_FAC
+        || pre_exc * F::EXCEPTION_PENALTY + fac_penalty >= best_cost
+      {
         continue;
       }
 
       let mut exceptions = pre_exc;
-      let mut min_val = F::MAX_INT;
-      let mut max_val = F::MIN_INT;
-
-      for &enc_opt in &pre_enc[..pre_n] {
-        if let Some(enc) = enc_opt {
-          min_val = min_val.min(enc);
-          max_val = max_val.max(enc);
-        }
-      }
 
       for &val in &active_samples[pre_n..] {
         if let Some(enc) = F::try_encode_fast(val, exp_factor, fac_int, frac_exp) {

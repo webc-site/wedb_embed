@@ -8,13 +8,12 @@ use crate::{
 const MIN_PRUNE_BIT_WIDTH: u8 = 4;
 const MAX_PRUNE_EXCEPTIONS: usize = 16;
 const PRE_CHECK_LEN: usize = 16;
-const CANDIDATE_WIDTHS: [u8; 3] = [0, 8, 16];
+const PRE_CHECK_MAX_OUTLIERS: usize = 4;
+const CANDIDATE_WIDTHS: [u8; 9] = [48, 32, 28, 24, 20, 16, 12, 8, 0];
 
-/// Attempts to prune outlier values into the exception list for FOR mode.
 /// FOR 模式专用：离群值异常剪枝优化 (Outlier Pruning to Exceptions)
-/// 仅在未启用 Delta 模式、且位宽在 4 位以上时尝试更低目标位宽（0, 8, 16 位），
-/// 当且仅当剪枝后节省的 bitpack 空间大于增加异常条目的存储开销时才应用剪枝。
-/// 返回剪枝后的位宽（若未剪枝则返回原位宽）。
+/// 降序探索候选位宽：利用单调性数学性质，若较大位宽无法满足异常数限制，
+/// 则更小位宽必然包含更多离群点，可直接短路终止搜索。
 pub(crate) fn try_prune_outliers<F: AlpFloat>(
   slice: &[F],
   encoded_ints: &mut [F::Int],
@@ -35,7 +34,7 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
 
   for &target_bw in &CANDIDATE_WIDTHS {
     if target_bw >= for_bit_width {
-      break;
+      continue;
     }
     let max_allowed = if target_bw == 0 {
       0u64
@@ -43,19 +42,20 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
       (1u64 << target_bw) - 1
     };
 
-    // 前置 16 采样快筛：若在前 16 个元素中已出现超过 1 个离群点，直接短路跳过
+    // 前置 16 采样快筛：若在前 16 个元素中已出现超过 4 个离群点，
+    // 由单调性可知任何更小位宽的离群点数均 >= 当前位宽，直接短路跳出候选循环
     let pre_check_n = encoded_ints.len().min(PRE_CHECK_LEN);
     let mut pre_outliers = 0;
     for &val in &encoded_ints[..pre_check_n] {
       if F::int_diff_to_u64(val, base) > max_allowed {
         pre_outliers += 1;
-        if pre_outliers > 1 {
+        if pre_outliers > PRE_CHECK_MAX_OUTLIERS {
           break;
         }
       }
     }
-    if pre_outliers > 1 {
-      continue;
+    if pre_outliers > PRE_CHECK_MAX_OUTLIERS {
+      break;
     }
 
     let mut extra_exceptions = pre_outliers;
@@ -69,14 +69,16 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
       }
     }
 
-    if extra_exceptions <= MAX_PRUNE_EXCEPTIONS {
-      let new_total_exc = exceptions.len() + extra_exceptions;
-      let new_cost = packed_byte_size(slice.len(), target_bw)
-        + exceptions_byte_size::<F>(new_total_exc, is_large);
-      if new_cost < min_cost {
-        min_cost = new_cost;
-        best_target_bw = target_bw;
-      }
+    if extra_exceptions > MAX_PRUNE_EXCEPTIONS {
+      break;
+    }
+
+    let new_total_exc = exceptions.len() + extra_exceptions;
+    let new_cost = packed_byte_size(slice.len(), target_bw)
+      + exceptions_byte_size::<F>(new_total_exc, is_large);
+    if new_cost < min_cost {
+      min_cost = new_cost;
+      best_target_bw = target_bw;
     }
   }
 
@@ -99,7 +101,7 @@ pub(crate) fn try_prune_outliers<F: AlpFloat>(
     exceptions.dedup_by_key(|e| e.pos);
 
     // 为离群点回填基准值，确保打包时不溢出目标位宽
-    for exc in exceptions.iter() {
+    for exc in &*exceptions {
       // SAFETY: exc.pos 严格小于 encoded_ints.len()
       unsafe {
         *encoded_ints.get_unchecked_mut(exc.pos) = base;

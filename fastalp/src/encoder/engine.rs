@@ -21,6 +21,17 @@ use crate::{
   sampler::{BestParams, find_best_params, find_identical_base},
 };
 
+/// 针对高位宽数据触发离群值前置剪枝的位宽阈值
+const HIGH_BW_PRUNE_THRESHOLD: u8 = 16;
+/// 评估 Delta 差分收益的最小位宽门限（低于此门限时直接走 FOR 编码）
+const DELTA_EVAL_MIN_BW: u8 = 4;
+/// FOR 模式低位宽离群值剪枝位宽下限
+const LOW_BW_PRUNE_MIN: u8 = 4;
+/// 栈上预分配工作缓冲区大小（元素个数，避免小数组堆分配）
+const STACK_BUFFER_CAPACITY: usize = 1024;
+/// 缓存参数快速校验抽样数量
+const CACHE_VALIDATE_SAMPLE_N: usize = 4;
+
 #[inline(always)]
 fn check_roundtrip<F: AlpFloat>(slice: &[F], exp_factor: F, decode: impl Fn(F::Int) -> F) -> bool {
   slice.iter().all(|&v| {
@@ -35,7 +46,7 @@ pub(crate) fn validate_cached_params<F: AlpFloat>(params: BestParams, sample: &[
   let exp_factor = F::exp_factor(params.exp, params.fac);
   let fac_int = F::fac_int(params.fac);
   let frac_exp = F::frac_exp(params.exp);
-  let check_n = sample.len().min(4);
+  let check_n = sample.len().min(CACHE_VALIDATE_SAMPLE_N);
   let check_slice = &sample[..check_n];
 
   if params.use_div {
@@ -105,10 +116,13 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     return None;
   }
 
-  // 全等序列检测：如果所有浮点数完全相同（比特级无损判等），直接写入基准值与 bit_width=0，零堆分配
+  // 全等序列检测：先探测第 1 个与第 0 个元素是否相同（若不同在单指令周期内快速短路），
+  // 确认首元素可编码后单次遍历验证全集，零堆分配
   let first = slice[0];
-  let is_all_identical = slice[1..].iter().all(|&v| v.is_exact_same(first));
-  if is_all_identical && let Some((exp, base)) = find_identical_base(first) {
+  if (count == 1 || slice[1].is_exact_same(first))
+    && let Some((exp, base)) = find_identical_base(first)
+    && slice[1..].iter().all(|&v| v.is_exact_same(first))
+  {
     let total_needed = header_len(count) + F::BASE_SIZE;
     dst.reserve(total_needed);
     let params = AlpParams::new(exp, 0, 0, false);
@@ -128,11 +142,11 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
   };
 
   // 准备内部工作缓冲区（采用 MaybeUninit 避免 8KB 栈内存重复清零开销）
-  let mut stack_encoded = MaybeUninit::<[F::Int; 1024]>::uninit();
+  let mut stack_encoded = MaybeUninit::<[F::Int; STACK_BUFFER_CAPACITY]>::uninit();
   exceptions.clear();
   encoded_buf.clear();
 
-  let use_stack = count <= 1024 && encoded_buf.capacity() < count;
+  let use_stack = count <= STACK_BUFFER_CAPACITY && encoded_buf.capacity() < count;
   let enc_ptr: *mut F::Int = if use_stack {
     stack_encoded.as_mut_ptr().cast::<F::Int>()
   } else {
@@ -180,7 +194,26 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     (F::ZERO_INT, 0)
   };
 
-  // 5. 异常值回填：填充前一个有效整型值，消除相邻一阶差分的跳变
+  let is_large = count > u16::MAX as usize;
+  let mut for_bit_width = F::bits_needed(max_offset);
+
+  // 5. 离群值预剪枝：若位宽较高 (>= HIGH_BW_PRUNE_THRESHOLD 且异常较少)，先尝试剪枝收窄位宽并消除尖峰，
+  // 从而使得随后的 Delta 差分不会被极少数孤立尖峰断崖阻断
+  if for_bit_width >= HIGH_BW_PRUNE_THRESHOLD && exceptions.len() < MAX_EXCEPTIONS {
+    let pruned_bw = try_prune_outliers::<F>(
+      slice,
+      encoded_ints,
+      base,
+      for_bit_width,
+      exceptions,
+      is_large,
+    );
+    if pruned_bw < for_bit_width {
+      for_bit_width = pruned_bw;
+    }
+  }
+
+  // 异常值回填：填充前一个有效整型值，消除相邻一阶差分的跳变
   if !exceptions.is_empty() {
     for exc in exceptions.iter() {
       let patch_val = if exc.pos > 0 {
@@ -196,15 +229,13 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     }
   }
 
-  let is_large = count > u16::MAX as usize;
-  let mut for_bit_width = F::bits_needed(max_offset);
   let mut for_packed_len = packed_byte_size(count, for_bit_width);
   let mut exc_len = exceptions_byte_size::<F>(exceptions.len(), is_large);
   let hdr_len = header_len(count);
   let for_total = hdr_len + F::BASE_SIZE + for_packed_len + exc_len;
 
-  // 6. 评估 Delta 差分收益
-  let delta_decision = if count > 1 && (force_delta || for_bit_width >= 4) {
+  // 6. 评估 Delta 差分收益 (门限放宽至 >= DELTA_EVAL_MIN_BW，平滑数据和线性斜坡可压缩至 0~3 位)
+  let delta_decision = if count > 1 && (force_delta || for_bit_width >= DELTA_EVAL_MIN_BW) {
     let first = encoded_ints[0];
     let rest = &encoded_ints[1..];
     if force_delta {
@@ -229,8 +260,8 @@ pub(crate) fn compress_into_engine<F: AlpFloat>(
     None => (false, F::ZERO_INT, 0, for_total),
   };
 
-  // 7. FOR 模式离群值剪枝
-  if !use_delta {
+  // 7. FOR 模式低位宽离群值剪枝 (针对未进前置剪枝且未进 Delta 的情况，如 8/12 位剪枝)
+  if !use_delta && for_bit_width > LOW_BW_PRUNE_MIN && for_bit_width < HIGH_BW_PRUNE_THRESHOLD {
     let new_bw = try_prune_outliers::<F>(
       slice,
       encoded_ints,

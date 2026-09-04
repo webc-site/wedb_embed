@@ -1,5 +1,5 @@
 title: "fastalp Floating-Point Compression Benchmark"
-subtitle: "Comprehensive Side-by-Side Benchmark: Decompression & Compression Throughput and Ratios"
+subtitle: "Comprehensive Side-by-Side Benchmark: Throughput, Compression Ratios & Scenarios"
 env_title: "Benchmark Environment"
 env_badge_title: "HARDWARE & RUNTIME ENVIRONMENT"
 
@@ -25,17 +25,17 @@ sec1_title: "Overall Compression Benchmark (8 Codecs)"
 sec1_sub: "Benchmarked on all 37 public datasets & industrial scenarios (Geometric Mean)"
 
 dual_title: "Advanced Throughput: Pure Kernel & Streaming Cache"
-dual_sub: "Benchmarking the official paper test-code pure kernel (no sampling) and industrial streaming state reuse"
+dual_sub: "Benchmarking paper pure kernel (no sampling) and streaming state reuse"
 
 dual_card1_title: "Pure Encoding Kernel"
-dual_card1_tag: "No Sampling (Kernel)"
-dual_card1_desc: "Bypasses sampling, measuring pure integer mapping & bitpacking"
+dual_card1_tag: "No Sampling"
+dual_card1_desc: "Integer mapping & bitpack, skipping sampling"
 dual_card1_cpp: "Official C++ paper test-code: {val} GB/s"
 
 dual_card2_title: "Streaming Parameter Cache"
-dual_card2_tag: "Cross-Block State Reuse"
-dual_card2_desc: "Stateful Encoder reuses parameters, streaming without re-sampling"
-dual_card2_cpp: "Steady-state streaming throughput with hot L1D cache"
+dual_card2_tag: "State Reuse"
+dual_card2_desc: "Reuses model parameters across blocks"
+dual_card2_cpp: "Steady-state stream with hot L1D cache"
 
 sec2_title: "Scenario Breakdown"
 sec2_sub: "Covering all 37 datasets across IoT, Finance, Geospatial, Healthcare, Civic & Waveforms"
@@ -59,27 +59,27 @@ type_general: "General Bytes"
 
 scene_sensor_title: "Decimal Environmental & Hydrology IoT"
 scene_sensor_sub: "Source: NEON Network / Meteoblue / CWI Hydrology"
-scene_sensor_badge: "11 Series (11,264 pts)"
+scene_sensor_badge: "11 Series · 11,264 pts"
 
 scene_finance_title: "High-Frequency Quantitative Trades"
 scene_finance_sub: "Source: Nasdaq / LSE / DAX / Zenodo / FAO"
-scene_finance_badge: "7 Series (7,168 pts)"
+scene_finance_badge: "7 Series · 7,168 pts"
 
 scene_geo_title: "Geospatial Mapping & GPS Trajectories"
 scene_geo_sub: "Source: Avian Telemetry / Kaggle POI / NYC Taxi"
-scene_geo_badge: "5 Series (5,120 pts)"
+scene_geo_badge: "5 Series · 5,120 pts"
 
 scene_health_title: "Healthcare Billing & Prescription Claims"
 scene_health_sub: "Source: CMS Inpatient Claims / US Pharma Pricing"
-scene_health_badge: "5 Series (5,120 pts)"
+scene_health_badge: "5 Series · 5,120 pts"
 
 scene_macro_title: "Civic Demographics & Macroeconomics"
 scene_macro_sub: "Source: Fiscal Transfers / Demographics / Macro Index"
-scene_macro_badge: "6 Series (6,144 pts)"
+scene_macro_badge: "6 Series · 6,144 pts"
 
 scene_waveform_title: "Physical Waveforms & Steady Monitors"
 scene_waveform_sub: "Source: Industrial PID Ramp / SSD I/O / Steady Flow"
-scene_waveform_badge: "3 Series (3,072 pts)"
+scene_waveform_badge: "3 Series · 3,072 pts"
 
 sc_col_algo: "Algorithm"
 sc_col_dec: "Decompress"

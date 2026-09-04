@@ -2,7 +2,7 @@ use core::{ptr::copy_nonoverlapping, slice::from_raw_parts_mut};
 
 use crate::{
   bitpack::packed_byte_size,
-  constants::{BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT, LUT_SIZE_8BIT},
+  constants::{BYTES_U64, LUT_SIZE_1BIT, LUT_SIZE_2BIT, LUT_SIZE_4BIT},
   error::{Error, Result},
   float::AlpFloat,
   params::bit_mask,
@@ -24,7 +24,6 @@ const CHUNK_8: usize = 8;
 const CHUNK_4: usize = 4;
 const CHUNK_2: usize = 2;
 
-/// Fast bit unpacking directly into slice: unpacks `count` integers of `bit_width` from `src` into `dst`.
 /// 高速切片位解包：从 `src` 解包出 `count` 个 `bit_width` 位的整数至 `dst` 切片（零堆分配）
 pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u64]) -> Result<()> {
   if count == 0 {
@@ -118,8 +117,9 @@ pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u
       }
       return Ok(());
     } else if bit_width == BITS_8 {
-      for (i, &b) in src[..count].iter().enumerate() {
-        *dst_ptr.add(i) = b as u64;
+      let dst_slice = from_raw_parts_mut(dst_ptr, count);
+      for (&b, d) in src[..count].iter().zip(dst_slice.iter_mut()) {
+        *d = b as u64;
       }
       return Ok(());
     } else if bit_width == BITS_16 {
@@ -135,9 +135,13 @@ pub fn bitunpack_u64_slice(src: &[u8], count: usize, bit_width: u8, dst: &mut [u
       }
       return Ok(());
     } else if bit_width == BITS_64 {
-      let src_ptr = src.as_ptr().cast::<u64>();
-      for i in 0..count {
-        *dst_ptr.add(i) = u64::from_le(src_ptr.add(i).read_unaligned());
+      if cfg!(target_endian = "little") {
+        copy_nonoverlapping(src.as_ptr(), dst_ptr.cast::<u8>(), count * BYTES_U64);
+      } else {
+        let src_ptr = src.as_ptr().cast::<u64>();
+        for i in 0..count {
+          *dst_ptr.add(i) = u64::from_le(src_ptr.add(i).read_unaligned());
+        }
       }
       return Ok(());
     }
@@ -192,7 +196,7 @@ unsafe fn unpack_u64_le16<const BW: usize>(
   let mut byte_offset = 0;
   let mut i = 0;
 
-  // SAFETY: Caller guarantees src_len bytes readable from src_ptr, count elements writable to dst_ptr
+  // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 16 <= fast_end_8 {
       let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
@@ -280,7 +284,7 @@ unsafe fn unpack_u64_17_to_32<const BW: usize>(
   let mut byte_offset = 0;
   let mut i = 0;
 
-  // SAFETY: Caller guarantees src_len bytes readable from src_ptr, count elements writable to dst_ptr
+  // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 8 <= fast_end_8 {
       let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
@@ -336,7 +340,7 @@ unsafe fn unpack_u64_33_to_56<const BW: usize>(
   let fast_limit = max_safe_i.min(count);
   let mut i = 0;
 
-  // SAFETY: Caller guarantees src_len bytes readable from src_ptr, count elements writable to dst_ptr
+  // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 4 <= fast_end_4 {
       let p0 = i * BW;
@@ -402,7 +406,7 @@ unsafe fn unpack_u64_generic(
   let fast_limit = max_safe_i.min(count);
   let mut i = 0;
 
-  // SAFETY: Caller guarantees src_len bytes readable from src_ptr, count elements writable to dst_ptr
+  // SAFETY: 调用方保证从 src_ptr 可读取至少 src_len 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     while i + 4 <= fast_end_4 {
       let p0 = i * bw;
@@ -432,27 +436,27 @@ unsafe fn unpack_u64_generic(
       i += 1;
     }
 
-    let safe_limit_bytes = src_len.saturating_sub(BYTES_U64);
+    let safe_limit_bytes = src_len.saturating_sub(16);
     while i < count {
       let bit_pos = i * bw;
       let byte_offset = bit_pos >> 3;
       let word = if byte_offset <= safe_limit_bytes {
-        u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+        (u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned()) >> (bit_pos & 7))
+          as u64
       } else {
-        let mut buf = [0u8; 8];
-        let available = src_len.saturating_sub(byte_offset).min(8);
+        let mut buf = [0u8; 16];
+        let available = src_len.saturating_sub(byte_offset).min(16);
         if available > 0 {
           copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
         }
-        u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+        (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64
       };
-      *dst_ptr.add(i) = (word >> (bit_pos & 7)) & mask;
+      *dst_ptr.add(i) = word & mask;
       i += 1;
     }
   }
 }
 
-/// Fast bit unpacking: unpacks `count` integers of `bit_width` from `src` into `dst`.
 /// 高速位解包：从 `src` 解包出 `count` 个 `bit_width` 位的整数至 `dst`（零双重初始化开销）
 #[inline]
 pub fn bitunpack_u64(src: &[u8], count: usize, bit_width: u8, dst: &mut Vec<u64>) -> Result<()> {
@@ -470,26 +474,140 @@ pub fn bitunpack_u64(src: &[u8], count: usize, bit_width: u8, dst: &mut Vec<u64>
   Ok(())
 }
 
-/// Core bit unpacking inner function writing directly to raw pointer.
-/// 内部核心位解包逻辑：直接写入目标裸指针
+/// ALP 浮点重构解码器通用抽象 Trait
+pub trait AlpDecoder<F: AlpFloat>: Copy {
+  /// 根据无符号整型偏移量还原浮点数
+  fn decode_offset(&self, off: u64) -> F;
+  /// 根据已编码整型原值还原浮点数
+  fn decode_int(&self, val: F::Int) -> F;
+  /// 构建 1-bit 解码查找表
+  fn build_lut_1(&self) -> [F; LUT_SIZE_1BIT];
+  /// 构建 2-bit 解码查找表
+  fn build_lut_2(&self) -> [F; LUT_SIZE_2BIT];
+  /// 构建 4-bit 解码查找表
+  fn build_lut_4(&self) -> [F; LUT_SIZE_4BIT];
+}
+
+/// 针对纯乘法且因子为 1 (fac_int == 1) 的高效解码器
+#[derive(Copy, Clone)]
+pub struct AlpFac1Decoder<F: AlpFloat> {
+  pub base: F::Int,
+  pub frac_flt: F,
+}
+
+impl<F: AlpFloat> AlpDecoder<F> for AlpFac1Decoder<F> {
+  #[inline(always)]
+  fn decode_offset(&self, off: u64) -> F {
+    F::decode_from_offset_fac1(off, self.base, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn decode_int(&self, val: F::Int) -> F {
+    F::decode_from_int_fac1(val, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_1(&self) -> [F; LUT_SIZE_1BIT] {
+    F::build_lut::<LUT_SIZE_1BIT>(self.base, 1, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_2(&self) -> [F; LUT_SIZE_2BIT] {
+    F::build_lut::<LUT_SIZE_2BIT>(self.base, 1, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_4(&self) -> [F; LUT_SIZE_4BIT] {
+    F::build_lut::<LUT_SIZE_4BIT>(self.base, 1, self.frac_flt)
+  }
+}
+
+/// 针对带因子乘法 (fac_int != 1) 的通用乘法解码器
+#[derive(Copy, Clone)]
+pub struct AlpMulDecoder<F: AlpFloat> {
+  pub base: F::Int,
+  pub fac_int: i64,
+  pub frac_flt: F,
+}
+
+impl<F: AlpFloat> AlpDecoder<F> for AlpMulDecoder<F> {
+  #[inline(always)]
+  fn decode_offset(&self, off: u64) -> F {
+    F::decode_from_offset(off, self.base, self.fac_int, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn decode_int(&self, val: F::Int) -> F {
+    F::decode_from_int(val, self.fac_int, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_1(&self) -> [F; LUT_SIZE_1BIT] {
+    F::build_lut::<LUT_SIZE_1BIT>(self.base, self.fac_int, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_2(&self) -> [F; LUT_SIZE_2BIT] {
+    F::build_lut::<LUT_SIZE_2BIT>(self.base, self.fac_int, self.frac_flt)
+  }
+
+  #[inline(always)]
+  fn build_lut_4(&self) -> [F; LUT_SIZE_4BIT] {
+    F::build_lut::<LUT_SIZE_4BIT>(self.base, self.fac_int, self.frac_flt)
+  }
+}
+
+/// 针对除法模式 (use_div == true) 的十进制除法解码器
+#[derive(Copy, Clone)]
+pub struct AlpDivDecoder<F: AlpFloat> {
+  pub base: F::Int,
+  pub exp_factor: F,
+}
+
+impl<F: AlpFloat> AlpDecoder<F> for AlpDivDecoder<F> {
+  #[inline(always)]
+  fn decode_offset(&self, off: u64) -> F {
+    F::decode_from_offset_div(off, self.base, self.exp_factor)
+  }
+
+  #[inline(always)]
+  fn decode_int(&self, val: F::Int) -> F {
+    F::decode_from_int_div(val, self.exp_factor)
+  }
+
+  #[inline(always)]
+  fn build_lut_1(&self) -> [F; LUT_SIZE_1BIT] {
+    F::build_lut_div::<LUT_SIZE_1BIT>(self.base, self.exp_factor)
+  }
+
+  #[inline(always)]
+  fn build_lut_2(&self) -> [F; LUT_SIZE_2BIT] {
+    F::build_lut_div::<LUT_SIZE_2BIT>(self.base, self.exp_factor)
+  }
+
+  #[inline(always)]
+  fn build_lut_4(&self) -> [F; LUT_SIZE_4BIT] {
+    F::build_lut_div::<LUT_SIZE_4BIT>(self.base, self.exp_factor)
+  }
+}
+
+/// 核心通用位解包与浮点重构内核：直接写入目标裸指针（零堆分配、零抽象开销）
 ///
 /// # Safety
 /// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
 /// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
 #[inline(always)]
-pub unsafe fn bitunpack_core<F: AlpFloat>(
+pub unsafe fn bitunpack_core_generic<F: AlpFloat, D: AlpDecoder<F>>(
   src: &[u8],
   count: usize,
   bit_width: u8,
-  base: F::Int,
-  fac_int: i64,
-  frac_flt: F,
+  decoder: D,
   mut dst_ptr: *mut F,
 ) {
-  // SAFETY: Caller guarantees src has at least packed_byte_size bytes and dst_ptr can hold count elements
+  // SAFETY: 调用方保证 src 具备至少 packed_byte_size 字节，且 dst_ptr 具备容纳 count 个元素的可写空间
   unsafe {
     if bit_width == BITS_1 {
-      let lut = F::build_lut::<LUT_SIZE_1BIT>(base, fac_int, frac_flt);
+      let lut = decoder.build_lut_1();
       let full_bytes = count / CHUNK_8;
       for &b in &src[..full_bytes] {
         *dst_ptr.add(0) = *lut.get_unchecked((b & MASK_1BIT) as usize);
@@ -514,7 +632,7 @@ pub unsafe fn bitunpack_core<F: AlpFloat>(
 
       return;
     } else if bit_width == BITS_2 {
-      let lut = F::build_lut::<LUT_SIZE_2BIT>(base, fac_int, frac_flt);
+      let lut = decoder.build_lut_2();
       let full_bytes = count / CHUNK_4;
       for &b in &src[..full_bytes] {
         *dst_ptr.add(0) = *lut.get_unchecked((b & MASK_2BIT) as usize);
@@ -535,7 +653,7 @@ pub unsafe fn bitunpack_core<F: AlpFloat>(
 
       return;
     } else if bit_width == BITS_4 {
-      let lut = F::build_lut::<LUT_SIZE_4BIT>(base, fac_int, frac_flt);
+      let lut = decoder.build_lut_4();
       let full_bytes = count / CHUNK_2;
       let (byte_chunks, byte_rem) = src[..full_bytes].as_chunks::<CHUNK_2>();
       for chunk in byte_chunks {
@@ -561,393 +679,79 @@ pub unsafe fn bitunpack_core<F: AlpFloat>(
     } else if bit_width == BITS_8 {
       let (chunks, rem) = src[..count].as_chunks::<CHUNK_8>();
       let mut idx = 0;
-      if fac_int == 1 {
-        for chunk in chunks {
-          *dst_ptr.add(idx) = F::decode_from_offset_fac1(chunk[0] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 1) = F::decode_from_offset_fac1(chunk[1] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 2) = F::decode_from_offset_fac1(chunk[2] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 3) = F::decode_from_offset_fac1(chunk[3] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 4) = F::decode_from_offset_fac1(chunk[4] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 5) = F::decode_from_offset_fac1(chunk[5] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 6) = F::decode_from_offset_fac1(chunk[6] as u64, base, frac_flt);
-          *dst_ptr.add(idx + 7) = F::decode_from_offset_fac1(chunk[7] as u64, base, frac_flt);
-          idx += CHUNK_8;
-        }
-        for (i, &b) in rem.iter().enumerate() {
-          *dst_ptr.add(idx + i) = F::decode_from_offset_fac1(b as u64, base, frac_flt);
-        }
-      } else {
-        for chunk in chunks {
-          *dst_ptr.add(idx) = F::decode_from_offset(chunk[0] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 1) = F::decode_from_offset(chunk[1] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 2) = F::decode_from_offset(chunk[2] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 3) = F::decode_from_offset(chunk[3] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 4) = F::decode_from_offset(chunk[4] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 5) = F::decode_from_offset(chunk[5] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 6) = F::decode_from_offset(chunk[6] as u64, base, fac_int, frac_flt);
-          *dst_ptr.add(idx + 7) = F::decode_from_offset(chunk[7] as u64, base, fac_int, frac_flt);
-          idx += CHUNK_8;
-        }
-        for (i, &b) in rem.iter().enumerate() {
-          *dst_ptr.add(idx + i) = F::decode_from_offset(b as u64, base, fac_int, frac_flt);
-        }
+      for chunk in chunks {
+        *dst_ptr.add(idx) = decoder.decode_offset(chunk[0] as u64);
+        *dst_ptr.add(idx + 1) = decoder.decode_offset(chunk[1] as u64);
+        *dst_ptr.add(idx + 2) = decoder.decode_offset(chunk[2] as u64);
+        *dst_ptr.add(idx + 3) = decoder.decode_offset(chunk[3] as u64);
+        *dst_ptr.add(idx + 4) = decoder.decode_offset(chunk[4] as u64);
+        *dst_ptr.add(idx + 5) = decoder.decode_offset(chunk[5] as u64);
+        *dst_ptr.add(idx + 6) = decoder.decode_offset(chunk[6] as u64);
+        *dst_ptr.add(idx + 7) = decoder.decode_offset(chunk[7] as u64);
+        idx += CHUNK_8;
+      }
+      for (i, &b) in rem.iter().enumerate() {
+        *dst_ptr.add(idx + i) = decoder.decode_offset(b as u64);
       }
 
       return;
     } else if bit_width == BITS_16 {
       let src_ptr = src.as_ptr().cast::<u16>();
       let mut i = 0;
-      if fac_int == 1 {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u16::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          i += 1;
-        }
-      } else {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u16::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 1;
-        }
+      while i + 8 <= count {
+        *dst_ptr.add(i) = decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i + 1) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
+        *dst_ptr.add(i + 2) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
+        *dst_ptr.add(i + 3) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
+        *dst_ptr.add(i + 4) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
+        *dst_ptr.add(i + 5) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
+        *dst_ptr.add(i + 6) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
+        *dst_ptr.add(i + 7) = decoder.decode_offset(u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
+        i += 8;
+      }
+      while i < count {
+        *dst_ptr.add(i) = decoder.decode_offset(u16::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        i += 1;
       }
 
       return;
     } else if bit_width == BITS_32 {
       let src_ptr = src.as_ptr().cast::<u32>();
       let mut i = 0;
-      if fac_int == 1 {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u32::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            frac_flt,
-          );
-          i += 1;
-        }
-      } else {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u32::from_le(src_ptr.add(i).read_unaligned()) as u64,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 1;
-        }
+      while i + 8 <= count {
+        *dst_ptr.add(i) = decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        *dst_ptr.add(i + 1) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64);
+        *dst_ptr.add(i + 2) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64);
+        *dst_ptr.add(i + 3) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64);
+        *dst_ptr.add(i + 4) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64);
+        *dst_ptr.add(i + 5) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64);
+        *dst_ptr.add(i + 6) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64);
+        *dst_ptr.add(i + 7) = decoder.decode_offset(u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64);
+        i += 8;
+      }
+      while i < count {
+        *dst_ptr.add(i) = decoder.decode_offset(u32::from_le(src_ptr.add(i).read_unaligned()) as u64);
+        i += 1;
       }
 
       return;
     } else if bit_width == BITS_64 {
       let src_ptr = src.as_ptr().cast::<u64>();
       let mut i = 0;
-      if fac_int == 1 {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 1).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 2).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 3).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 4).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 5).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 6).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i + 7).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(
-            u64::from_le(src_ptr.add(i).read_unaligned()),
-            base,
-            frac_flt,
-          );
-          i += 1;
-        }
-      } else {
-        while i + 8 <= count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 1) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 1).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 2) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 2).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 3) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 3).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 4) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 4).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 5) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 5).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 6).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i + 7).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 8;
-        }
-        while i < count {
-          *dst_ptr.add(i) = F::decode_from_offset(
-            u64::from_le(src_ptr.add(i).read_unaligned()),
-            base,
-            fac_int,
-            frac_flt,
-          );
-          i += 1;
-        }
+      while i + 8 <= count {
+        *dst_ptr.add(i) = decoder.decode_offset(u64::from_le(src_ptr.add(i).read_unaligned()));
+        *dst_ptr.add(i + 1) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 1).read_unaligned()));
+        *dst_ptr.add(i + 2) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 2).read_unaligned()));
+        *dst_ptr.add(i + 3) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 3).read_unaligned()));
+        *dst_ptr.add(i + 4) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 4).read_unaligned()));
+        *dst_ptr.add(i + 5) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 5).read_unaligned()));
+        *dst_ptr.add(i + 6) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 6).read_unaligned()));
+        *dst_ptr.add(i + 7) = decoder.decode_offset(u64::from_le(src_ptr.add(i + 7).read_unaligned()));
+        i += 8;
+      }
+      while i < count {
+        *dst_ptr.add(i) = decoder.decode_offset(u64::from_le(src_ptr.add(i).read_unaligned()));
+        i += 1;
       }
 
       return;
@@ -964,910 +768,50 @@ pub unsafe fn bitunpack_core<F: AlpFloat>(
       let fast_end_8 = (max_safe_groups * 8).min(count & !7);
       let mut byte_offset = 0;
 
-      if fac_int == 1 {
-        while i + 16 <= fast_end_8 {
-          let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          let chunk1 = u128::from_le(
-            src_ptr
-              .add(byte_offset + bw)
-              .cast::<u128>()
-              .read_unaligned(),
-          );
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(chunk0 as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset_fac1((chunk0 >> bw) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 2)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 3)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 4)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 5) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 5)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 6) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 6)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 7) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 7)) as u64 & mask, base, frac_flt);
+      while i + 16 <= fast_end_8 {
+        let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
+        let chunk1 = u128::from_le(
+          src_ptr
+            .add(byte_offset + bw)
+            .cast::<u128>()
+            .read_unaligned(),
+        );
+        *dst_ptr.add(i) = decoder.decode_offset(chunk0 as u64 & mask);
+        *dst_ptr.add(i + 1) = decoder.decode_offset((chunk0 >> bw) as u64 & mask);
+        *dst_ptr.add(i + 2) = decoder.decode_offset((chunk0 >> (bw * 2)) as u64 & mask);
+        *dst_ptr.add(i + 3) = decoder.decode_offset((chunk0 >> (bw * 3)) as u64 & mask);
+        *dst_ptr.add(i + 4) = decoder.decode_offset((chunk0 >> (bw * 4)) as u64 & mask);
+        *dst_ptr.add(i + 5) = decoder.decode_offset((chunk0 >> (bw * 5)) as u64 & mask);
+        *dst_ptr.add(i + 6) = decoder.decode_offset((chunk0 >> (bw * 6)) as u64 & mask);
+        *dst_ptr.add(i + 7) = decoder.decode_offset((chunk0 >> (bw * 7)) as u64 & mask);
 
-          *dst_ptr.add(i + 8) = F::decode_from_offset_fac1(chunk1 as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 9) =
-            F::decode_from_offset_fac1((chunk1 >> bw) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 10) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 2)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 11) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 3)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 12) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 4)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 13) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 5)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 14) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 6)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 15) =
-            F::decode_from_offset_fac1((chunk1 >> (bw * 7)) as u64 & mask, base, frac_flt);
-          byte_offset += bw * 2;
-          i += 16;
-        }
-
-        while i + 8 <= fast_end_8 {
-          let chunk = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(chunk as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset_fac1((chunk >> bw) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset_fac1((chunk >> (bw * 2)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset_fac1((chunk >> (bw * 3)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset_fac1((chunk >> (bw * 4)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 5) =
-            F::decode_from_offset_fac1((chunk >> (bw * 5)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 6) =
-            F::decode_from_offset_fac1((chunk >> (bw * 6)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 7) =
-            F::decode_from_offset_fac1((chunk >> (bw * 7)) as u64 & mask, base, frac_flt);
-          byte_offset += bw;
-          i += 8;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
-          i += 1;
-        }
-      } else {
-        while i + 16 <= fast_end_8 {
-          let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          let chunk1 = u128::from_le(
-            src_ptr
-              .add(byte_offset + bw)
-              .cast::<u128>()
-              .read_unaligned(),
-          );
-          *dst_ptr.add(i) = F::decode_from_offset(chunk0 as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset((chunk0 >> bw) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset((chunk0 >> (bw * 2)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset((chunk0 >> (bw * 3)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset((chunk0 >> (bw * 4)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 5) =
-            F::decode_from_offset((chunk0 >> (bw * 5)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 6) =
-            F::decode_from_offset((chunk0 >> (bw * 6)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 7) =
-            F::decode_from_offset((chunk0 >> (bw * 7)) as u64 & mask, base, fac_int, frac_flt);
-
-          *dst_ptr.add(i + 8) =
-            F::decode_from_offset(chunk1 as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 9) =
-            F::decode_from_offset((chunk1 >> bw) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 10) =
-            F::decode_from_offset((chunk1 >> (bw * 2)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 11) =
-            F::decode_from_offset((chunk1 >> (bw * 3)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 12) =
-            F::decode_from_offset((chunk1 >> (bw * 4)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 13) =
-            F::decode_from_offset((chunk1 >> (bw * 5)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 14) =
-            F::decode_from_offset((chunk1 >> (bw * 6)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 15) =
-            F::decode_from_offset((chunk1 >> (bw * 7)) as u64 & mask, base, fac_int, frac_flt);
-          byte_offset += bw * 2;
-          i += 16;
-        }
-
-        while i + 8 <= fast_end_8 {
-          let chunk = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          *dst_ptr.add(i) = F::decode_from_offset(chunk as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset((chunk >> bw) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset((chunk >> (bw * 2)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset((chunk >> (bw * 3)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset((chunk >> (bw * 4)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 5) =
-            F::decode_from_offset((chunk >> (bw * 5)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 6) =
-            F::decode_from_offset((chunk >> (bw * 6)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 7) =
-            F::decode_from_offset((chunk >> (bw * 7)) as u64 & mask, base, fac_int, frac_flt);
-          byte_offset += bw;
-          i += 8;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
-          i += 1;
-        }
+        *dst_ptr.add(i + 8) = decoder.decode_offset(chunk1 as u64 & mask);
+        *dst_ptr.add(i + 9) = decoder.decode_offset((chunk1 >> bw) as u64 & mask);
+        *dst_ptr.add(i + 10) = decoder.decode_offset((chunk1 >> (bw * 2)) as u64 & mask);
+        *dst_ptr.add(i + 11) = decoder.decode_offset((chunk1 >> (bw * 3)) as u64 & mask);
+        *dst_ptr.add(i + 12) = decoder.decode_offset((chunk1 >> (bw * 4)) as u64 & mask);
+        *dst_ptr.add(i + 13) = decoder.decode_offset((chunk1 >> (bw * 5)) as u64 & mask);
+        *dst_ptr.add(i + 14) = decoder.decode_offset((chunk1 >> (bw * 6)) as u64 & mask);
+        *dst_ptr.add(i + 15) = decoder.decode_offset((chunk1 >> (bw * 7)) as u64 & mask);
+        byte_offset += bw * 2;
+        i += 16;
       }
-    } else if bit_width <= 32 {
-      let mid_byte = (4 * bw) / 8;
-      let mid_shift = (4 * bw) & 7;
-      let safe_limit_32 = src.len().saturating_sub(mid_byte + 16);
-      let max_safe_groups = safe_limit_32 / bw;
-      let fast_end_8 = (max_safe_groups * 8).min(count & !7);
-      let mut byte_offset = 0;
-
-      if fac_int == 1 {
-        while i + 8 <= fast_end_8 {
-          let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          let chunk1 = u128::from_le(
-            src_ptr
-              .add(byte_offset + mid_byte)
-              .cast::<u128>()
-              .read_unaligned(),
-          );
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(chunk0 as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset_fac1((chunk0 >> bw) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 2)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset_fac1((chunk0 >> (bw * 3)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset_fac1((chunk1 >> mid_shift) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 5) =
-            F::decode_from_offset_fac1((chunk1 >> (mid_shift + bw)) as u64 & mask, base, frac_flt);
-          *dst_ptr.add(i + 6) = F::decode_from_offset_fac1(
-            (chunk1 >> (mid_shift + bw * 2)) as u64 & mask,
-            base,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset_fac1(
-            (chunk1 >> (mid_shift + bw * 3)) as u64 & mask,
-            base,
-            frac_flt,
-          );
-          byte_offset += bw;
-          i += 8;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
-          i += 1;
-        }
-      } else {
-        while i + 8 <= fast_end_8 {
-          let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
-          let chunk1 = u128::from_le(
-            src_ptr
-              .add(byte_offset + mid_byte)
-              .cast::<u128>()
-              .read_unaligned(),
-          );
-          *dst_ptr.add(i) = F::decode_from_offset(chunk0 as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 1) =
-            F::decode_from_offset((chunk0 >> bw) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 2) =
-            F::decode_from_offset((chunk0 >> (bw * 2)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 3) =
-            F::decode_from_offset((chunk0 >> (bw * 3)) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 4) =
-            F::decode_from_offset((chunk1 >> mid_shift) as u64 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 5) = F::decode_from_offset(
-            (chunk1 >> (mid_shift + bw)) as u64 & mask,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 6) = F::decode_from_offset(
-            (chunk1 >> (mid_shift + bw * 2)) as u64 & mask,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          *dst_ptr.add(i + 7) = F::decode_from_offset(
-            (chunk1 >> (mid_shift + bw * 3)) as u64 & mask,
-            base,
-            fac_int,
-            frac_flt,
-          );
-          byte_offset += bw;
-          i += 8;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
-          i += 1;
-        }
-      }
-    } else if bit_width <= 56 {
-      let safe_limit_16 = src.len().saturating_sub(16);
-      let max_safe_i = (safe_limit_16 * 8) / bw;
-      let fast_end_4 = max_safe_i.saturating_sub(3).min(count);
-      let fast_limit = max_safe_i.min(count);
-
-      if fac_int == 1 {
-        while i + 4 <= fast_end_4 {
-          let p0 = i * bw;
-          let p1 = p0 + bw;
-          let p2 = p1 + bw;
-          let p3 = p2 + bw;
-          let w0 = (u128::from_le(src_ptr.add(p0 >> 3).cast::<u128>().read_unaligned()) >> (p0 & 7))
-            as u64;
-          let w1 = (u128::from_le(src_ptr.add(p1 >> 3).cast::<u128>().read_unaligned()) >> (p1 & 7))
-            as u64;
-          let w2 = (u128::from_le(src_ptr.add(p2 >> 3).cast::<u128>().read_unaligned()) >> (p2 & 7))
-            as u64;
-          let w3 = (u128::from_le(src_ptr.add(p3 >> 3).cast::<u128>().read_unaligned()) >> (p3 & 7))
-            as u64;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(w0 & mask, base, frac_flt);
-          *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(w1 & mask, base, frac_flt);
-          *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(w2 & mask, base, frac_flt);
-          *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(w3 & mask, base, frac_flt);
-          i += 4;
-        }
-
-        while i < fast_limit {
-          let p = i * bw;
-          let w =
-            (u128::from_le(src_ptr.add(p >> 3).cast::<u128>().read_unaligned()) >> (p & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(w & mask, base, frac_flt);
-          i += 1;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(off, base, frac_flt);
-          i += 1;
-        }
-      } else {
-        while i + 4 <= fast_end_4 {
-          let p0 = i * bw;
-          let p1 = p0 + bw;
-          let p2 = p1 + bw;
-          let p3 = p2 + bw;
-          let w0 = (u128::from_le(src_ptr.add(p0 >> 3).cast::<u128>().read_unaligned()) >> (p0 & 7))
-            as u64;
-          let w1 = (u128::from_le(src_ptr.add(p1 >> 3).cast::<u128>().read_unaligned()) >> (p1 & 7))
-            as u64;
-          let w2 = (u128::from_le(src_ptr.add(p2 >> 3).cast::<u128>().read_unaligned()) >> (p2 & 7))
-            as u64;
-          let w3 = (u128::from_le(src_ptr.add(p3 >> 3).cast::<u128>().read_unaligned()) >> (p3 & 7))
-            as u64;
-          *dst_ptr.add(i) = F::decode_from_offset(w0 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 1) = F::decode_from_offset(w1 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 2) = F::decode_from_offset(w2 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 3) = F::decode_from_offset(w3 & mask, base, fac_int, frac_flt);
-          i += 4;
-        }
-
-        while i < fast_limit {
-          let p = i * bw;
-          let w =
-            (u128::from_le(src_ptr.add(p >> 3).cast::<u128>().read_unaligned()) >> (p & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset(w & mask, base, fac_int, frac_flt);
-          i += 1;
-        }
-
-        let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let word = if byte_offset <= safe_limit_bytes {
-            u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
-          } else {
-            let mut buf = [0u8; 8];
-            let available = src.len().saturating_sub(byte_offset).min(8);
-            if available > 0 {
-              copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
-            }
-            u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
-          };
-          let off = (word >> (bit_pos & 7)) & mask;
-          *dst_ptr.add(i) = F::decode_from_offset(off, base, fac_int, frac_flt);
-          i += 1;
-        }
-      }
-    } else {
-      let safe_limit_bytes_16 = src.len().saturating_sub(16);
-      let max_safe_i_128 = (safe_limit_bytes_16 * 8) / bw;
-      let fast_end = max_safe_i_128.min(count);
-      if fac_int == 1 {
-        while i + 4 <= fast_end {
-          let bit_pos0 = i * bw;
-          let bit_pos1 = (i + 1) * bw;
-          let bit_pos2 = (i + 2) * bw;
-          let bit_pos3 = (i + 3) * bw;
-          let w0 = (u128::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos0 & 7)) as u64;
-          let w1 = (u128::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos1 & 7)) as u64;
-          let w2 = (u128::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos2 & 7)) as u64;
-          let w3 = (u128::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos3 & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(w0 & mask, base, frac_flt);
-          *dst_ptr.add(i + 1) = F::decode_from_offset_fac1(w1 & mask, base, frac_flt);
-          *dst_ptr.add(i + 2) = F::decode_from_offset_fac1(w2 & mask, base, frac_flt);
-          *dst_ptr.add(i + 3) = F::decode_from_offset_fac1(w3 & mask, base, frac_flt);
-          i += 4;
-        }
-        while i < fast_end {
-          let bit_pos = i * bw;
-          let word = (u128::from_le(src_ptr.add(bit_pos >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(word & mask, base, frac_flt);
-          i += 1;
-        }
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let mut buf = [0u8; 16];
-          let available = src.len().saturating_sub(byte_offset).min(16);
-          if available > 0 {
-            buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
-          }
-          let word =
-            (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset_fac1(word & mask, base, frac_flt);
-          i += 1;
-        }
-      } else {
-        while i + 4 <= fast_end {
-          let bit_pos0 = i * bw;
-          let bit_pos1 = (i + 1) * bw;
-          let bit_pos2 = (i + 2) * bw;
-          let bit_pos3 = (i + 3) * bw;
-          let w0 = (u128::from_le(src_ptr.add(bit_pos0 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos0 & 7)) as u64;
-          let w1 = (u128::from_le(src_ptr.add(bit_pos1 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos1 & 7)) as u64;
-          let w2 = (u128::from_le(src_ptr.add(bit_pos2 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos2 & 7)) as u64;
-          let w3 = (u128::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos3 & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset(w0 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 1) = F::decode_from_offset(w1 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 2) = F::decode_from_offset(w2 & mask, base, fac_int, frac_flt);
-          *dst_ptr.add(i + 3) = F::decode_from_offset(w3 & mask, base, fac_int, frac_flt);
-          i += 4;
-        }
-        while i < fast_end {
-          let bit_pos = i * bw;
-          let word = (u128::from_le(src_ptr.add(bit_pos >> 3).cast::<u128>().read_unaligned())
-            >> (bit_pos & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset(word & mask, base, fac_int, frac_flt);
-          i += 1;
-        }
-        while i < count {
-          let bit_pos = i * bw;
-          let byte_offset = bit_pos >> 3;
-          let mut buf = [0u8; 16];
-          let available = src.len().saturating_sub(byte_offset).min(16);
-          if available > 0 {
-            buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
-          }
-          let word =
-            (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
-          *dst_ptr.add(i) = F::decode_from_offset(word & mask, base, fac_int, frac_flt);
-          i += 1;
-        }
-      }
-    }
-  }
-}
-
-/// Direct bit unpacking and floating-point reconstruction into a destination slice.
-/// 直接解包并重构浮点数据至目标切片（零堆分配、零内存拷贝）
-#[inline(always)]
-pub fn bitunpack_slice<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  bit_width: u8,
-  base: F::Int,
-  fac_int: i64,
-  frac_flt: F,
-  dst: &mut [F],
-) -> Result<()> {
-  if count == 0 {
-    return Ok(());
-  }
-  if dst.len() < count {
-    return Err(Error::BufferTooSmall {
-      needed: count,
-      available: dst.len(),
-    });
-  }
-  let required_bytes = packed_byte_size(count, bit_width);
-  if src.len() < required_bytes {
-    return Err(Error::UnexpectedEof {
-      needed: required_bytes,
-      available: src.len(),
-    });
-  }
-  if bit_width == 0 {
-    let val = F::decode_from_offset(0, base, fac_int, frac_flt);
-    dst[..count].fill(val);
-    return Ok(());
-  }
-  // SAFETY: 上方已检验可用字节充足且 dst.len() >= count
-  unsafe {
-    bitunpack_core(
-      src,
-      count,
-      bit_width,
-      base,
-      fac_int,
-      frac_flt,
-      dst.as_mut_ptr(),
-    );
-  }
-  Ok(())
-}
-
-/// Generic zero-copy direct bit unpacking and floating-point reconstruction into `dst`.
-/// 通用直接解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
-#[inline(always)]
-pub fn bitunpack_into<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  bit_width: u8,
-  base: F::Int,
-  fac_int: i64,
-  frac_flt: F,
-  dst: &mut Vec<F>,
-) -> Result<()> {
-  if count == 0 {
-    return Ok(());
-  }
-  let required_bytes = packed_byte_size(count, bit_width);
-  if src.len() < required_bytes {
-    return Err(Error::UnexpectedEof {
-      needed: required_bytes,
-      available: src.len(),
-    });
-  }
-  let old_len = dst.len();
-  if bit_width == 0 {
-    let val = F::decode_from_offset(0, base, fac_int, frac_flt);
-    dst.resize(old_len + count, val);
-    return Ok(());
-  }
-  dst.reserve(count);
-  // SAFETY: 上方已校验可用字节充足，直接写入连续裸指针并在完成后更新长度
-  unsafe {
-    bitunpack_core(
-      src,
-      count,
-      bit_width,
-      base,
-      fac_int,
-      frac_flt,
-      dst.as_mut_ptr().add(old_len),
-    );
-    dst.set_len(old_len + count);
-  }
-  Ok(())
-}
-
-/// Core decimal division bit unpacking inner function writing directly to raw pointer.
-/// 内部核心十进制除法位解包逻辑：直接写入目标裸指针
-///
-/// # Safety
-/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
-/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
-#[inline(always)]
-pub unsafe fn bitunpack_core_div<F: AlpFloat>(
-  src: &[u8],
-  count: usize,
-  bit_width: u8,
-  base: F::Int,
-  exp_factor: F,
-  mut dst_ptr: *mut F,
-) {
-  unsafe {
-    if bit_width == BITS_1 {
-      let lut = F::build_lut_div::<LUT_SIZE_1BIT>(base, exp_factor);
-      let full_bytes = count / CHUNK_8;
-      for &b in &src[..full_bytes] {
-        *dst_ptr.add(0) = *lut.get_unchecked((b & MASK_1BIT) as usize);
-        *dst_ptr.add(1) = *lut.get_unchecked(((b >> 1) & MASK_1BIT) as usize);
-        *dst_ptr.add(2) = *lut.get_unchecked(((b >> 2) & MASK_1BIT) as usize);
-        *dst_ptr.add(3) = *lut.get_unchecked(((b >> 3) & MASK_1BIT) as usize);
-        *dst_ptr.add(4) = *lut.get_unchecked(((b >> 4) & MASK_1BIT) as usize);
-        *dst_ptr.add(5) = *lut.get_unchecked(((b >> 5) & MASK_1BIT) as usize);
-        *dst_ptr.add(6) = *lut.get_unchecked(((b >> 6) & MASK_1BIT) as usize);
-        *dst_ptr.add(7) = *lut.get_unchecked(((b >> 7) & MASK_1BIT) as usize);
-        dst_ptr = dst_ptr.add(CHUNK_8);
-      }
-      let rem = count % CHUNK_8;
-      if rem > 0 {
-        let b = *src.get_unchecked(full_bytes);
-        for shift in 0..rem {
-          let idx = ((b >> shift) & MASK_1BIT) as usize;
-          *dst_ptr = *lut.get_unchecked(idx);
-          dst_ptr = dst_ptr.add(1);
-        }
-      }
-
-      return;
-    } else if bit_width == BITS_2 {
-      let lut = F::build_lut_div::<LUT_SIZE_2BIT>(base, exp_factor);
-      let full_bytes = count / CHUNK_4;
-      for &b in &src[..full_bytes] {
-        *dst_ptr.add(0) = *lut.get_unchecked((b & MASK_2BIT) as usize);
-        *dst_ptr.add(1) = *lut.get_unchecked(((b >> 2) & MASK_2BIT) as usize);
-        *dst_ptr.add(2) = *lut.get_unchecked(((b >> 4) & MASK_2BIT) as usize);
-        *dst_ptr.add(3) = *lut.get_unchecked(((b >> 6) & MASK_2BIT) as usize);
-        dst_ptr = dst_ptr.add(CHUNK_4);
-      }
-      let rem = count % CHUNK_4;
-      if rem > 0 {
-        let b = *src.get_unchecked(full_bytes);
-        for i in 0..rem {
-          let idx = ((b >> (i * 2)) & MASK_2BIT) as usize;
-          *dst_ptr = *lut.get_unchecked(idx);
-          dst_ptr = dst_ptr.add(1);
-        }
-      }
-
-      return;
-    } else if bit_width == BITS_4 {
-      let lut = F::build_lut_div::<LUT_SIZE_4BIT>(base, exp_factor);
-      let full_bytes = count / CHUNK_2;
-      let (byte_chunks, byte_rem) = src[..full_bytes].as_chunks::<CHUNK_2>();
-      for chunk in byte_chunks {
-        let b0 = chunk[0];
-        let b1 = chunk[1];
-        *dst_ptr.add(0) = *lut.get_unchecked((b0 & MASK_4BIT) as usize);
-        *dst_ptr.add(1) = *lut.get_unchecked((b0 >> 4) as usize);
-        *dst_ptr.add(2) = *lut.get_unchecked((b1 & MASK_4BIT) as usize);
-        *dst_ptr.add(3) = *lut.get_unchecked((b1 >> 4) as usize);
-        dst_ptr = dst_ptr.add(CHUNK_4);
-      }
-      for &b in byte_rem {
-        *dst_ptr.add(0) = *lut.get_unchecked((b & MASK_4BIT) as usize);
-        *dst_ptr.add(1) = *lut.get_unchecked((b >> 4) as usize);
-        dst_ptr = dst_ptr.add(CHUNK_2);
-      }
-      if !count.is_multiple_of(CHUNK_2) {
-        let b = *src.get_unchecked(full_bytes);
-        *dst_ptr = *lut.get_unchecked((b & MASK_4BIT) as usize);
-      }
-
-      return;
-    } else if bit_width == BITS_8 {
-      let lut = F::build_lut_div::<LUT_SIZE_8BIT>(base, exp_factor);
-      let (chunks, rem) = src[..count].as_chunks::<CHUNK_8>();
-      let mut idx = 0;
-      for chunk in chunks {
-        *dst_ptr.add(idx) = *lut.get_unchecked(chunk[0] as usize);
-        *dst_ptr.add(idx + 1) = *lut.get_unchecked(chunk[1] as usize);
-        *dst_ptr.add(idx + 2) = *lut.get_unchecked(chunk[2] as usize);
-        *dst_ptr.add(idx + 3) = *lut.get_unchecked(chunk[3] as usize);
-        *dst_ptr.add(idx + 4) = *lut.get_unchecked(chunk[4] as usize);
-        *dst_ptr.add(idx + 5) = *lut.get_unchecked(chunk[5] as usize);
-        *dst_ptr.add(idx + 6) = *lut.get_unchecked(chunk[6] as usize);
-        *dst_ptr.add(idx + 7) = *lut.get_unchecked(chunk[7] as usize);
-        idx += CHUNK_8;
-      }
-      for (i, &b) in rem.iter().enumerate() {
-        *dst_ptr.add(idx + i) = *lut.get_unchecked(b as usize);
-      }
-
-      return;
-    } else if bit_width == BITS_16 {
-      let src_ptr = src.as_ptr().cast::<u16>();
-      let mut i = 0;
-      while i + 8 <= count {
-        *dst_ptr.add(i) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 4) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 5) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 6) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 7) = F::decode_from_offset_div(
-          u16::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        i += 8;
-      }
-      while i < count {
-        let off = u16::from_le(src_ptr.add(i).read_unaligned()) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
-        i += 1;
-      }
-
-      return;
-    } else if bit_width == BITS_32 {
-      let src_ptr = src.as_ptr().cast::<u32>();
-      let mut i = 0;
-      while i + 8 <= count {
-        *dst_ptr.add(i) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 1).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 2).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 3).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 4) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 4).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 5) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 5).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 6) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 6).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 7) = F::decode_from_offset_div(
-          u32::from_le(src_ptr.add(i + 7).read_unaligned()) as u64,
-          base,
-          exp_factor,
-        );
-        i += 8;
-      }
-      while i < count {
-        let off = u32::from_le(src_ptr.add(i).read_unaligned()) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
-        i += 1;
-      }
-
-      return;
-    } else if bit_width == BITS_64 {
-      let src_ptr = src.as_ptr().cast::<u64>();
-      let mut i = 0;
-      while i + 8 <= count {
-        *dst_ptr.add(i) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 1).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 2).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 3).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 4) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 4).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 5) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 5).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 6) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 6).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        *dst_ptr.add(i + 7) = F::decode_from_offset_div(
-          u64::from_le(src_ptr.add(i + 7).read_unaligned()),
-          base,
-          exp_factor,
-        );
-        i += 8;
-      }
-      while i < count {
-        let off = u64::from_le(src_ptr.add(i).read_unaligned());
-        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
-        i += 1;
-      }
-
-      return;
-    }
-
-    let mask = bit_mask(bit_width);
-    let bw = bit_width as usize;
-    let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
-    let src_ptr = src.as_ptr();
-
-    let mut i = 0;
-    if bit_width <= 56 {
-      let max_safe_i = (safe_limit_bytes * 8) / bw;
-      let fast_end_8 = max_safe_i.saturating_sub(7).min(count);
-      let fast_end_4 = max_safe_i.saturating_sub(3).min(count);
-      let fast_limit = max_safe_i.min(count);
-      let mut bit_pos = 0;
 
       while i + 8 <= fast_end_8 {
-        let p0 = bit_pos;
-        let p1 = bit_pos + bw;
-        let p2 = bit_pos + bw * 2;
-        let p3 = bit_pos + bw * 3;
-        let p4 = bit_pos + bw * 4;
-        let p5 = bit_pos + bw * 5;
-        let p6 = bit_pos + bw * 6;
-        let p7 = bit_pos + bw * 7;
-        let w0 = u64::from_le(src_ptr.add(p0 >> 3).cast::<u64>().read_unaligned());
-        let w1 = u64::from_le(src_ptr.add(p1 >> 3).cast::<u64>().read_unaligned());
-        let w2 = u64::from_le(src_ptr.add(p2 >> 3).cast::<u64>().read_unaligned());
-        let w3 = u64::from_le(src_ptr.add(p3 >> 3).cast::<u64>().read_unaligned());
-        let w4 = u64::from_le(src_ptr.add(p4 >> 3).cast::<u64>().read_unaligned());
-        let w5 = u64::from_le(src_ptr.add(p5 >> 3).cast::<u64>().read_unaligned());
-        let w6 = u64::from_le(src_ptr.add(p6 >> 3).cast::<u64>().read_unaligned());
-        let w7 = u64::from_le(src_ptr.add(p7 >> 3).cast::<u64>().read_unaligned());
-        *dst_ptr.add(i) = F::decode_from_offset_div((w0 >> (p0 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div((w1 >> (p1 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div((w2 >> (p2 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div((w3 >> (p3 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 4) = F::decode_from_offset_div((w4 >> (p4 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 5) = F::decode_from_offset_div((w5 >> (p5 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 6) = F::decode_from_offset_div((w6 >> (p6 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 7) = F::decode_from_offset_div((w7 >> (p7 & 7)) & mask, base, exp_factor);
-        bit_pos += bw * 8;
+        let chunk = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
+        *dst_ptr.add(i) = decoder.decode_offset(chunk as u64 & mask);
+        *dst_ptr.add(i + 1) = decoder.decode_offset((chunk >> bw) as u64 & mask);
+        *dst_ptr.add(i + 2) = decoder.decode_offset((chunk >> (bw * 2)) as u64 & mask);
+        *dst_ptr.add(i + 3) = decoder.decode_offset((chunk >> (bw * 3)) as u64 & mask);
+        *dst_ptr.add(i + 4) = decoder.decode_offset((chunk >> (bw * 4)) as u64 & mask);
+        *dst_ptr.add(i + 5) = decoder.decode_offset((chunk >> (bw * 5)) as u64 & mask);
+        *dst_ptr.add(i + 6) = decoder.decode_offset((chunk >> (bw * 6)) as u64 & mask);
+        *dst_ptr.add(i + 7) = decoder.decode_offset((chunk >> (bw * 7)) as u64 & mask);
+        byte_offset += bw;
         i += 8;
       }
 
-      while i + 4 <= fast_end_4 {
-        let p0 = bit_pos;
-        let p1 = bit_pos + bw;
-        let p2 = bit_pos + bw * 2;
-        let p3 = bit_pos + bw * 3;
-        let w0 = u64::from_le(src_ptr.add(p0 >> 3).cast::<u64>().read_unaligned());
-        let w1 = u64::from_le(src_ptr.add(p1 >> 3).cast::<u64>().read_unaligned());
-        let w2 = u64::from_le(src_ptr.add(p2 >> 3).cast::<u64>().read_unaligned());
-        let w3 = u64::from_le(src_ptr.add(p3 >> 3).cast::<u64>().read_unaligned());
-        *dst_ptr.add(i) = F::decode_from_offset_div((w0 >> (p0 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div((w1 >> (p1 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div((w2 >> (p2 & 7)) & mask, base, exp_factor);
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div((w3 >> (p3 & 7)) & mask, base, exp_factor);
-        bit_pos += bw * 4;
-        i += 4;
-      }
-
-      while i < fast_limit {
-        let p0 = bit_pos;
-        let w = u64::from_le(src_ptr.add(p0 >> 3).cast::<u64>().read_unaligned());
-        *dst_ptr.add(i) = F::decode_from_offset_div((w >> (p0 & 7)) & mask, base, exp_factor);
-        bit_pos += bw;
-        i += 1;
-      }
-
+      let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
       while i < count {
         let bit_pos = i * bw;
         let byte_offset = bit_pos >> 3;
@@ -1877,12 +821,110 @@ pub unsafe fn bitunpack_core_div<F: AlpFloat>(
           let mut buf = [0u8; 8];
           let available = src.len().saturating_sub(byte_offset).min(8);
           if available > 0 {
-            buf[..available].copy_from_slice(&src[byte_offset..byte_offset + available]);
+            copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
           }
           u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
         };
         let off = (word >> (bit_pos & 7)) & mask;
-        *dst_ptr.add(i) = F::decode_from_offset_div(off, base, exp_factor);
+        *dst_ptr.add(i) = decoder.decode_offset(off);
+        i += 1;
+      }
+    } else if bit_width <= 32 {
+      let mid_byte = (4 * bw) / 8;
+      let mid_shift = (4 * bw) & 7;
+      let safe_limit_32 = src.len().saturating_sub(mid_byte + 16);
+      let max_safe_groups = safe_limit_32 / bw;
+      let fast_end_8 = (max_safe_groups * 8).min(count & !7);
+      let mut byte_offset = 0;
+
+      while i + 8 <= fast_end_8 {
+        let chunk0 = u128::from_le(src_ptr.add(byte_offset).cast::<u128>().read_unaligned());
+        let chunk1 = u128::from_le(
+          src_ptr
+            .add(byte_offset + mid_byte)
+            .cast::<u128>()
+            .read_unaligned(),
+        );
+        *dst_ptr.add(i) = decoder.decode_offset(chunk0 as u64 & mask);
+        *dst_ptr.add(i + 1) = decoder.decode_offset((chunk0 >> bw) as u64 & mask);
+        *dst_ptr.add(i + 2) = decoder.decode_offset((chunk0 >> (bw * 2)) as u64 & mask);
+        *dst_ptr.add(i + 3) = decoder.decode_offset((chunk0 >> (bw * 3)) as u64 & mask);
+        *dst_ptr.add(i + 4) = decoder.decode_offset((chunk1 >> mid_shift) as u64 & mask);
+        *dst_ptr.add(i + 5) = decoder.decode_offset((chunk1 >> (mid_shift + bw)) as u64 & mask);
+        *dst_ptr.add(i + 6) = decoder.decode_offset((chunk1 >> (mid_shift + bw * 2)) as u64 & mask);
+        *dst_ptr.add(i + 7) = decoder.decode_offset((chunk1 >> (mid_shift + bw * 3)) as u64 & mask);
+        byte_offset += bw;
+        i += 8;
+      }
+
+      let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let word = if byte_offset <= safe_limit_bytes {
+          u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+        } else {
+          let mut buf = [0u8; 8];
+          let available = src.len().saturating_sub(byte_offset).min(8);
+          if available > 0 {
+            copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
+          }
+          u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+        };
+        let off = (word >> (bit_pos & 7)) & mask;
+        *dst_ptr.add(i) = decoder.decode_offset(off);
+        i += 1;
+      }
+    } else if bit_width <= 56 {
+      let safe_limit_16 = src.len().saturating_sub(16);
+      let max_safe_i = (safe_limit_16 * 8) / bw;
+      let fast_end_4 = max_safe_i.saturating_sub(3).min(count);
+      let fast_limit = max_safe_i.min(count);
+
+      while i + 4 <= fast_end_4 {
+        let p0 = i * bw;
+        let p1 = p0 + bw;
+        let p2 = p1 + bw;
+        let p3 = p2 + bw;
+        let w0 = (u128::from_le(src_ptr.add(p0 >> 3).cast::<u128>().read_unaligned()) >> (p0 & 7))
+          as u64;
+        let w1 = (u128::from_le(src_ptr.add(p1 >> 3).cast::<u128>().read_unaligned()) >> (p1 & 7))
+          as u64;
+        let w2 = (u128::from_le(src_ptr.add(p2 >> 3).cast::<u128>().read_unaligned()) >> (p2 & 7))
+          as u64;
+        let w3 = (u128::from_le(src_ptr.add(p3 >> 3).cast::<u128>().read_unaligned()) >> (p3 & 7))
+          as u64;
+        *dst_ptr.add(i) = decoder.decode_offset(w0 & mask);
+        *dst_ptr.add(i + 1) = decoder.decode_offset(w1 & mask);
+        *dst_ptr.add(i + 2) = decoder.decode_offset(w2 & mask);
+        *dst_ptr.add(i + 3) = decoder.decode_offset(w3 & mask);
+        i += 4;
+      }
+
+      while i < fast_limit {
+        let p = i * bw;
+        let w =
+          (u128::from_le(src_ptr.add(p >> 3).cast::<u128>().read_unaligned()) >> (p & 7)) as u64;
+        *dst_ptr.add(i) = decoder.decode_offset(w & mask);
+        i += 1;
+      }
+
+      let safe_limit_bytes = src.len().saturating_sub(BYTES_U64);
+      while i < count {
+        let bit_pos = i * bw;
+        let byte_offset = bit_pos >> 3;
+        let word = if byte_offset <= safe_limit_bytes {
+          u64::from_le(src_ptr.add(byte_offset).cast::<u64>().read_unaligned())
+        } else {
+          let mut buf = [0u8; 8];
+          let available = src.len().saturating_sub(byte_offset).min(8);
+          if available > 0 {
+            copy_nonoverlapping(src_ptr.add(byte_offset), buf.as_mut_ptr(), available);
+          }
+          u64::from_le(buf.as_ptr().cast::<u64>().read_unaligned())
+        };
+        let off = (word >> (bit_pos & 7)) & mask;
+        *dst_ptr.add(i) = decoder.decode_offset(off);
         i += 1;
       }
     } else {
@@ -1902,17 +944,17 @@ pub unsafe fn bitunpack_core_div<F: AlpFloat>(
           >> (bit_pos2 & 7)) as u64;
         let w3 = (u128::from_le(src_ptr.add(bit_pos3 >> 3).cast::<u128>().read_unaligned())
           >> (bit_pos3 & 7)) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset_div(w0 & mask, base, exp_factor);
-        *dst_ptr.add(i + 1) = F::decode_from_offset_div(w1 & mask, base, exp_factor);
-        *dst_ptr.add(i + 2) = F::decode_from_offset_div(w2 & mask, base, exp_factor);
-        *dst_ptr.add(i + 3) = F::decode_from_offset_div(w3 & mask, base, exp_factor);
+        *dst_ptr.add(i) = decoder.decode_offset(w0 & mask);
+        *dst_ptr.add(i + 1) = decoder.decode_offset(w1 & mask);
+        *dst_ptr.add(i + 2) = decoder.decode_offset(w2 & mask);
+        *dst_ptr.add(i + 3) = decoder.decode_offset(w3 & mask);
         i += 4;
       }
       while i < fast_end {
         let bit_pos = i * bw;
         let word = (u128::from_le(src_ptr.add(bit_pos >> 3).cast::<u128>().read_unaligned())
           >> (bit_pos & 7)) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset_div(word & mask, base, exp_factor);
+        *dst_ptr.add(i) = decoder.decode_offset(word & mask);
         i += 1;
       }
       while i < count {
@@ -1925,22 +967,89 @@ pub unsafe fn bitunpack_core_div<F: AlpFloat>(
         }
         let word =
           (u128::from_le(buf.as_ptr().cast::<u128>().read_unaligned()) >> (bit_pos & 7)) as u64;
-        *dst_ptr.add(i) = F::decode_from_offset_div(word & mask, base, exp_factor);
+        *dst_ptr.add(i) = decoder.decode_offset(word & mask);
         i += 1;
       }
     }
   }
 }
 
-/// Direct bit unpacking and decimal division floating-point reconstruction into a destination slice.
-/// 直接解包并采用十进制除法重构浮点数据至目标切片（零堆分配、零内存拷贝）
+/// 内部核心位解包逻辑：直接写入目标裸指针（兼容性封装）
+///
+/// # Safety
+/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
+/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
+#[allow(dead_code)]
 #[inline(always)]
-pub fn bitunpack_slice_div<F: AlpFloat>(
+pub unsafe fn bitunpack_core<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  base: F::Int,
+  fac_int: i64,
+  frac_flt: F,
+  dst_ptr: *mut F,
+) {
+  if fac_int == 1 {
+    unsafe {
+      bitunpack_core_generic(
+        src,
+        count,
+        bit_width,
+        AlpFac1Decoder { base, frac_flt },
+        dst_ptr,
+      );
+    }
+  } else {
+    unsafe {
+      bitunpack_core_generic(
+        src,
+        count,
+        bit_width,
+        AlpMulDecoder {
+          base,
+          fac_int,
+          frac_flt,
+        },
+        dst_ptr,
+      );
+    }
+  }
+}
+
+/// 内部核心十进制除法位解包逻辑：直接写入目标裸指针（兼容性封装）
+///
+/// # Safety
+/// 1. `src` 必须至少包含 `packed_byte_size(count, bit_width)` 字节有效数据；
+/// 2. `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
+#[allow(dead_code)]
+#[inline(always)]
+pub unsafe fn bitunpack_core_div<F: AlpFloat>(
   src: &[u8],
   count: usize,
   bit_width: u8,
   base: F::Int,
   exp_factor: F,
+  dst_ptr: *mut F,
+) {
+  unsafe {
+    bitunpack_core_generic(
+      src,
+      count,
+      bit_width,
+      AlpDivDecoder { base, exp_factor },
+      dst_ptr,
+    );
+  }
+}
+
+/// 通用直接位解包并重构浮点数据至目标切片
+#[inline(always)]
+pub fn bitunpack_slice_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  decoder: D,
   dst: &mut [F],
 ) -> Result<()> {
   if count == 0 {
@@ -1960,26 +1069,24 @@ pub fn bitunpack_slice_div<F: AlpFloat>(
     });
   }
   if bit_width == 0 {
-    let val = F::decode_from_offset_div(0, base, exp_factor);
+    let val = decoder.decode_offset(0);
     dst[..count].fill(val);
     return Ok(());
   }
   // SAFETY: 上方已检验可用字节充足且 dst.len() >= count
   unsafe {
-    bitunpack_core_div(src, count, bit_width, base, exp_factor, dst.as_mut_ptr());
+    bitunpack_core_generic(src, count, bit_width, decoder, dst.as_mut_ptr());
   }
   Ok(())
 }
 
-/// Generic zero-copy direct bit unpacking and decimal division floating-point reconstruction into `dst`.
-/// 通用直接解包并采用十进制除法重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
+/// 通用直接位解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
 #[inline(always)]
-pub fn bitunpack_into_div<F: AlpFloat>(
+pub fn bitunpack_into_with_decoder<F: AlpFloat, D: AlpDecoder<F>>(
   src: &[u8],
   count: usize,
   bit_width: u8,
-  base: F::Int,
-  exp_factor: F,
+  decoder: D,
   dst: &mut Vec<F>,
 ) -> Result<()> {
   if count == 0 {
@@ -1994,22 +1101,103 @@ pub fn bitunpack_into_div<F: AlpFloat>(
   }
   let old_len = dst.len();
   if bit_width == 0 {
-    let val = F::decode_from_offset_div(0, base, exp_factor);
+    let val = decoder.decode_offset(0);
     dst.resize(old_len + count, val);
     return Ok(());
   }
   dst.reserve(count);
   // SAFETY: 上方已校验可用字节充足，直接写入连续裸指针并在完成后更新长度
   unsafe {
-    bitunpack_core_div(
+    bitunpack_core_generic(
       src,
       count,
       bit_width,
-      base,
-      exp_factor,
+      decoder,
       dst.as_mut_ptr().add(old_len),
     );
     dst.set_len(old_len + count);
   }
   Ok(())
+}
+
+/// 直接解包并重构浮点数据至目标切片（零堆分配、零内存拷贝）
+#[inline(always)]
+pub fn bitunpack_slice<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  base: F::Int,
+  fac_int: i64,
+  frac_flt: F,
+  dst: &mut [F],
+) -> Result<()> {
+  if fac_int == 1 {
+    bitunpack_slice_with_decoder(src, count, bit_width, AlpFac1Decoder { base, frac_flt }, dst)
+  } else {
+    bitunpack_slice_with_decoder(
+      src,
+      count,
+      bit_width,
+      AlpMulDecoder {
+        base,
+        fac_int,
+        frac_flt,
+      },
+      dst,
+    )
+  }
+}
+
+/// 直接解包并采用十进制除法重构浮点数据至目标切片（零堆分配、零内存拷贝）
+#[inline(always)]
+pub fn bitunpack_slice_div<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  base: F::Int,
+  exp_factor: F,
+  dst: &mut [F],
+) -> Result<()> {
+  bitunpack_slice_with_decoder(src, count, bit_width, AlpDivDecoder { base, exp_factor }, dst)
+}
+
+/// 通用直接解包并重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
+#[inline(always)]
+pub fn bitunpack_into<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  base: F::Int,
+  fac_int: i64,
+  frac_flt: F,
+  dst: &mut Vec<F>,
+) -> Result<()> {
+  if fac_int == 1 {
+    bitunpack_into_with_decoder(src, count, bit_width, AlpFac1Decoder { base, frac_flt }, dst)
+  } else {
+    bitunpack_into_with_decoder(
+      src,
+      count,
+      bit_width,
+      AlpMulDecoder {
+        base,
+        fac_int,
+        frac_flt,
+      },
+      dst,
+    )
+  }
+}
+
+/// 通用直接解包并采用十进制除法重构浮点数据至 `dst`（直接写入裸指针，避免未初始化切片构造）
+#[inline(always)]
+pub fn bitunpack_into_div<F: AlpFloat>(
+  src: &[u8],
+  count: usize,
+  bit_width: u8,
+  base: F::Int,
+  exp_factor: F,
+  dst: &mut Vec<F>,
+) -> Result<()> {
+  bitunpack_into_with_decoder(src, count, bit_width, AlpDivDecoder { base, exp_factor }, dst)
 }
