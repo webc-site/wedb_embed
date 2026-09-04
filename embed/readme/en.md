@@ -3,9 +3,9 @@
 Embedded database engine providing Redis-compatible data structures and APIs, built on the [fjall](https://github.com/fjall-rs/fjall) LSM-Tree storage engine.
 
 <p align="center">
-  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@Ah/o-BeIlTMfLz3EAdVXybA.svg" alt="wedb_embed vs Redis Performance & Resource Comparison" width="100%">
+  <img src="https://fastly.jsdelivr.net/gh/webc-fs/-@mz/7oqy6mMOUeYNYV5PwdsA.svg" alt="wedb_embed vs Redis Performance & Resource Comparison" width="100%">
   <br>
-  <sub><b>Benchmark Environment</b>: CPU: AMD EPYC 9V74 80-Core Processor (4 cores) ｜ Memory: 15.6 GB ｜ Disk: Azure Managed Virtual Disk (Cloud Standard SSD) ｜ OS: Ubuntu 24.04.4 LTS (Linux 6.17.0-1022-azure) ｜ Rust: 1.98.1 (48a229cea 2026-09-01) ｜ Redis: v8.10.1</sub>
+  <sub><b>Benchmark Environment</b>: CPU: AMD EPYC 7763 64-Core Processor (4 cores) ｜ Memory: 15.6 GB ｜ Disk: Azure Managed Virtual Disk (Cloud Standard SSD) ｜ OS: Ubuntu 24.04.4 LTS (Linux 6.17.0-1022-azure) ｜ Rust: 1.98.1 (48a229cea 2026-09-01) ｜ Redis: v8.10.1</sub>
 </p>
 
 - **Disk I/O Throughput**:<br>
