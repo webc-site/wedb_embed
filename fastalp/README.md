@@ -1,10 +1,10 @@
 <a href="https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#en"><img src="https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/en.svg" height="28"></a>
 <a href="https://github.com/webc-site/wedb_embed/blob/main/fastalp/README.md#zh"><img src="https://cdn.jsdmirror.com/gh/webc-site/svg/i18n/zh.svg" height="28"></a>
 
-<a href="https://crates.io/crates/fastalp"><img src="https://img.shields.io/crates/v/fastalp.svg" height="28"></a>
-<a href="https://docs.rs/fastalp"><img src="https://docs.rs/fastalp/badge.svg" height="28"></a>
 <a href="https://x.com/iwebcsite"><img src="https://img.shields.io/badge/Twitter-@iwebcsite-1DA1F2?logo=x&logoColor=white" height="28"></a>
 <a href="https://bsky.app/profile/webc-site.bsky.social"><img src="https://img.shields.io/badge/Bluesky-@webc--site-0285FF?logo=bluesky&logoColor=white" height="28"></a>
+<a href="https://crates.io/crates/fastalp"><img src="https://img.shields.io/crates/v/fastalp.svg" height="28"></a>
+<a href="https://docs.rs/fastalp"><img src="https://docs.rs/fastalp/badge.svg" height="28"></a>
 
 ---
 
