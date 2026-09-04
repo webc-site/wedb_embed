@@ -22,14 +22,10 @@ export const loadCppAlpResult = async () => {
     const parts = lines[i].split(",");
     if (parts.length < 10) continue;
     const name = parts[1];
-    const bitsPerVal = parseFloat(parts[3]) || 25.0;
-
-    // C++ 采样端到端压缩速度 (含采样分析) -> 与 fastalp compress_into 端到端动态采样评测完全对齐
-    const encSampledGbS = parseFloat(parts[5]) || 0.85;
-    // C++ 纯内核压缩速度 (不含采样分析)
-    const encKernelGbS = parseFloat(parts[7]) || 6.0;
-    // C++ 解压缩速度 (第 9 列 cpp_dec，之前误读为第 6 列 fastalp_enc_sampled)
-    const decGbS = parseFloat(parts[9]) || 20.0;
+    const bitsPerVal = parseFloat(parts[3]);
+    const encSampledGbS = parseFloat(parts[5]);
+    const encKernelGbS = parseFloat(parts[7]);
+    const decGbS = parseFloat(parts[9]);
 
     const rawBytes = 1024 * 8;
     const compBytes = Math.round((1024 * bitsPerVal) / 8);
@@ -84,15 +80,7 @@ export const loadCppAlpResult = async () => {
             enc_kernel_gb_s: sensorSc.enc_kernel_gb_s,
             dec_gb_s: sensorSc.dec_gb_s,
           }
-        : {
-            raw_bytes: 8192,
-            compressed_bytes: 1042,
-            ratio: 7.8618,
-            bits_per_val: 8.14,
-            enc_gb_s: 0.84,
-            enc_kernel_gb_s: 6.48,
-            dec_gb_s: 22.61,
-          },
+        : null,
       ramp_1024: rampSc
         ? {
             raw_bytes: 8192,
@@ -103,15 +91,7 @@ export const loadCppAlpResult = async () => {
             enc_kernel_gb_s: rampSc.enc_kernel_gb_s,
             dec_gb_s: rampSc.dec_gb_s,
           }
-        : {
-            raw_bytes: 8192,
-            compressed_bytes: 6284,
-            ratio: 1.3036,
-            bits_per_val: 49.09,
-            enc_gb_s: 0.88,
-            enc_kernel_gb_s: 5.17,
-            dec_gb_s: 16.49,
-          },
+        : null,
       constant_1024: steadySc
         ? {
             raw_bytes: 8192,
@@ -122,15 +102,7 @@ export const loadCppAlpResult = async () => {
             enc_kernel_gb_s: steadySc.enc_kernel_gb_s,
             dec_gb_s: steadySc.dec_gb_s,
           }
-        : {
-            raw_bytes: 8192,
-            compressed_bytes: 12,
-            ratio: 682.6667,
-            bits_per_val: 0.09,
-            enc_gb_s: 0.94,
-            enc_kernel_gb_s: 7.26,
-            dec_gb_s: 24.02,
-          },
+        : null,
     },
   };
 

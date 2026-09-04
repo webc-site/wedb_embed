@@ -71,8 +71,12 @@ fastalp/
 ├── src/                # 核心源代码
 │   ├── bitpack/        # 模块化位打包与位解包
 │   │   ├── mod.rs      # 门面导出
-│   │   ├── pack.rs     # 128 位累加器位打包算子
-│   │   └── unpack.rs   # 局部查表与直接位解包算子
+│   │   ├── pack.rs     # 128 位累加器位打包算子与 match_pack_23 派发
+│   │   └── unpack/     # 模块化分层位解包算子体系
+│   │       ├── mod.rs      # 解包顶层调度与安全门面
+│   │       ├── consumer.rs # AlpConsumer 消费器抽象（FOR/Delta前缀和/原始写入）
+│   │       ├── decoder.rs  # AlpDecoder 浮点重构器（乘法/除法/RD/字典）
+│   │       └── kernel.rs   # 64 路定宽解包与展开内联内核
 │   ├── capi.rs         # C 兼容 FFI 接口与独立编码器句柄
 │   ├── constants.rs    # 静态幂次表与格式常量
 │   ├── decoder/        # 泛型流式解压与除法重构
@@ -97,6 +101,7 @@ fastalp/
 │   │   └── f64.rs      # 双精度 f64 乘法/除法编解码实现
 │   ├── header.rs       # 紧凑自描述头部编解码与 2-bit 长度标签档位管理
 │   ├── lib.rs          # 导出接口与高层封装
+│   ├── macros.rs       # 全局循环展开、数组构造与位宽派发宏体系
 │   ├── params.rs       # 紧凑位域参数打包与位宽计算
 │   └── sampler.rs      # 参数采样与无损重构验证
 ├── test.sh             # 测试运行脚本

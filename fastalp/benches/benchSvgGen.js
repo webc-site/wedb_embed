@@ -5,6 +5,7 @@ import { parse as yamlParse } from "yaml";
 import { loadBenchData } from "./lib/data.js";
 import { renderSvg } from "./lib/render.js";
 import { optimizeSvg, renderJpg } from "./lib/upload.js";
+import { benchMdGen } from "./benchMdGen.js";
 
 const BENCHES_DIR = import.meta.dirname;
 const I18N_DIR = resolve(BENCHES_DIR, "i18n");
@@ -45,7 +46,10 @@ export const benchSvgGen = async () => {
     }
   }
 
-  console.log("\nLocal SVG & JPG generation complete!");
+  console.log("\n3. Generating synchronized Markdown documentation (readme/{zh,en}/bench.md)...");
+  await benchMdGen();
+
+  console.log("\nLocal SVG, JPG & Markdown generation complete!");
 };
 
 if (import.meta.main) {

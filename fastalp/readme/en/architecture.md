@@ -66,8 +66,12 @@ fastalp/
 ├── src/                # Library source code
 │   ├── bitpack/        # Modular bit-level packing and unpacking
 │   │   ├── mod.rs      # Module facade and re-exports
-│   │   ├── pack.rs     # Dense bitpacking with 128-bit register accumulator
-│   │   └── unpack.rs   # Direct bit unpacking with stack LUT acceleration
+│   │   ├── pack.rs     # Dense bitpacking with match_pack_23 dispatch
+│   │   └── unpack/     # Decoupled bit-unpacking engine
+│   │       ├── mod.rs      # Top-level dispatch and safe facades
+│   │       ├── consumer.rs # AlpConsumer abstraction (FOR/Delta prefix-sum/raw writes)
+│   │       ├── decoder.rs  # AlpDecoder float reconstruction (Mul/Div/RD/Dict)
+│   │       └── kernel.rs   # 64-way monomorphized unpacking subkernels
 │   ├── capi.rs         # Optional C-compatible FFI bindings and handle management
 │   ├── constants.rs    # Precomputed static power tables and format constants
 │   ├── decoder/        # Generic decompression pipeline & decimal division reconstruction
@@ -92,6 +96,7 @@ fastalp/
 │   │   └── f64.rs      # Double-precision f64 multiply/divide implementations
 │   ├── header.rs       # Self-describing header with 2-bit length tags
 │   ├── lib.rs          # Crate root and public exports
+│   ├── macros.rs       # Global unrolling, array construction, and bit-width dispatch macros
 │   ├── params.rs       # Compact bitfield parameters and bit-width calculators
 │   └── sampler.rs      # Parameter sampling and validation
 ├── test.sh             # Test execution script

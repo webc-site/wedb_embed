@@ -2,6 +2,9 @@
 
 use core::mem::size_of;
 
+#[macro_use]
+mod macros;
+
 pub mod bitpack;
 pub mod header;
 

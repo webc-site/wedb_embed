@@ -1,5 +1,3 @@
-use core::slice::from_raw_parts_mut;
-
 use crate::{
   bitpack::{AlpDecoder, bitunpack_core_generic, packed_byte_size},
   error::{Error, Result},
@@ -14,7 +12,7 @@ use crate::{
 ///
 /// `dst_ptr` must point to valid memory for at least `count` continuous writable `F` elements.
 /// `dst_ptr` 必须指向至少具备 `count` 个连续可写 `F` 元素的有效内存。
-#[inline(always)]
+#[inline]
 pub unsafe fn decode_standard_raw<F: AlpFloat>(
   src: &[u8],
   count: usize,
@@ -66,33 +64,24 @@ unsafe fn decode_standard_inner<F: AlpFloat, D: AlpDecoder<F>>(
   decoder: D,
   dst_ptr: *mut F,
 ) -> Result<()> {
-  if params.bit_width == 0 {
-    let val = decoder.decode_offset(0);
-    // SAFETY: dst_ptr has sufficient capacity, perform direct SIMD broadcast fill
-    // SAFETY: dst_ptr 具有至少 count 个连续元素的可写空间，直接进行 SIMD 广播填充
-    unsafe {
-      from_raw_parts_mut(dst_ptr, count).fill(val);
-    }
-  } else {
-    let packed_len = packed_byte_size(count, params.bit_width);
-    if payload.len() < packed_len {
-      return Err(Error::UnexpectedEof {
-        needed: packed_len,
-        available: payload.len(),
-      });
-    }
+  let packed_len = packed_byte_size(count, params.bit_width);
+  if payload.len() < packed_len {
+    return Err(Error::UnexpectedEof {
+      needed: packed_len,
+      available: payload.len(),
+    });
+  }
 
-    // SAFETY: Caller guarantees sufficient buffer and valid pointers
-    // SAFETY: 调用方保证缓冲区与指针充足有效，bitunpack_core_generic 支持全量 1..=64 位宽的单趟寄存器级融合解码
-    unsafe {
-      bitunpack_core_generic(
-        &payload[..packed_len],
-        count,
-        params.bit_width,
-        decoder,
-        dst_ptr,
-      );
-    }
+  // SAFETY: Caller guarantees sufficient buffer and valid pointers.
+  // bitunpack_core_generic 自动无缝处理 bit_width == 0 与 1..=64 位宽的寄存器级融合解码
+  unsafe {
+    bitunpack_core_generic(
+      &payload[..packed_len],
+      count,
+      params.bit_width,
+      decoder,
+      dst_ptr,
+    );
   }
   Ok(())
 }

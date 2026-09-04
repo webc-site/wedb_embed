@@ -128,17 +128,18 @@ export const scenarioDatasetMap = {
 };
 
 export const computeScenarioMetrics = (algo, sceneKey) => {
-  if (!algo) return { dec_gb_s: 1.0, enc_gb_s: 0.5, ratio: 1.0, count: 0, totalPts: 0 };
-  const ds = algo.paper_31?.datasets || [];
+  if (!algo) throw new Error(`Algorithm object missing for scenario ${sceneKey}`);
+  const ds = algo.paper_31?.datasets;
+  if (!ds || ds.length === 0) throw new Error(`Datasets missing for algorithm ${algo.algorithm}`);
 
   const targetNames = scenarioDatasetMap[sceneKey];
   if (targetNames && targetNames.length > 0) {
     const list = ds.filter((d) => targetNames.includes(d.name));
     if (list.length > 0) {
-      const avgDec = list.reduce((acc, d) => acc + (d.dec_gb_s || 0), 0) / list.length;
-      const avgEnc = list.reduce((acc, d) => acc + (d.enc_gb_s || 0), 0) / list.length;
-      const totalRaw = list.reduce((acc, d) => acc + (d.raw_bytes || 8192), 0);
-      const totalComp = list.reduce((acc, d) => acc + (d.compressed_bytes || 8192), 0);
+      const avgDec = list.reduce((acc, d) => acc + d.dec_gb_s, 0) / list.length;
+      const avgEnc = list.reduce((acc, d) => acc + d.enc_gb_s, 0) / list.length;
+      const totalRaw = list.reduce((acc, d) => acc + d.raw_bytes, 0);
+      const totalComp = list.reduce((acc, d) => acc + d.compressed_bytes, 0);
       return {
         dec_gb_s: avgDec,
         enc_gb_s: avgEnc,
@@ -154,13 +155,7 @@ export const computeScenarioMetrics = (algo, sceneKey) => {
     return { dec_gb_s: exact.dec_gb_s, enc_gb_s: exact.enc_gb_s, ratio: exact.ratio, count: 1, totalPts: 1024 };
   }
 
-  return {
-    dec_gb_s: algo.paper_31?.avg_dec_gb_s || 1.0,
-    enc_gb_s: algo.paper_31?.avg_enc_gb_s || 0.5,
-    ratio: algo.paper_31?.ratio || 1.0,
-    count: 1,
-    totalPts: 1024
-  };
+  throw new Error(`Scenario ${sceneKey} not found in datasets for algorithm ${algo.algorithm}`);
 };
 
 export const loadBenchData = async () => {
@@ -180,18 +175,23 @@ export const loadBenchData = async () => {
       content.paper_31 = measuredCpp.paper_31;
     }
 
-    const baseDatasets = content.paper_31?.datasets || [];
+    const baseDatasets = content.paper_31.datasets;
     const allDatasets = [...baseDatasets];
 
     // 1. Calculate Comprehensive Geometric Mean strictly across the real benchmark datasets
-    const decs = baseDatasets.map((d) => d.dec_gb_s || 0.1);
-    const encs = baseDatasets.map((d) => d.enc_gb_s || 0.1);
-    const encKerns = baseDatasets.map((d) => d.enc_kernel_gb_s || d.enc_gb_s || 0.1);
-    const ratios = baseDatasets.map((d) => d.ratio || 1.0);
+    const decs = baseDatasets.map((d) => d.dec_gb_s);
+    const encs = baseDatasets.map((d) => d.enc_gb_s);
+    const encKerns = baseDatasets.map((d) => d.enc_kernel_gb_s ?? d.enc_gb_s);
+    const ratios = baseDatasets.map((d) => d.ratio);
     content.paper_31.geomean_dec_gb_s = geomean(decs);
     content.paper_31.geomean_enc_gb_s = geomean(encs);
     content.paper_31.geomean_enc_kernel_gb_s = geomean(encKerns);
     content.paper_31.geomean_ratio = geomean(ratios);
+
+    const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+    content.paper_31.avg_dec_gb_s = avg(decs);
+    content.paper_31.avg_enc_gb_s = avg(encs);
+    content.paper_31.avg_enc_kernel_gb_s = avg(encKerns);
 
     // 2. Compute dynamic scenario metrics for Section 2 scenario cards
     for (const scKey of scenarioKeys) {
@@ -247,19 +247,19 @@ export const loadBenchData = async () => {
     chimp,
     // Comparisons
     encKernelSpeedupVsCpp: (
-      fastalp.paper_31.geomean_enc_kernel_gb_s / (cppAlp.paper_31.geomean_enc_kernel_gb_s || 5.49)
+      fastalp.paper_31.geomean_enc_kernel_gb_s / cppAlp.paper_31.geomean_enc_kernel_gb_s
     ).toFixed(2),
     encSampledSpeedupVsCpp: (
-      fastalp.paper_31.geomean_enc_gb_s / (cppAlp.paper_31.geomean_enc_gb_s || 0.8)
+      fastalp.paper_31.geomean_enc_gb_s / cppAlp.paper_31.geomean_enc_gb_s
     ).toFixed(1),
     decSpeedupVsCpp: (
-      fastalp.paper_31.geomean_dec_gb_s / (cppAlp.paper_31.geomean_dec_gb_s || 20.0)
+      fastalp.paper_31.geomean_dec_gb_s / cppAlp.paper_31.geomean_dec_gb_s
     ).toFixed(2),
     decSpeedupVsPco: (fastalp.paper_31.geomean_dec_gb_s / pco.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsZstd: (fastalp.paper_31.geomean_dec_gb_s / zstd.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsGorilla: (fastalp.paper_31.geomean_dec_gb_s / gorilla.paper_31.geomean_dec_gb_s).toFixed(1),
     decSpeedupVsChimp: (fastalp.paper_31.geomean_dec_gb_s / chimp.paper_31.geomean_dec_gb_s).toFixed(1),
-    rampRatioFastalp: fastalp.micro_benchmarks?.ramp_1024?.ratio?.toFixed(1) || "431.2",
+    rampRatioFastalp: fastalp.paper_31.datasets.find((d) => d.name === "scene_ramp").ratio.toFixed(1),
     spaceSavedVsCppPct: (
       ((cppAlp.paper_31.total_compressed_bytes - fastalp.paper_31.total_compressed_bytes) /
         cppAlp.paper_31.total_compressed_bytes) *

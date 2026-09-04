@@ -1,10 +1,13 @@
-use std::{mem::size_of, ptr::read_unaligned};
+use core::{mem::size_of, ptr::read_unaligned};
 
 use super::AlpFloat;
-use crate::constants::{
-  BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F64, EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F64, FACT_ARR_F64,
-  FRAC_ARR_F64, MAX_EXPONENT_F64, MAX_FAC_F64, TYPE_F64, TYPE_F64_DEC, TYPE_F64_DEC_DELTA,
-  TYPE_F64_DELTA, TYPE_F64_DICT, TYPE_F64_RAW, TYPE_F64_RD,
+use crate::{
+  constants::{
+    BITS_PER_BYTE, ENCODING_UPPER_LIMIT_F64, EXC_POS_LEN, EXC_POS_LEN_U32, EXP_ARR_F64,
+    FACT_ARR_F64, FRAC_ARR_F64, MAX_EXPONENT_F64, MAX_FAC_F64, TYPE_F64, TYPE_F64_DEC,
+    TYPE_F64_DEC_DELTA, TYPE_F64_DELTA, TYPE_F64_DICT, TYPE_F64_RAW, TYPE_F64_RD,
+  },
+  encoder::{Exception, kernel::encode_simd_f64},
 };
 
 impl AlpFloat for f64 {
@@ -119,11 +122,11 @@ impl AlpFloat for f64 {
     fac_int: i64,
     frac_exp: Self,
     use_div: bool,
-    exceptions: &mut Vec<crate::encoder::Exception<Self::RawBits>>,
+    exceptions: &mut Vec<Exception<Self::RawBits>>,
   ) -> (Self::Int, Self::Int) {
     // SAFETY: caller guarantees slice is valid and enc_ptr has space for slice.len()
     unsafe {
-      crate::encoder::kernel::encode_simd_f64(
+      encode_simd_f64(
         slice, enc_ptr, exp_factor, fac_int, frac_exp, use_div, exceptions,
       )
     }

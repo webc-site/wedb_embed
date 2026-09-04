@@ -65,20 +65,12 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
   const fastalgo = algorithms.find((a) => a.algorithm === "fastalp") || algorithms[0];
   const cppAlgo = algorithms.find((a) => a.algorithm === "cpp_alp") || algorithms[1];
 
-  const faKern = fastalgo.paper_31.geomean_enc_kernel_gb_s || 6.0;
-  const cppKern = cppAlgo.paper_31.geomean_enc_kernel_gb_s || 5.49;
+  const faKern = fastalgo.paper_31.geomean_enc_kernel_gb_s;
+  const cppKern = cppAlgo.paper_31.geomean_enc_kernel_gb_s;
   const kernSpeedup = (faKern / cppKern).toFixed(2) + "x";
 
-  const faSamp = fastalgo.paper_31.geomean_enc_gb_s || fastalgo.paper_31.avg_enc_gb_s || 3.7;
-  const cppSamp = cppAlgo.paper_31.geomean_enc_gb_s || cppAlgo.paper_31.avg_enc_gb_s || 0.8;
-  const sampSpeedup = (faSamp / cppSamp).toFixed(1) + "x";
-
-  const faDec = fastalgo.paper_31.geomean_dec_gb_s || fastalgo.paper_31.avg_dec_gb_s || 27.0;
-  const cppDecVal = cppAlgo.paper_31.geomean_dec_gb_s || cppAlgo.paper_31.avg_dec_gb_s || 20.0;
-  const decSpeedup = (faDec / cppDecVal).toFixed(2) + "x";
-
-  const cppDec = cppDecVal;
-  const cppEnc = cppSamp;
+  const cppDec = cppAlgo.paper_31.geomean_dec_gb_s;
+  const cppEnc = cppAlgo.paper_31.geomean_enc_gb_s;
 
   // 1. Render Section 1 rows (8 Codecs) - using Geometric Mean
   const sec1RowsSvg = algorithms.map((algo, idx) => {
@@ -86,9 +78,9 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
     const isFastalp = algo.algorithm === "fastalp";
     const isCpp = algo.algorithm === "cpp_alp";
 
-    const decSpeed = algo.paper_31.geomean_dec_gb_s || algo.paper_31.avg_dec_gb_s;
-    const encSpeed = algo.paper_31.geomean_enc_gb_s || algo.paper_31.avg_enc_gb_s;
-    const ratio = algo.paper_31.geomean_ratio || algo.paper_31.ratio;
+    const decSpeed = algo.paper_31.geomean_dec_gb_s;
+    const encSpeed = algo.paper_31.geomean_enc_gb_s;
+    const ratio = algo.paper_31.geomean_ratio;
 
     const rowBg = isFastalp
       ? `<rect x="${margin}" y="${y}" width="${contentW}" height="${sec1RowH - 5}" rx="8" fill="#f0f7ff" stroke="#bfdbfe" stroke-width="1.2"/>`
@@ -183,42 +175,18 @@ export const renderSvg = (benchData, rawI18n, lang = "zh") => {
       fourth
     ];
 
-    const cppAlgoObj = algorithms.find(a => a.algorithm === "cpp_alp") || algorithms[1];
-    const cppScene = computeScenarioMetrics(cppAlgoObj, sceneKey);
-
     return list.map(item => {
       const algoObj = algorithms.find(a => a.algorithm === item.id);
       const sc = computeScenarioMetrics(algoObj, sceneKey);
-      const dec = (sc.dec_gb_s || 0).toFixed(sc.dec_gb_s >= 10 ? 1 : 2) + " GB/s";
-      const enc = (sc.enc_gb_s || 0).toFixed(1) + " GB/s";
-      const ratio = (sc.ratio || 0).toFixed(sc.ratio >= 10 ? 1 : 2) + "x";
-
-      let vs = "";
-      if (item.isFastalp) {
-        if (sc.ratio > cppScene.ratio * 1.5) {
-          const mult = (sc.ratio / cppScene.ratio).toFixed(0);
-          vs = isZh ? `比 C++ 高 ${mult}x` : `${mult}x vs C++`;
-        } else if (sc.dec_gb_s > cppScene.dec_gb_s) {
-          const speedup = (((sc.dec_gb_s / cppScene.dec_gb_s) - 1) * 100).toFixed(0);
-          vs = isZh ? `比 C++ 快 ${speedup}%` : `+${speedup}% vs C++`;
-        } else if (sc.enc_gb_s > cppScene.enc_gb_s) {
-          const speedup = (((sc.enc_gb_s / cppScene.enc_gb_s) - 1) * 100).toFixed(0);
-          vs = isZh ? `压缩快 ${speedup}%` : `+${speedup}% vs C++`;
-        } else {
-          vs = isZh ? "领先 (零损)" : "Leader";
-        }
-      } else if (item.isCpp) {
-        vs = isZh ? "基准" : "Baseline";
-      } else {
-        const decRatio = cppScene.dec_gb_s > 0 ? (sc.dec_gb_s / cppScene.dec_gb_s).toFixed(2) : "1.00";
-        vs = isZh ? `解压 ${decRatio}x` : `${decRatio}x Dec`;
-      }
+      const dec = sc.dec_gb_s.toFixed(sc.dec_gb_s >= 10 ? 1 : 2) + " GB/s";
+      const enc = sc.enc_gb_s.toFixed(1) + " GB/s";
+      const ratio = sc.ratio.toFixed(sc.ratio >= 10 ? 1 : 2) + "x";
 
       return {
         name: item.name,
-        rawDec: sc.dec_gb_s || 0,
-        rawEnc: sc.enc_gb_s || 0,
-        rawRatio: sc.ratio || 0,
+        rawDec: sc.dec_gb_s,
+        rawEnc: sc.enc_gb_s,
+        rawRatio: sc.ratio,
         dec,
         enc,
         ratio,

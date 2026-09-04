@@ -1,3 +1,5 @@
+use core::mem::size_of_val;
+
 use crate::{
   constants::{FLAG_REPEAT, RD_SIZE_THRESHOLD_DEN, RD_SIZE_THRESHOLD_NUM, TYPE_MASK},
   encoder::{
@@ -7,7 +9,7 @@ use crate::{
     rd::{MAX_RD_DICT_SIZE, encode_rd_fast, try_encode_rd, write_rd_chunk},
   },
   float::AlpFloat,
-  header::{header_len, read_header, write_header},
+  header::{ParsedHeader, header_len, read_header, write_header},
   sampler::BestParams,
 };
 
@@ -186,7 +188,7 @@ impl<F: AlpFloat> Encoder<F> {
   fn write_repeat_chunk(
     &self,
     count: usize,
-    nr_hdr: &crate::header::ParsedHeader,
+    nr_hdr: &ParsedHeader,
     nr_payload: &[u8],
     dst: &mut Vec<u8>,
   ) {
@@ -476,7 +478,7 @@ impl<F: AlpFloat> Encoder<F> {
       }
     }
 
-    let raw_size = std::mem::size_of_val(data);
+    let raw_size = size_of_val(data);
     if current_size * RD_SIZE_THRESHOLD_DEN > raw_size * RD_SIZE_THRESHOLD_NUM
       && !force_delta
       && let Some(rd) = try_encode_rd(
